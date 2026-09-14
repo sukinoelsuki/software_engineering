@@ -72,5 +72,6 @@
 | [0002](0002-adopt-git-workflow.md) | 采用简化 Git Flow 工作流 | 已接受 |
 | [0003](0003-select-base-project.md) | 选定 base project 与项目主线（**待决策**） | 提议中 |
 | [0004](0004-python-toolchain-baseline.md) | 采用 Python + uv + ruff + mypy 工程基线 | 已接受 |
+| [0005](0005-single-primary-language.md) | 技术栈定案：Python 单一主语言（不引入 Go / TypeScript） | 已接受 |
 
 > 新增 ADR 后请同步更新本表。
