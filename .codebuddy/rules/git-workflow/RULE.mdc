@@ -65,9 +65,20 @@ Refs: #<issue>
 
 ## Agent 硬性限制
 
-- ❌ 禁止执行 `git push`（包括 `--force`）、`git reset --hard`、改写已推送历史、删除已有分支。
+### 远端操作授权（最高优先级）
+
+- ❌ **未经事先明确批准，禁止执行 `git push`**。这是项目所有者的硬性要求。
+- ✅ 获得批准后：**只推送被批准的分支**，并在推送前汇报：
+  目标远端、分支名、提交列表（`git log --oneline origin/<branch>..HEAD`）、变更范围。
+- ❌ 禁止 `--force` / `--force-with-lease` 强推、`git reset --hard`、
+  `git rebase` 改写已推送历史、删除远端分支。
 - ❌ 禁止 `git commit --amend` 已推送的提交。
-- ✅ 本地 `git add` / `git commit` **仅在人类明确要求时**执行。
+
+### 本地操作
+
+- ✅ 本地 `git add` / `git commit` 可在当前任务范围内进行，但需满足：
+  在独立短期分支上、提交粒度单一、可回滚。
+- ⚠️ **合并到 `main` / `develop` 需事先批准**（即使只在本地）。
 - ✅ 提交前必须确认 `make check` 全绿。
 - ✅ 每次提交都必须符合 Conventional Commits，否则先修正信息再提交。
 - ⚠️ 禁止使用 `--no-verify` 跳过钩子；确需跳过必须有 ADR 记录。
