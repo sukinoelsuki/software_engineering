@@ -62,6 +62,50 @@
             set -euo pipefail
             make check
 
+  # --------------------------------------------------------------------------
+  # 云原生开发：从页面启动 WebIDE / VS Code Remote-SSH 时使用自定义开发环境
+  #
+  # 说明：
+  #   - 镜像由 .ide/Dockerfile 构建；首次约 5~15 分钟，之后推送至制品库复用。
+  #   - build.by 必须声明构建期用到的其它文件（.ide/settings.json），
+  #     否则构建报错 —— 这是 CNB 的硬性约束。
+  #   - image 为构建失败时的回退镜像。
+  #   - services [vscode, docker]：分别启用 VS Code 服务与容器内 docker 命令。
+  #   - 该事件下的 stages 会在开发环境启动后自动执行（此处仅做环境自检输出）。
+  # --------------------------------------------------------------------------
+  vscode:
+    - name: dev-env
+      runner:
+        # 8 核 / 16 GiB 内存。免费额度为云原生开发-CPU 1600 核时/月，
+        # 按 8 核 × 每天 8 小时 × 22 个工作日 = 1408 核时，属于可持续用量。
+        cpus: 8
+      docker:
+        build:
+          dockerfile: .ide/Dockerfile
+          by:
+            - .ide/settings.json
+        image: cnbcool/default-dev-env:latest
+      services:
+        - vscode
+        - docker
+      stages:
+        - name: welcome
+          script: |
+            set +e
+            echo "=================================================="
+            echo " 开发环境已就绪（自定义镜像 .ide/Dockerfile）"
+            echo "=================================================="
+            printf 'python : %s\n' "$(python -V 2>&1)"
+            printf 'uv     : %s\n' "$(uv --version 2>&1)"
+            printf 'node   : %s\n' "$(node -v 2>&1)"
+            printf 'pnpm   : %s\n' "$(pnpm --version 2>&1)"
+            printf 'cmake  : %s\n' "$(cmake --version 2>&1 | head -n1)"
+            printf 'bwrap  : %s\n' "$(command -v bwrap || echo '缺失')"
+            printf 'llama  : %s\n' "$(command -v llama-server || echo '缺失')"
+            echo "--------------------------------------------------"
+            echo "首次使用请执行：make setup && make check"
+            echo "=================================================="
+
 # ============================================================================
 # TODO（随项目推进补充，需先确认 CNB 语法）：
 #   - 发布流程：tag_push "v*" → 构建制品 + 生成发布说明
