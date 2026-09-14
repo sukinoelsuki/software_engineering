@@ -1,0 +1,34 @@
+# https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+[*.{yml,yaml,json,toml,ini,cfg}]
+indent_size = 2
+
+[*.{js,jsx,ts,tsx,css,scss,html,vue}]
+indent_size = 2
+
+[*.md]
+# Markdown 中行尾双空格是有语义的硬换行，不做裁剪
+trim_trailing_whitespace = false
+max_line_length = off
+
+[Makefile]
+indent_style = tab
+
+[*.{c,h,cpp,hpp,cc}]
+indent_size = 4
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+[.cnb/**]
+indent_size = 2

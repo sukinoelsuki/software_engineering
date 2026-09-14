@@ -1,0 +1,180 @@
+# ============================================================================
+# Secure & Accelerated Agent Systems — 全局忽略规则
+# 说明：分节组织，便于按技术栈演进时定位与增删。
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 密钥与本地配置（安全红线：任何情况下都不得提交）
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+credentials.json
+secrets.yaml
+secrets.yml
+.codebuddy/*.local.json
+.git/.git-credentials
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+env/
+.python-version
+.tox/
+.nox/
+.coverage
+.coverage.*
+.coverage.xml
+htmlcov/
+coverage.xml
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.hypothesis/
+.ipynb_checkpoints/
+prof/
+.pytype/
+
+# ---------------------------------------------------------------------------
+# Node / 前端（如后续引入 Web 控制台或可视化）
+# ---------------------------------------------------------------------------
+node_modules/
+.pnpm-store/
+.yarn/
+dist/
+build/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------------------------------------------------------------------------
+# Rust / C / C++（如后续引入性能关键模块）
+# ---------------------------------------------------------------------------
+target/
+*.rs.bk
+*.o
+*.obj
+*.a
+*.lib
+*.lo
+*.la
+*.gch
+*.pch
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# ---------------------------------------------------------------------------
+# 大模型与数据产物（大文件一律走 Git LFS 或对象存储，禁止直接入库）
+# ---------------------------------------------------------------------------
+*.gguf
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pb
+*.tflite
+*.mlmodel
+*.bin
+*.npy
+*.npz
+*.arrow
+*.parquet
+*.index
+*.faiss
+models/
+checkpoints/
+weights/
+data/raw/
+data/processed/
+datasets/
+wandb/
+runs/
+mlruns/
+outputs/
+lightning_logs/
+*.log
+
+# ---------------------------------------------------------------------------
+# 构建 / 运行产物（本项目自定义）
+# ---------------------------------------------------------------------------
+artifacts/
+reports/
+tmp/
+.cache/
+sandbox/
+*.prof
+*.trace
+*.svg.html
+
+# ---------------------------------------------------------------------------
+# 编辑器与 IDE
+# ---------------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# 操作系统
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+
+# ---------------------------------------------------------------------------
+# 说明：以下内容应显式提交，勿加入忽略列表
+#   - .codebuddy/rules/**        项目级 Agent 准则（团队共享）
+#   - docs/**                    设计、ADR、流程文档
+#   - .cnb/**                    平台协作配置
+# ============================================================================
