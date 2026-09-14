@@ -12,7 +12,16 @@
 | 组织形式 | 单人独立开发（决策、实现、评审均由本人完成，AI 作为实现与决策辅助） |
 | 周期 | 2026-09 ~ 2026-12（约 2~3 个月，多迭代） |
 | 仓库 | <https://cnb.cool/Mybase_Le0n3rd/software_engineering> |
-| 当前阶段 | **Phase 0 · 工程初始化**（详见 [里程碑](docs/engineering/sdlc.md)） |
+| 当前阶段 | **Phase 0 · 工程初始化已完成**，待进入 Phase 1（需求与设计），详见 [里程碑](docs/engineering/sdlc.md) |
+
+> ## 🚧 下一步（开发环境构建后立即执行）
+>
+> 镜像构建完成后，请按 **[构建后待办清单](docs/engineering/post-build-checklist.md)** 顺序执行：
+>
+> **① 确认自定义镜像生效 → ② 关键组件自检 → ③ 沙箱可用性 → ④ 工程门禁 `make check` → ⑤ W1 风险验证**
+>
+> ⚠️ 其中 **③ 沙箱可用性** 与 **⑤ W1 风险验证** 的结论会**直接改变后续方案**
+> （沙箱可能需降级；4B 模型能力不足则会触发方向收敛），请务必记录结果。
 
 ---
 
@@ -25,8 +34,9 @@
 - **质量规范**：静态检查、类型检查、自动化测试、安全扫描、CI 门禁缺一不可。
 - **安全规范**：威胁建模前置、最小权限、密钥零入库、供应链可追溯。
 
-项目的技术落点（研究方向）将在 base project 选型后冻结，当前候选方向见
-[`docs/proposals/0001-base-project-selection.md`](docs/proposals/0001-base-project-selection.md)。
+当前方向为**低资源受限环境下的能力感知智能体运行时**（单专家调度 + 能力包），
+完整需求见 [`docs/requirements/srs.md`](docs/requirements/srs.md)，
+决策与论证过程见 [`docs/adr/`](docs/adr/) 与 [`docs/proposals/`](docs/proposals/)。
 
 ---
 
@@ -137,6 +147,8 @@ make help        # 查看全部可用命令
 | [`docs/design/`](docs/design/) | 架构设计、模块设计、威胁模型、接口契约 |
 | [`docs/engineering/`](docs/engineering/) | 过程规范（工作流、生命周期、DoD、测试） |
 | [`docs/research/`](docs/research/) | 前沿 AI 生态调研与论文笔记 |
+| [`docs/devlog/`](docs/devlog/) | **开发日志**（按议题/阶段分篇，过程记录） |
+| [`docs/engineering/post-build-checklist.md`](docs/engineering/post-build-checklist.md) | **构建后待办清单**（下一步行动） |
 
 ---
 

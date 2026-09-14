@@ -14,6 +14,7 @@
 | [`design/`](design/) | 架构设计、模块设计、接口契约、**威胁模型** | 设计变更时 |
 | [`engineering/`](engineering/) | 工程流程规范：工作流、生命周期、DoD、测试策略 | 流程调整时 |
 | [`research/`](research/) | 前沿 AI 生态调研与实验结论（含失败结论） | 每次调研或实验收敛时 |
+| [`devlog/`](../devlog/) | **开发日志**（按议题/阶段分篇，过程记录） | 每次提交 |
 
 ---
 
@@ -21,6 +22,7 @@
 
 | 我想知道…… | 看这里 |
 | --- | --- |
+| **开发环境构建完成后要做什么** | [`engineering/post-build-checklist.md`](engineering/post-build-checklist.md) |
 | 怎么切分支、怎么写提交信息、怎么发布 | [`engineering/git-workflow.md`](engineering/git-workflow.md) |
 | 项目分几个阶段？现在到哪了？ | [`engineering/sdlc.md`](engineering/sdlc.md) |
 | 什么算"做完了"？ | [`engineering/definition-of-done.md`](engineering/definition-of-done.md) |
