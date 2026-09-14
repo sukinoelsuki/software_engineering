@@ -1,0 +1,71 @@
+# ============================================================================
+# CNB 云原生构建流水线
+#
+# 定位：CI 门禁。本文件中的命令必须与 Makefile 保持一致，
+#       Makefile 是唯一事实来源，禁止在此另写一套检查逻辑。
+#
+# 说明：
+#   - "**" 为 glob 模式，匹配所有分支（含 main / develop）。
+#     多个 glob 规则同时命中时流水线会并行执行，因此这里只保留一条规则，
+#     避免重复执行；后续如需为特定分支追加发布任务，再单独新增分支键。
+#   - pull_request 属于「不可信事件」（配置取自源分支，存在被篡改风险），
+#     因此本流水线中不得使用任何密钥、令牌或敏感凭据。
+#     参见：https://docs.cnb.cool/zh/build/trigger-rule.md
+# ============================================================================
+
+"**":
+  # --------------------------------------------------------------------------
+  # 推送：对任意分支的每次提交执行完整门禁
+  # --------------------------------------------------------------------------
+  push:
+    - name: ci
+      docker:
+        image: python:3.12
+      stages:
+        - name: prepare
+          script: |
+            set -euo pipefail
+            command -v make >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq --no-install-recommends make)
+            make setup
+
+        - name: verify
+          script: |
+            set -euo pipefail
+            make check
+
+        - name: commit-message
+          script: |
+            set -euo pipefail
+            # 仅在非首个提交时校验提交信息规范
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              make commit-check
+            else
+              echo ">> 仓库首个提交，跳过提交信息校验"
+            fi
+
+  # --------------------------------------------------------------------------
+  # 合并请求：源分支每次推送都会重新执行
+  # --------------------------------------------------------------------------
+  pull_request:
+    - name: ci-pr
+      docker:
+        image: python:3.12
+      stages:
+        - name: prepare
+          script: |
+            set -euo pipefail
+            command -v make >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq --no-install-recommends make)
+            make setup
+
+        - name: verify
+          script: |
+            set -euo pipefail
+            make check
+
+# ============================================================================
+# TODO（随项目推进补充，需先确认 CNB 语法）：
+#   - 发布流程：tag_push "v*" → 构建制品 + 生成发布说明
+#   - 安全扫描：SCA 依赖与许可证扫描（PR 增量）
+#   - 性能基准：benchmark 流水线（手动/定时触发，不阻塞日常提交）
+#   - 定时任务：每周依赖更新检查
+# ============================================================================

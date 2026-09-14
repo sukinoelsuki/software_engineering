@@ -1,0 +1,65 @@
+name: 研究任务
+description: 面向前沿 AI 生态的调研、可行性验证或探索性实验
+title: "[Research] "
+labels: ["research"]
+assignees: ["Le0n3rd"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        研究任务的产出是**结论**，不是代码。无论成功或失败，结论都必须归档到 `docs/research/`，
+        否则该任务不算完成。结论必须标注**置信度**与**验证方式**。
+
+  - type: textarea
+    attributes:
+      label: 研究问题
+      description: 用可回答的问题表述，避免"研究一下 XX"这类不可证伪的描述
+      placeholder: 例如：在 N 核 CPU 上，方案 A 相对方案 B 的 P99 延迟差异是否超过 20%？
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 动机与关联
+      description: 该问题与项目主线（安全 / 加速 / 原生智能系统）的关系；不做会有什么影响
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 方法
+      description: 调研、原型验证还是受控实验？需要哪些环境、数据与工具？
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 预期产出
+      description: 交付物形式（结论笔记 / 基准数据 / 原型 / ADR 输入）
+      placeholder: |
+        - [ ] docs/research/<slug>.md
+        - [ ] 可复现的基准数据（reports/bench/...）
+        - [ ] 是否进入正式开发的建议
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: 时间盒
+      description: 探索性任务必须设定上限，超时即收敛并归档结论
+      options:
+        - ≤ 1 天
+        - ≤ 3 天
+        - ≤ 1 周
+        - ≤ 2 周
+    validations:
+      required: true
+
+  - type: checkboxes
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 研究问题可证伪、可回答
+          required: true
+        - label: 已设定时间盒，避免无限探索
+          required: true
