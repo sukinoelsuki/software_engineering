@@ -5,7 +5,21 @@
 > `urllib.request.urlopen`）。原因：它们是「实际运行过的证据」，而不是需要长期维护的代码；
 > 为过 lint 而改写证据会破坏归档的完整性。
 
-关联：[研究笔记](../../2026-09-15-w1-4b-model-capability.md)、[开发日志 0007](../../../devlog/0007-2026-09-15-开发环境验证与W1风险验证.md)。
+关联：[研究笔记](../../2026-09-15-w1-4b-model-capability.md)、
+[开发日志 0007](../../../devlog/0007-2026-09-15-开发环境验证与W1风险验证.md)。
+
+---
+
+## 归档约定（重要）
+
+| 内容类型 | 承载格式 | 是否受格式化约束 |
+| --- | --- | --- |
+| **作者撰写**的文档 | `.md` | 是（`ruff format` 会格式化 Markdown 内嵌的 Python 代码块） |
+| **采集得到**的原始产物 | `.txt` | 否——逐字保留，不得被工具改写 |
+
+因此 `out_*.txt` 用 `.txt` 而非 `.md`：它们是模型输出，不是我们撰写的文档。
+本文件内嵌的脚本同样属于「采集得到的证据」，故用**四反引号 + `text` 标签**围栏，
+以避免被 Markdown 格式化器改写（脚本内含三反引号，用三反引号围栏会误闭合）。
 
 ---
 
@@ -21,11 +35,11 @@
 | `run_w1.py` | 采集模型输出（HTTP 调用 llama-server） |
 | `eval_w1.py` | 客观判定（AST / mypy / pytest / 覆盖率 / 变异测试） |
 
-```text
+````text
 1) 放置夹具 + 启动 llama-server（命令见研究笔记 §2）
-2) python run_w1.py        # 产出 out_t1.md / out_t2.md / out_t3.md / summary.json
+2) python run_w1.py        # 产出 out_t1.txt / out_t2.txt / out_t3.txt / summary.json
 3) python eval_w1.py       # 产出 eval.json
-```
+````
 
 ---
 
@@ -33,7 +47,7 @@
 
 t1_input.py（修正后，实际用于 T1 第二轮）
 
-```python
+````text
 """Sensor report helpers used by the device pipeline."""
 
 SCALE_FACTORS = {"celsius": 1.0, "fahrenheit": 1.8, "kelvin": 1.0}
@@ -77,13 +91,13 @@ def summarize_readings(readings, window=3, drop_zero=True, target="celsius"):
         recent = values[-window:]
         result[group] = round(sum(recent) / len(recent), 4)
     return result
-```
+````
 
 ## 2. `t1_input.run1.py`
 
-t1_input.run1.py（首轮夹具，含递归缺陷；由 out_t1_run1.md 还原）
+t1_input.run1.py（首轮夹具，含递归缺陷；由 out_t1_run1.txt 还原）
 
-```python
+````text
 """Sensor report helpers used by the device pipeline."""
 
 SCALE_FACTORS = {"celsius": 1.0, "fahrenheit": 1.8, "kelvin": 1.0}
@@ -124,13 +138,13 @@ def summarize_readings(readings, window=3, drop_zero=True, target="celsius"):
         recent = values[-window:]
         result[group] = round(sum(recent) / len(recent), 4)
     return result
-```
+````
 
 ## 3. `t2_bug.py`
 
 t2_bug.py
 
-```python
+````text
 """Pagination helper (contains a bug that the failing tests expose)."""
 
 
@@ -142,13 +156,13 @@ def chunk(items, size):
     for start in range(0, len(items) - size, size):
         chunks.append(items[start:start + size])
     return chunks
-```
+````
 
 ## 4. `t2_test.py`
 
 t2_test.py
 
-```python
+````text
 import pytest
 
 from t2_bug import chunk
@@ -173,13 +187,13 @@ def test_empty_input():
 def test_invalid_size():
     with pytest.raises(ValueError):
         chunk([1, 2], 0)
-```
+````
 
 ## 5. `t3_pure.py`
 
 t3_pure.py
 
-```python
+````text
 """Pure interval-merging helper."""
 
 
@@ -200,13 +214,13 @@ def merge_intervals(intervals):
         else:
             merged.append([start, end])
     return [tuple(interval) for interval in merged]
-```
+````
 
 ## 6. `run_w1.py`
 
 run_w1.py
 
-```python
+````text
 """W1 risk validation harness: drives llama-server over HTTP and records raw results."""
 
 import json
@@ -325,13 +339,13 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-```
+````
 
 ## 7. `eval_w1.py`
 
 eval_w1.py
 
-```python
+````text
 """Evaluate the raw W1 outputs objectively: extract code blocks and run real tools."""
 
 import ast
@@ -452,4 +466,4 @@ if __name__ == "__main__":
     }
     print(json.dumps(report, indent=2, ensure_ascii=False))
     (W1 / "eval.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-```
+````

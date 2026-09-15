@@ -8,6 +8,8 @@
 - 状态：**已完成**
 - 原始产物：[`reports/2026-09-15-w1/`](reports/2026-09-15-w1/)（模型输出、评估结果），
   脚本与夹具逐字收录于 [`HARNESS.md`](reports/2026-09-15-w1/HARNESS.md)
+- 归档约定：**作者撰写的文档用 `.md`**（受 `ruff format` 约束），
+  **采集得到的原始产物用 `.txt`**（逐字保留，不被工具改写）。原因见 `HARNESS.md` 开头。
 
 ---
 
@@ -52,7 +54,7 @@ llama-server -m /root/models/Qwen3-4B-Q4_K_M.gguf -c 4096 -t 8 -tb 8 \
   --host 127.0.0.1 --port 8080 --reasoning off --no-webui --metrics
 
 # 3) 跑三项任务并评估（脚本逐字收录于 reports/2026-09-15-w1/HARNESS.md）
-python run_w1.py     # 产出 out_t1.md / out_t2.md / out_t3.md / summary.json
+python run_w1.py     # 产出 out_t1.txt / out_t2.txt / out_t3.txt / summary.json
 python eval_w1.py    # 产出 eval.json（客观判定）
 ```
 
