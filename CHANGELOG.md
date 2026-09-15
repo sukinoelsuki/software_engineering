@@ -20,10 +20,21 @@
 - 建立 Agent 协作准则：`CODEBUDDY.md`、`AGENTS.md` 与 `.codebuddy/rules/`。
 - 配置 CNB 协作设施：`.cnb.yml` 流水线、Issue 模板、Pull Request 模板。
 - 产出 base project 选型提案：`docs/proposals/0001-base-project-selection.md`。
+- 新增 [ADR-0006](docs/adr/0006-sandbox-execution-degradation.md)：沙箱执行分层（L1/L2）与在受限容器中的降级。
+- 新增 W1 研究笔记（[4B 模型能力与性能实测](docs/research/2026-09-15-w1-4b-model-capability.md)）及其原始数据归档。
+- 新增开发日志 [0007](docs/devlog/0007-2026-09-15-开发环境验证与W1风险验证.md)：开发环境验证与 W1 风险验证。
+
+### Changed
+
+- **沙箱方案**：由单一用户态命名空间隔离（bwrap/firejail）改为**分层抽象 + 能力探测 + fail-secure 降级**。
+- SRS 定向修订至 **v0.1.1**：更新 `REQ-SEC-05` 验收标准、假设项 A-1/A-2、风险 R-4 与复用清单。
+- 开发环境：以 `ms-pyright.pyright` 替换 Open VSX 上不存在的 `ms-python.vscode-pylance`；修正默认深色主题 ID 为 `Dark Modern`。
 
 ### Security
 
 - 确立密钥零入库、最小权限、信任边界显式化等强制原则。
+- 新增硬规则：**隔离是否生效必须由主动探针判定，禁止以命令退出码判定**（依据：`firejail` 静默失效的实测）。
+- 新增硬规则：**降级必须显式记录，禁止静默降级**。
 
 ---
 
