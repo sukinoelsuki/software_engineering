@@ -45,6 +45,7 @@
 | [probe-methodology.md](probe-methodology.md) | **如何验证"控制是否真的生效"**——退出码 0 不等于控制生效；探针必须能区分竞争解释 | devlog 0007 / 0008，含两次自我纠错 |
 | [isolation-mechanisms.md](isolation-mechanisms.md) | 隔离与资源控制的**机制分类**，以及本开发环境的实际能力矩阵 | ADR-0007、devlog 0008 |
 | [reproducibility-and-gates.md](reproducibility-and-gates.md) | 复现性与门禁：版本分叉、证据不可变形、构建期静默失败 | devlog 0006 / 0007 |
+| [hardware-probing.md](hardware-probing.md) | **硬件探测：同一个"核数"有六个答案**——哪些来源可信，哪些会给出错误答案 | 2026-09-15 实测；设计应用见 ADR-0010 |
 
 ---
 
