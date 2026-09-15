@@ -14,12 +14,14 @@
 ```bash
 code-server --version
 command -v llama-server
+command -v codebuddy
 ```
 
 | 结果 | 处理 |
 | --- | --- |
-| ✅ 两个命令都成功 | 自定义镜像生效，**继续第 1 步** |
+| ✅ 三个命令都成功 | 自定义镜像生效，**继续第 1 步** |
 | ❌ `llama-server` 不存在 | 镜像未生效 → **跳到「故障处理 A」** |
+| ❌ `codebuddy` 不存在 | 镜像的 CodeBuddy 部分未生效 → 云开发入口页会**静默隐藏 CodeBuddy Web 入口**，跳到「故障处理 A」 |
 
 > 这一步决定了后面所有验证是否有意义。若镜像没生效，先修镜像，不要往下做。
 
@@ -35,6 +37,8 @@ pnpm --version               # 期望 9.x
 command -v bwrap             # 期望 /usr/bin/bwrap
 command -v git-lfs           # 期望有输出
 cmake --version | head -n1   # 期望有输出
+codebuddy --version          # 期望 >= 2.137.0
+code-server --list-extensions   # 核对扩展是否真的装上了（见下方说明）
 ```
 
 | 组件 | 期望 | 实际 | 通过 |
@@ -46,6 +50,23 @@ cmake --version | head -n1   # 期望有输出
 | bwrap | 有路径 | | ☐ |
 | git-lfs | 有路径 | | ☐ |
 | cmake | 有版本 | | ☐ |
+| codebuddy | ≥ 2.137.0 | | ☐ |
+
+> **关于扩展自检（待验证项 V-7）**：镜像构建时扩展安装是**失败不阻断**的，
+> 因此清单里的每一项都要在环境内用 `code-server --list-extensions` 实际核对一次。
+> 重点确认两项：
+>
+> 1. `tencent-cloud.coding-copilot`（CodeBuddy 扩展）——若缺失，说明 Open VSX 当时不可达，
+>    重跑构建即可；
+> 2. `ms-python.vscode-pylance` ——该扩展**未上架 Open VSX**（查询返回 404），
+>    极可能一直静默缺失。若确认缺失，改用 `ms-pyright.pyright`（MIT、已上架 Open VSX），
+>    并把结论回填到 `docs/devlog/0006` 的 V-7。
+
+> **关于 settings.json（人工检查点）**：`.ide/settings.json` 是 JSONC，已从 `check-json`
+> 钩子中排除（决策见 `docs/devlog/0006` §2.4.4）。这意味着它的格式合法性**不再有静态保障**——
+> 一旦写错，表现为"设置静默不生效"而不是报错，很容易被忽略。
+> 因此每次改动该文件后，都必须销毁并重启环境，确认主题与关键设置确实生效
+> （相关待验证项：V-4）。
 
 ---
 
@@ -151,7 +172,7 @@ make setup && make check
 ## 第 5 步：回填验证结果
 
 - [ ] 新建 `docs/devlog/0007-*.md` 记录本轮执行过程与结果
-- [ ] 回填 `docs/devlog/0006` 第 5 节的 V-1 ~ V-6 六项待验证结论
+- [ ] 回填 `docs/devlog/0006` 第 5 节的 V-1 ~ V-7 七项待验证结论
 - [ ] 若沙箱降级或 R-1 触发，**新增对应 ADR**
 - [ ] 更新 `docs/requirements/srs.md` 中受影响的需求条目
 
@@ -177,6 +198,9 @@ make setup && make check
    ```
 
 4. 修改后必须：**销毁当前开发环境 → 重新启动**才会重建镜像。
+
+补充：若第 0 步只有 `codebuddy` 缺失（`llama-server` 正常），说明是新增的第 5 阶段
+（CodeBuddy 安装）没有生效，而非整个镜像没生效 —— 按上面 1~4 步同样处理。
 
 ### B. bwrap / firejail 都不可用
 

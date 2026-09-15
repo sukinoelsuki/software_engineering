@@ -134,8 +134,9 @@
   "git.confirmSync": false,
   "git.enableSmartCommit": true,
   "git.openRepositoryInParentFolders": "always",
-  "gitlens.showWelcomeOnInstall": false,
-  "gitlens.showWhatsNewAfterUpgrades": false,
+  // 说明：本项目未安装 GitLens（决策见 docs/devlog/0006 §2.4.2），
+  // 故不在此保留任何 gitlens.* 设置项，避免出现指向已卸载扩展的死配置。
+  // 单人单作者仓库用内置 Source Control（含 Source Control Graph）+ Git Graph 已足够。
 
   // --------------------------------------------------------------------------
   // Docker（配合 .cnb.yml 中的 services: [docker] 使用）
