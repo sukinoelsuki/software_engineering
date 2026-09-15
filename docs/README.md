@@ -15,6 +15,7 @@
 | [`engineering/`](engineering/) | 工程流程规范：工作流、生命周期、DoD、测试策略 | 流程调整时 |
 | [`research/`](research/) | 前沿 AI 生态调研与实验结论（含失败结论） | 每次调研或实验收敛时 |
 | [`devlog/`](../devlog/) | **开发日志**（按议题/阶段分篇，过程记录） | 每次提交 |
+| [`learning/`](learning/) | **学习笔记**（面向初学者的概念讲解，按主题分篇） | 出现值得记的概念 / 讨论 / 踩坑时 |
 
 ---
 
@@ -29,6 +30,7 @@
 | 测试怎么写？要覆盖到什么程度？ | [`engineering/testing-strategy.md`](engineering/testing-strategy.md) |
 | 安全要求是什么？漏洞怎么报？ | [`../SECURITY.md`](../SECURITY.md) |
 | 某个技术决策为什么这么定？ | [`adr/`](adr/) |
+| 某个概念该怎么理解（我是初学者）？ | [`learning/`](learning/) |
 | base project 为什么选它？ | [`proposals/0001-base-project-selection.md`](proposals/0001-base-project-selection.md) |
 | AI 代理该怎么协作？ | [`../CODEBUDDY.md`](../CODEBUDDY.md) |
 
