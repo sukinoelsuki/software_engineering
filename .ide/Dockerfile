@@ -122,10 +122,10 @@ RUN set -eux; \
 #
 #    扩展源说明：code-server 默认使用 Open VSX（微软 Marketplace 的使用条款禁止
 #    非微软产品访问，故不可用）。下列扩展均已逐一核对存在于 Open VSX。
-#    已知例外：ms-python.vscode-pylance 在 Open VSX 上查无此扩展（API 两次返回 404），
-#    因此该行大概率处于"安装失败但不阻断构建"的状态 —— 记为待验证项 V-7，
-#    验证方式见 docs/engineering/post-build-checklist.md 第 1 步；若确认缺失，
-#    可改用 ms-pyright.pyright（MIT、已上架 Open VSX）作为类型检查引擎。
+#    V-7（2026-09-15 已确认）：ms-python.vscode-pylance 在 Open VSX 上查无此扩展
+#    （API 返回 404），构建期静默安装失败，环境内 code-server --list-extensions
+#    证实缺失。已改用 ms-pyright.pyright（MIT、Open VSX 有售，latest 1.1.402）
+#    作为类型检查与语言服务引擎。见 docs/devlog/0007。
 #    安装失败默认不阻断构建（避免构建期网络抖动炸掉整个镜像），
 #    但 CodeBuddy 扩展属于本项目的硬需求，已在下文自检阶段做显式校验。
 #
@@ -141,7 +141,7 @@ RUN set -eu; \
     for ext in \
         cnbcool.cnb-welcome \
         ms-python.python \
-        ms-python.vscode-pylance \
+        ms-pyright.pyright \
         ms-python.debugpy \
         charliermarsh.ruff \
         redhat.vscode-yaml \
