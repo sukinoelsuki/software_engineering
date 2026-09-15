@@ -239,6 +239,150 @@ llama-server -m /root/models/Qwen3-4B-Q4_K_M.gguf -c 4096 -t 8 -tb 8 \
 
 ---
 
+## 第 6 步（第二轮）：重启环境后的验证清单
+
+> **为什么必须先做本节**：`.ide/Dockerfile` 的改动**只有重建镜像才生效**。
+> 重启后第一件事是确认"新镜像真的生效了"，否则新数据与已有基线不可比。
+> 本轮待确认三项：
+> ① llama.cpp 固定在 commit `69eb250670f471586fcec69caacd3c014aefb185`（V-6）；
+> ② 扩展为 `ms-pyright.pyright`、无 `ms-python.vscode-pylance`（V-7）；
+> ③ 资产已按 `.ide/assets/*.txt` 预置到 `/opt/models`、`/opt/benchmarks`。
+>
+> 基线：[`docs/research/2026-09-15-w1-4b-model-capability.md`](../research/2026-09-15-w1-4b-model-capability.md)（W1）、
+> [`docs/research/2026-09-15-tiers-s-m-l-comparison.md`](../research/2026-09-15-tiers-s-m-l-comparison.md)（三档 S/M/L）。
+
+### 6.1 确认镜像已重建
+
+```bash
+llama-server --version                              # 期望输出包含 69eb250
+code-server --list-extensions | sort                # 期望有 ms-pyright.pyright，无 ms-python.vscode-pylance
+ls /opt/models /opt/benchmarks                      # 期望 4 个模型 + 3 个基准文件
+```
+
+| 检查项 | 期望 | 实际 | 通过 |
+| --- | --- | --- | --- |
+| llama.cpp 版本 | 含 `69eb250` | | ☐ |
+| pyright 扩展 | `ms-pyright.pyright` 存在 | | ☐ |
+| pylance 扩展 | **不存在** | | ☐ |
+| settings 生效范围 | 只有 `Machine` 作用域那一份有效（V-4） | | ☐ |
+
+### 6.2 补测 V-1：首次构建耗时（**只有这一次机会**）
+
+记录"销毁时刻"与"环境可用时刻"，差值即构建耗时（含 llama.cpp 源码编译与 GB 级资产下载）。
+填完请回填 [`docs/devlog/0006`](../devlog/0006-2026-09-15-开发环境搭建与技术栈定案.md) 的 V-1。
+
+| 项 | 值 |
+| --- | --- |
+| 销毁时刻 | |
+| 环境可用时刻 | |
+| **首次构建耗时** | |
+
+### 6.3 校验预置资产
+
+模型由镜像预置在 `/opt/models`（**在 `/workspace` 之外**，重启不丢；但重建镜像会重新下载）。
+**无论是否存在都必须校验摘要**——不符即禁止使用（fail-secure，与构建期同一原则）。
+
+```bash
+bash .ide/fetch-assets.sh verify /opt/models /opt/benchmarks
+
+# 缺失或校验失败时补齐（同一份脚本、同一份清单，不会引入第二个真源）
+bash .ide/fetch-assets.sh models /opt/models
+bash .ide/fetch-assets.sh benchmarks /opt/benchmarks
+```
+
+| 项 | 期望 | 实际 | 通过 |
+| --- | --- | --- | --- |
+| 4 个模型 sha256 | 与 `.ide/assets/models.txt` **逐位一致** | | ☐ |
+| 3 个基准文件 sha256 | 与 `.ide/assets/benchmarks.txt` **逐位一致** | | ☐ |
+
+> **不在此处抄写具体摘要值**：清单是唯一真源（取值方式为 HF API 的 `lfs.sha256`，见清单头部注释），
+> 抄写会在清单更新后产生"文档与事实分叉"。
+
+### 6.4 复跑性能基准（**串行：一次只跑一个模型**）
+
+三档基线是用 **llama-server 服务端计时**（`slot print_timing`）测得的，
+不是 `llama-bench`，因此复跑必须用**同一脚本、同一启动参数**，否则数字不可比。
+
+```bash
+# 脚本原文：docs/research/reports/2026-09-15-tier-comparison/HARNESS.md（tier_bench.py）
+# 启动参数与基线一致：-c 4096 -t 8 -tb 8 --reasoning off --no-webui
+python tier_bench.py --model /opt/models/MiniCPM5-2B-Q4_K_M.gguf --tier S --ctx 4096 --threads 8
+python tier_bench.py --model /opt/models/Qwen3-4B-Q4_K_M.gguf     --tier M --ctx 4096 --threads 8
+python tier_bench.py --model /opt/models/Qwen3-8B-Q4_K_M.gguf     --tier L --ctx 4096 --threads 8
+```
+
+2026-09-15 基线（同版本同参数，8 核 / 16 GiB 环境）：
+
+| 档 | 加载 | 常驻内存 | prefill | 生成 |
+| --- | --- | --- | --- | --- |
+| S（MiniCPM5-2B） | 1.28 s | 2.68 GiB | 119.1 tok/s | 27.2 tok/s |
+| M（Qwen3-4B） | 2.55 s | 4.85 GiB | 67.9 tok/s | 16.6 tok/s |
+| L（Qwen3-8B） | 3.57 s | 8.70 GiB | 35.8 tok/s | 9.4 tok/s |
+
+> **判定**：与基线差异 **> 10%** 即说明版本或环境引入了变化，**必须记录并查明原因**才能继续。
+> 所有数据须标注 llama.cpp 版本（`69eb250`）与量化档位。
+
+### 6.5 复跑能力测试（重点复核"思考模式开关"）
+
+```bash
+llama-server -m /opt/models/MiniCPM5-2B-Q4_K_M.gguf -c 8192 -t 8 --port 8080 --no-webui
+```
+
+| 请求 | 期望 | 通过 |
+| --- | --- | --- |
+| 带 `tools` + `"tool_choice":"auto"` | `finish_reason=tool_calls` | ☐ |
+| 结构化抽取 + `"chat_template_kwargs":{"enable_thinking":false}` | `finish_reason=stop` + 合法 JSON | ☐ |
+| 同一任务**不关**思考 | 观察是否出现 `length` + 空内容 | ☐ |
+
+> **判定纪律（重要）**：`finish_reason=length` 且 `content` 为空 ⇒
+> **是预算耗尽，不是能力不足**。原理见
+> [`docs/notes/thinking-mode-and-token-budget.md`](../notes/thinking-mode-and-token-budget.md)。
+
+### 6.6 本节覆盖的待验证项
+
+| 编号 | 事项 | 位置 |
+| --- | --- | --- |
+| V-1 | 首次构建耗时 | §6.2 |
+| V-6 | llama.cpp 版本固定是否生效 | §6.1 |
+| V-7 | pyright 替换是否生效 | §6.1 |
+| V-14 | 服务端 `n_slots`/`n_ctx_slot` 口径 | §6.5（正式基准需显式固定 `-np 1`） |
+
+---
+
+## 第 7 步（下一轮）：DSpark 投机解码实验
+
+> **定位**：这是"模型/系统加速"主线的**第一个可量化课题**——
+> 投机解码让一个小草稿模型先猜若干 token、由目标模型批量校验，
+> 官方称**保持目标模型输出不变**，即"可保持正确性的优化"。
+> **注意**：官方文档只给了 SGLang 的参数，**llama.cpp 路径完全未覆盖**，属未知领域。
+
+```bash
+# 草稿模型：MiniCPM5-2.6B-DSpark（约 0.65 GB，GGUF 架构为 dflash）
+# 未纳入 .ide/assets/models.txt：实验性资产，待结论明确后再决定是否固化进镜像
+curl -fsSL --retry 3 -o /opt/models/MiniCPM5-2.6B-DSpark.gguf \
+  https://huggingface.co/openbmb/MiniCPM5-2B-DSpark-GGUF/resolve/a261d2b4abc9c9ebfbad2af8a817a09802fc4ca3/MiniCPM5-2.6B-DSpark.gguf
+
+# A. 能否被 llama.cpp 识别（架构 dflash，官方未声明支持）
+llama-bench -m /opt/models/MiniCPM5-2B-Q4_K_M.gguf -md /opt/models/MiniCPM5-2.6B-DSpark.gguf \
+  -t 8 -p 512 -n 128 -r 3
+
+# B. 对照：**同一次会话内**去掉 -md 再跑一遍
+llama-bench -m /opt/models/MiniCPM5-2B-Q4_K_M.gguf -t 8 -p 512 -n 128 -r 3
+```
+
+> **对照必须同次运行**：`llama-bench` 与三档基线所用的服务端计时口径不同，
+> 历史数字**不可**直接拿来当这里的基线。
+
+| 结果 | 处理 |
+| --- | --- |
+| `-md` 不被识别 / 加载失败 | 记录"llama.cpp 路径不支持 DSpark"，**结论归档到 `docs/research/`**，实验转向 |
+| 可用 | 继续下面的验证，并**必须同时验证输出一致性**（更快但答案变了就等于没优化） |
+
+**必测项**：`tg128` 提升倍数、内存增量、**同提示词输出一致性**（投机解码理论上不改变输出）、
+若日志有则记录草稿接受率。所有数据须标注 llama.cpp 版本（`69eb250`）与量化档位。
+
+---
+
 ## 故障处理
 
 ### A. 自定义镜像没生效
