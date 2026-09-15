@@ -19,7 +19,7 @@ PYTEST_XDIST ?= -n auto
 
 .PHONY: help setup lint format format-check typecheck test test-cov test-security \
         security security-bandit security-audit commit-check changelog bump \
-        check clean distclean
+        check branch-status clean distclean
 
 # ---------------------------------------------------------------------------
 help: ## 显示所有可用目标
@@ -98,6 +98,16 @@ bump: ## 按提交历史自动提升版本号并打标签（需人工确认）
 # 聚合
 # ---------------------------------------------------------------------------
 check: format-check lint typecheck test security ## 完整自检（提交 PR 前必须全绿）
+
+# ---------------------------------------------------------------------------
+# 分支卫生（只读，不阻断）
+# ---------------------------------------------------------------------------
+# 列出"已产出但未合入 develop"的分支与开放 PR。开发环境每次从 develop 拉起、
+# 重启即清空上下文，未合入的工作在下次会话中不可见（见 ADR-0013），因此把它
+# 做成机器检查而不是记性问题。
+# 故意**不加入 check**：它是提醒，不是门禁——挂在 CI 上会让它变成永远的红灯。
+branch-status: ## 分支卫生自检：列出未合入 develop 的分支与开放 PR
+	@bash scripts/check-branch-hygiene.sh --base develop
 
 # ---------------------------------------------------------------------------
 clean: ## 清理构建与缓存产物
