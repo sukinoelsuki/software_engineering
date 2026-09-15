@@ -107,7 +107,8 @@ check: format-check lint typecheck test security ## 完整自检（提交 PR 前
 # 做成机器检查而不是记性问题。
 # 故意**不加入 check**：它是提醒，不是门禁——挂在 CI 上会让它变成永远的红灯。
 branch-status: ## 分支卫生自检：列出未合入 develop 的分支与开放 PR
-	@bash scripts/check-branch-hygiene.sh --base develop
+	@bash scripts/check-branch-hygiene.sh --base develop \
+		$(if $(STRICT),--strict,) $(if $(OFFLINE),--offline,)
 
 # ---------------------------------------------------------------------------
 clean: ## 清理构建与缓存产物
