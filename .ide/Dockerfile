@@ -122,12 +122,19 @@ RUN set -eux; \
 #
 #    扩展源说明：code-server 默认使用 Open VSX（微软 Marketplace 的使用条款禁止
 #    非微软产品访问，故不可用）。下列扩展均已逐一核对存在于 Open VSX。
-#    已知例外：ms-python.vscode-pylance 在 Open VSX 上查无此扩展（API 两次返回 404），
-#    因此该行大概率处于"安装失败但不阻断构建"的状态 —— 记为待验证项 V-7，
-#    验证方式见 docs/engineering/post-build-checklist.md 第 1 步；若确认缺失，
-#    可改用 ms-pyright.pyright（MIT、已上架 Open VSX）作为类型检查引擎。
+#
+#    V-7 已结案（2026-09-15 实测，证据见 docs/devlog/0007 §4.3）：
+#      - ms-python.vscode-pylance **不在 Open VSX**（API 返回 404），
+#        环境内 `code-server --list-extensions` 也确认它确实静默缺失 ——
+#        构建不报错，只是少一个扩展；
+#      - 故改用 ms-pyright.pyright（MIT、Open VSX 返回 200）承担编辑器侧类型提示。
+#        注意：类型检查的**门禁**由 mypy --strict 负责，编辑器扩展只影响交互体验，
+#        换掉它不改变任何验收标准。
+#
 #    安装失败默认不阻断构建（避免构建期网络抖动炸掉整个镜像），
-#    但 CodeBuddy 扩展属于本项目的硬需求，已在下文自检阶段做显式校验。
+#    代价是"缺失了也不报错"。因此**任何扩展清单改动都必须在环境内**
+#    用 `code-server --list-extensions` 与清单做集合比对（含被依赖带入的扩展），
+#    不能只看构建日志。CodeBuddy 扩展属于硬需求，已在下文自检阶段做显式校验。
 #
 #    关于容器相关扩展：
 #      安装 ms-azuretools.vscode-docker（镜像/容器/卷管理、Dockerfile 与
@@ -141,7 +148,7 @@ RUN set -eu; \
     for ext in \
         cnbcool.cnb-welcome \
         ms-python.python \
-        ms-python.vscode-pylance \
+        ms-pyright.pyright \
         ms-python.debugpy \
         charliermarsh.ruff \
         redhat.vscode-yaml \
@@ -194,6 +201,16 @@ ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
 #      - code-server（WebIDE）：~/.local/share/code-server/{User,Machine}
 #      - VS Code Desktop（Remote-SSH）：~/.vscode-server/data/{User,Machine}
 #    注：部分设置项在 Machine 作用域不生效，故同时写入 User 作用域。
+#
+#    实测（2026-09-15，见 docs/devlog/0007 V-4）：**只有 Machine 那一份真正生效**。
+#      - ~/.local/share/code-server/Machine/settings.json  → 保留本文件 ✅
+#      - ~/.local/share/code-server/User/settings.json     → 被 CNB 平台启动时
+#        写入的默认设置覆盖（1017 B，含 cnb-welcome.locale 等平台自有配置）
+#      - ~/.vscode-server/data/Machine/settings.json       → 同样被覆盖
+#      - ~/.vscode-server/data/User/settings.json          → 平台在运行期重建该目录
+#    结论：不要指望 User 与 Remote-SSH 这几条路径生效（它们是冗余保险，
+#    保留成本为零，但如果某天想让某项设置生效，只能改 Machine 那一份，
+#    并且必须**销毁重建环境**才会重新写入）。
 # ---------------------------------------------------------------------------
 COPY .ide/settings.json /root/.local/share/code-server/Machine/settings.json
 COPY .ide/settings.json /root/.local/share/code-server/User/settings.json
