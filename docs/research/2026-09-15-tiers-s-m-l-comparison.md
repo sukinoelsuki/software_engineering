@@ -8,7 +8,9 @@
   [devlog 0010](../devlog/0010-2026-09-15-动态硬件适配与分层Harness.md)
 - 时间盒：2 小时（实际约 1.5 小时，含 11.8 GB 模型下载）
 - 状态：**已完成**（单样本，结论置信度**中**）
-- 原始产物：[`reports/2026-09-15-tier-comparison/`](reports/2026-09-15-tier-comparison/)（18 个文件：各档 summary/eval 与模型原始输出）
+- 原始产物：[`reports/2026-09-15-tier-comparison/`](reports/2026-09-15-tier-comparison/)（各档 summary/eval、模型原始输出，
+  以及**性能主证据** `S/M/L.server.log.txt`——各档加载耗时与 tok/s 均取自其中的 `slot print_timing` 行）；
+  脚本逐字收录于 [`HARNESS.md`](reports/2026-09-15-tier-comparison/HARNESS.md)
 
 ---
 

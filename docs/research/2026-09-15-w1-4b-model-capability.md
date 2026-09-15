@@ -7,7 +7,9 @@
 - 时间盒：3 小时（实际使用：约 1.2 小时）
 - 状态：**已完成**
 - 原始产物：[`reports/2026-09-15-w1/`](reports/2026-09-15-w1/)（模型输出、评估结果），
-  脚本与夹具逐字收录于 [`HARNESS.md`](reports/2026-09-15-w1/HARNESS.md)
+  脚本与夹具逐字收录于 [`HARNESS.md`](reports/2026-09-15-w1/HARNESS.md)；
+  **性能数字的主证据**是原始服务日志 [`server.log.txt`](reports/2026-09-15-w1/server.log.txt)
+  （§3 的加载耗时与 tok/s 均取自其中的 `slot print_timing` 行）
 - 归档约定：**作者撰写的文档用 `.md`**（受 `ruff format` 约束），
   **采集得到的原始产物用 `.txt`**（逐字保留，不被工具改写）。原因见 `HARNESS.md` 开头。
 

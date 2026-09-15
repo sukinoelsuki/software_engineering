@@ -467,3 +467,77 @@ if __name__ == "__main__":
     print(json.dumps(report, indent=2, ensure_ascii=False))
     (W1 / "eval.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 ````
+
+---
+
+## 补充证据（2026-09-15 审计后追加）
+
+以下内容在首次归档时遗漏，经销毁环境前的完整性审计补入。**内容未经任何改写。**
+
+### 8. `start_server.sh`（启动并测量加载耗时）
+
+```text
+此脚本与 9 号脚本解决了同一个坑：早期用 `pkill -f "llama-server"` 会把执行命令的
+shell 自身也匹配杀掉（命令行里含该字符串），故改为脚本文件 + `pkill -x`。
+```
+
+````text
+#!/bin/bash
+# 启动 llama-server 并测量到 /health 就绪的耗时
+set -u
+pkill -x llama-server 2>/dev/null
+sleep 3
+rm -f /root/w1/server.log
+start=$(date +%s.%N)
+nohup llama-server -m /root/models/Qwen3-4B-Q4_K_M.gguf -c 4096 -t 8 -tb 8 \
+  --host 127.0.0.1 --port 8080 --reasoning off --no-webui --metrics \
+  > /root/w1/server.log 2>&1 &
+for _ in $(seq 1 600); do
+  if curl -sS --max-time 1 http://127.0.0.1:8080/health 2>/dev/null | grep -q '"ok"'; then
+    break
+  fi
+  sleep 0.2
+done
+end=$(date +%s.%N)
+python3 -c "print(f'模型加载耗时(到 /health 就绪) = {$end-$start:.2f} s')"
+pid=$(pgrep -x llama-server | head -n1)
+echo "llama-server PID = ${pid}"
+grep -E "VmHWM|VmRSS" /proc/"${pid}"/status
+````
+
+### 9. `start_cold.sh`（尝试冷启动对照；容器内 drop_caches 无权限）
+
+````text
+#!/bin/bash
+set -u
+pkill -x llama-server 2>/dev/null
+sleep 3
+sync
+if echo 3 > /proc/sys/vm/drop_caches 2>/dev/null; then
+  echo "drop_caches: 成功（冷缓存）"
+else
+  echo "drop_caches: 无权限（无法清缓存）"
+fi
+rm -f /root/w1/server.log
+start=$(date +%s.%N)
+nohup llama-server -m /root/models/Qwen3-4B-Q4_K_M.gguf -c 4096 -t 8 -tb 8 \
+  --host 127.0.0.1 --port 8080 --reasoning off --no-webui --metrics \
+  > /root/w1/server.log 2>&1 &
+for _ in $(seq 1 900); do
+  if curl -sS --max-time 1 http://127.0.0.1:8080/health 2>/dev/null | grep -q '"ok"'; then
+    break
+  fi
+  sleep 0.2
+done
+end=$(date +%s.%N)
+python3 -c "print(f'加载耗时(到 /health 就绪) = {$end-$start:.2f} s')"
+pid=$(pgrep -x llama-server | head -n1)
+echo "PID = ${pid}"
+grep -E "VmHWM|VmRSS" /proc/"${pid}"/status
+````
+
+### 10. `server.log.txt`（原始服务日志 —— 性能数字的主证据）
+
+研究笔记中引用的加载耗时、prefill 速率、生成速率**均取自本日志**的
+`slot print_timing` 行（`prompt eval time` / `eval time`），
+而非客户端端到端计时。本文件逐字收录原始日志。
