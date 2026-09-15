@@ -194,6 +194,13 @@ ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
 #      - code-server（WebIDE）：~/.local/share/code-server/{User,Machine}
 #      - VS Code Desktop（Remote-SSH）：~/.vscode-server/data/{User,Machine}
 #    注：部分设置项在 Machine 作用域不生效，故同时写入 User 作用域。
+#
+#    V-4（2026-09-15 实测结论）：四条 COPY 中**只有 code-server 的 Machine 作用域
+#    真实生效**（该路径与 CNB 官方示例一致）。其余三条在运行期会被平台自身写入的
+#    文件（内容为 .cnb.yml 等 YAML schema）取代，属"写入无效但无害"——
+#    平台写入发生在本 COPY 之后，因此不会互相破坏。保留这四条的理由是：
+#    在不同平台版本或 Remote-SSH 客户端下生效范围可能不同，删掉的收益小于风险；
+#    但**不要**据此认为"只写 Machine 就够"或"四条都一定生效"。
 # ---------------------------------------------------------------------------
 COPY .ide/settings.json /root/.local/share/code-server/Machine/settings.json
 COPY .ide/settings.json /root/.local/share/code-server/User/settings.json

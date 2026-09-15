@@ -12,10 +12,12 @@
   // --------------------------------------------------------------------------
   // 主题与外观（默认使用深色主题）
   // --------------------------------------------------------------------------
-  "workbench.colorTheme": "Default Dark Modern",
-  // 若上述主题在当前 code-server 版本中不存在，可改用：
-  //   "Default Dark+"（旧版默认深色）
-  "workbench.preferredDarkColorTheme": "Default Dark Modern",
+  // 注意：主题 ID 在本版本 code-server（1.137.0）中是 "Dark Modern"，
+  // 没有 "Default " 前缀；写成 "Default Dark Modern" 会被忽略并静默回退默认主题。
+  // 依据：镜像内 theme-defaults/package.json 的 themes[].id 实测（见 docs/devlog/0007）。
+  "workbench.colorTheme": "Dark Modern",
+  // 备选（同版本内确认存在）："Dark+"（旧版默认深色）、"Dark 2026"。
+  "workbench.preferredDarkColorTheme": "Dark Modern",
   "workbench.iconTheme": "vs-seti",
   "workbench.startupEditor": "none",
   "workbench.tree.indent": 16,
