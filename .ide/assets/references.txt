@@ -1,0 +1,37 @@
+# ============================================================================
+# 开源 Harness 参考资料清单（构建期浅克隆进镜像，供离线查阅）
+#
+# 位置：镜像内 /opt/references/harness —— 在 /workspace **之外**，作为项目 reference。
+# 用途：设计自研 Harness 时对照成熟实现（工具集、上下文管理、执行环境、评估）。
+#       这是**只读参考资料**，不参与构建、不参与运行、不构成依赖。
+#
+# 格式（每行一个仓库，字段以 `|` 分隔，空行与 `#` 开头的行为注释）：
+#   <目录名>|<仓库 URL>|<固定提交 SHA>|<许可证>|<侧重|实测浅克隆体积|用途说明>
+#
+# 【为什么必须固定到提交 SHA】
+#   分支与标签会移动。固定到 SHA 才能保证「今天读的代码」与「几周后读的代码」一致，
+#   否则引用与结论会随上游漂移而失效。升级参考资料时改这里，并记录到 devlog。
+#
+# 【许可证】
+#   全部为 MIT 或 Apache-2.0，允许内部参考与引用。本清单**只做阅读用**，
+#   不分发、不再许可、不修改，故不触发额外的合规义务。
+#   引用其代码/设计时仍须按项目规范注明出处（路径 + 提交 SHA）。
+#
+# 【体积】
+#   浅克隆实测合计约 447 MB（含 .git，保留 .git 以便追溯固定提交）。
+#   体积最大的三个是 aider(141M)、ollama(85M)、SWE-agent(66M)——它们是"大型对照"，
+#   若需精简镜像，删除对应行即可（端侧三项为优先保留项）。
+#
+# 【端侧优先】
+#   本项目面向低资源/离线环境，因此**端侧实现比大型实现更有参考价值**：
+#   openharness / agentcpm / tinyagent 三项是核心参考，其余为对照。
+# ============================================================================
+
+openharness|https://github.com/HKUDS/OpenHarness|9b2efd795c6aa09f88b0c257d269a9e518da6ae7|MIT|端侧·核心|23 MB|轻量 Agent Harness（纯 Python，约 1.17 万行）。定位为"包住模型的完整基础设施"，含内置个人助理形态；体量小、可读性高，是设计自研 Harness 的首选对照
+agentcpm|https://github.com/OpenBMB/AgentCPM|4a43561e790c154292798b3edd50171f71241cec|Apache-2.0|端侧·核心|37 MB|端侧 agent 全链路基础设施：AgentRL（异步 RL 训练）、AgentDock（**工具沙箱统一管理与调度**）、评估平台。与本项目"安全执行 + 端侧"两条主线高度相关
+tinyagent|https://github.com/SqueezeAILab/TinyAgent|cc45c0e842f5d163c3df1c8f41d60e90e005867d|MIT|端侧·核心|30 MB|TinyAgent（EMNLP 2024 Demo）：端侧小模型函数调用的奠基工作，给出"SLM 能否可靠调用工具"的早期实证与 LLMCompiler 路线；用于对照我们对 4B 模型的判断
+swe-agent|https://github.com/SWE-agent/SWE-agent|3ea751c087f32b16e039a2233dd6eefecef325d5|MIT|大型·对照|66 MB|SWE-bench 系代表。核心贡献是 ACI（Agent-Computer Interface）设计——把"模型与计算机的接口"当作一等设计对象；其反馈设计（简洁错误信息、可撤销编辑）对本项目提示分层有直接借鉴
+openhands|https://github.com/OpenHands/OpenHands|82203bb1011cdf0e6eb318a32111806a6f6f734a|MIT|大型·对照|27 MB|全功能软件工程 agent 平台。**容器沙箱与运行时分层**（执行隔离、会话运行时、凭据隔离）是安全主线的重点对照对象
+aider|https://github.com/Aider-AI/aider|5dc9490bb35f9729ef2c95d00a19ccd30c26339c|Apache-2.0|大型·对照|141 MB|终端 AI 结对编程。重点是**上下文管理策略**（仓库地图 repo-map、只发送相关片段）与编辑格式设计——与本项目"上下文效率引擎"目标直接对应
+qwen-agent|https://github.com/QwenLM/qwen-agent|31a4d36d123688581a9e9744427272b33ce940e0|Apache-2.0|大型·对照|41 MB|Qwen 官方 agent 框架，函数调用与工具注册方式规范；因主模型同为 Qwen 系，其提示与工具描述写法具有可移植性
+ollama|https://github.com/ollama/ollama|38fdb5dd58c761f850cddd6ba1e78a7954646b4f|MIT|端侧·部署对照|85 MB|端侧模型部署的工程标杆（Go，单二进制分发）。本项目在 SRS §2.1 中以其为"只解决部署、不解决 agent 化"的对照，故保留源码以便实证核对

@@ -1,0 +1,24 @@
+# ============================================================================
+# 端侧模型清单（构建期下载并固化进镜像）
+#
+# 位置：镜像内 /opt/models —— 在 /workspace **之外**，避免 GB 级二进制进入版本管理。
+# 用途：横向能力对比（两个 4B 级端侧模型的同题对照）与后续 Harness 调优实验。
+#
+# 格式（每行一个模型，字段以 `|` 分隔，空行与 `#` 开头的行为注释）：
+#   <sha256>|<文件名>|<下载 URL>|<量化档>|<体积>|<用途说明>
+#
+# 【校验值来源与核验方式】
+#   sha256 取自 Hugging Face 官方 API 的 `lfs.sha256` 字段：
+#     https://huggingface.co/api/models/<repo>?blobs=true
+#   其中 Qwen3-4B-Q4_K_M.gguf 的摘要已于 2026-09-15 与**本地实际下载结果
+#   交叉验证一致**（sha256sum 输出与 API 逐字符相同），因此本清单的取值方式可信。
+#   AgentCPM 文件的摘要来自同一 API，尚未做本地交叉验证——脚本的校验失败即中断
+#   构建，因此不存在"装错了却继续"的风险。
+#
+# 【新增模型的约束】
+#   必须同时提供 sha256 与来源 URL；禁止引入来源不明的权重（见 SECURITY.md 供应链条款）。
+#   新增后需同步 .cnb.yml 的 build.by（本文件是构建期依赖）。
+# ============================================================================
+
+7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5|Qwen3-4B-Q4_K_M.gguf|https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf|Q4_K_M|2.50 GB|通用基线。W1 已实测：生成 16.1~16.8 tok/s、prefill 66~68 tok/s、常驻约 4.95 GiB（见 docs/research/2026-09-15-w1-4b-model-capability.md）
+16e4f54d55b9e76a2a1636464d772b659bd352f599ef3950ed98c6a26571adea|AgentCPM-Explore.Q4_K_M.gguf|https://huggingface.co/openbmb/AgentCPM-Explore-GGUF/resolve/main/AgentCPM-Explore.Q4_K_M.gguf|Q4_K_M|2.72 GB|端侧 agent 专用（openbmb，Apache-2.0，4B 全参）。宣称在 GAIA/HLE/BrowseComp 等 8 个长程 agent 基准上同参数量级 SOTA，支持 100+ 轮环境交互

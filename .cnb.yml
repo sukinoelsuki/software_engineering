@@ -82,8 +82,14 @@
       docker:
         build:
           dockerfile: .ide/Dockerfile
+          # build.by 必须列出**构建期用到的所有文件**，否则构建报错（CNB 硬性约束）。
+          # 新增：预置模型与参考资料的清单、以及获取脚本（见 Dockerfile 第 10/11 阶段）。
+          # 改动这些文件会改变构建输入 → 触发镜像重建。
           by:
             - .ide/settings.json
+            - .ide/assets/models.txt
+            - .ide/assets/references.txt
+            - .ide/fetch-assets.sh
         image: cnbcool/default-dev-env:latest
       services:
         - vscode

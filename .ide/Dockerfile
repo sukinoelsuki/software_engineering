@@ -219,7 +219,42 @@ RUN set -eux; \
 WORKDIR /workspace
 
 # ---------------------------------------------------------------------------
-# 自检：构建时验证关键组件是否可用（失败即中断构建，避免交付一个坏环境）
+# 10. 预置端侧模型（两个 4B 级，用于横向能力对比）
+#
+#     位置：/opt/models —— **在 /workspace 之外**。理由：
+#       ① GB 级二进制不得进入版本管理；
+#       ② 工作区可能被重新克隆/清空，模型不应随之丢失。
+#
+#     清单见 .ide/assets/models.txt（sha256、体积、来源 URL 逐项记录）。
+#     校验和不符即**中断构建**——即 fail-secure：宁可构建失败，
+#     也不交付一个装了错资产的镜像。
+#
+#     ⚠️ 层序很重要：Docker 层缓存按顺序失效，把 GB 级下载放在靠后位置，
+#     改文档 / 改设置都不会触发重新下载；模型清单若未变，重建时直接复用缓存。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/models.txt .ide/fetch-assets.sh /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh models /opt/models
+
+# ---------------------------------------------------------------------------
+# 11. 预置开源 Harness 参考资料（仅离线查阅，不参与构建与运行）
+#
+#     位置：/opt/references/harness
+#     清单见 .ide/assets/references.txt：全部固定到具体**提交 SHA**（不是分支或标签），
+#     许可证均为 MIT / Apache-2.0，实测浅克隆合计约 447 MB。
+#     **端侧实现为重点参考**（openharness / agentcpm / tinyagent），
+#     其余为大型实现对照（SWE-agent / OpenHands / aider / qwen-agent / ollama）。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/references.txt /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh references /opt/references/harness
+
+# ---------------------------------------------------------------------------
+# 12. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
+#
+#     原则：凡是"失败不阻断构建"的环节，都必须在这里显式校验一次——
+#     镜像构建期的静默失败已经出现过两次：CodeBuddy 漏装（0006 §2.4.1）、
+#     扩展在 Open VSX 上 404 导致静默不装（0007 §2.5 V-7）。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
     python -V; \
@@ -233,4 +268,9 @@ RUN set -eux; \
     codebuddy --version; \
     code-server --version; \
     code-server --list-extensions; \
-    code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'
+    code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'; \
+    code-server --list-extensions | grep -qix 'ms-pyright.pyright'; \
+    bash /tmp/assets/fetch-assets.sh verify /opt/models; \
+    test -d /opt/references/harness; \
+    test -n "$(find /opt/references/harness -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
+    du -sh /opt/models /opt/references/harness
