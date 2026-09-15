@@ -38,6 +38,15 @@
   新增学习笔记 [hardware-probing.md](docs/notes/hardware-probing.md)。
 - 预置模型清单新增 **`Qwen3-8B-Q4_K_M`（5.03 GB）** 作为 M 档主力（对应"稍好的硬件条件"）。
 - SRS 新增 `REQ-PERF-05`（硬件能力探测）与 `REQ-PERF-06`（档位化动态适配）→ **v0.1.2**。
+- 恢复 `docs/engineering/post-build-checklist.md` 第 6/7 步：**重启环境后的验证清单**
+  （镜像重建确认、首次构建耗时、资产摘要校验、串行复跑基准、思考模式复核）与
+  **DSpark 投机解码实验步骤**（原在分支合并时被 develop 一侧覆盖而丢失，回收时已按
+  当前路径与基线口径适配）。
+- 新增学习笔记 [`on-device-model-selection.md`](docs/notes/on-device-model-selection.md)、
+  [`thinking-mode-and-token-budget.md`](docs/notes/thinking-mode-and-token-budget.md)
+  （均由分支合并中丢失的 `docs/learning/` 篇目迁入改写）与
+  [`conflict-resolution-and-branch-hygiene.md`](docs/notes/conflict-resolution-and-branch-hygiene.md)。
+- 新增开发日志 [0011](docs/devlog/0011-2026-09-16-分支分叉与开发环境重建.md)。
 - 新增开发日志 [0010](docs/devlog/0010-2026-09-15-动态硬件适配与分层Harness.md)。
 - 新增 [ADR-0011](docs/adr/0011-tier-composition-revision.md)：档位构成修订为
   **S/M/L = 2B / 4B / 8B**，三档**全部可在当前云环境验证**（14B 移出档位矩阵）。
@@ -82,6 +91,11 @@
 - 对齐 pre-commit 钩子版本至 `uv.lock` 锁定版本（ruff / mypy / commitizen / bandit），
   消除"钩子绿、`make check` 红"的版本分叉；并写明版本对齐规则。
 - 修正 `docs/README.md` 文档地图中 devlog 的失效链接。
+- **修正开发环境镜像构建失败**：`.ide/fetch-assets.sh` 以"脚本所在目录 + `assets/`"解析清单，
+  而 Dockerfile 把脚本与清单平铺进同一目录，构建在第 17 步以"找不到清单文件"中止。
+  镜像内改为复刻仓库 `.ide/` 的目录结构（脚本 `/tmp/ide/`、清单 `/tmp/ide/assets/`）。
+- **恢复 llama.cpp 版本固定**（原 V-6 修复在分支合并时被 develop 一侧覆盖而丢失）：
+  由"跟随 master"改回固定 commit `69eb250`，保证性能基线与 W1 / 三档实测可比。
 
 ---
 
