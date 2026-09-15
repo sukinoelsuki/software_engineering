@@ -44,6 +44,11 @@
 - 预置模型清单新增 **`MiniCPM5-2B-Q4_K_M`（1.56 GB，Apache-2.0）** 作为 S 档（对应移动端）。
 - 新增研究笔记 [S/M/L 三档对比](docs/research/2026-09-15-tiers-s-m-l-comparison.md)
   与学习笔记 [evaluation-pitfalls.md](docs/notes/evaluation-pitfalls.md)。
+- 新增 [ADR-0012](docs/adr/0012-benchmark-task-set-selection.md) 与
+  [研究笔记](docs/research/2026-09-15-benchmark-selection.md)：基准任务集选型。
+- **引入基准任务集**（镜像内 `/opt/benchmarks`）：HumanEval+（164）、MBPP+（378）、
+  BigCodeBench v0.1.4（1140），合计约 23 MB，均为 Apache-2.0，**离线可跑且每题自带单元测试**。
+- 参考资料新增 `harbor`（Terminal-Bench 团队的 agent 评估与优化框架，Apache-2.0）。
 
 ### Changed
 
