@@ -23,12 +23,23 @@
 - 新增 [ADR-0006](docs/adr/0006-sandbox-execution-degradation.md)：沙箱执行分层（L1/L2）与在受限容器中的降级。
 - 新增 W1 研究笔记（[4B 模型能力与性能实测](docs/research/2026-09-15-w1-4b-model-capability.md)）及其原始数据归档。
 - 新增开发日志 [0007](docs/devlog/0007-2026-09-15-开发环境验证与W1风险验证.md)：开发环境验证与 W1 风险验证。
+- **预置环境资产**：两个 4B 级端侧模型（Qwen3-4B、AgentCPM-Explore）与 8 个开源 Harness 参考仓库
+  随镜像固化（`.ide/assets/` 清单 + `.ide/fetch-assets.sh`，均带 sha256 校验与固定提交）。
+- 新增 [ADR-0007](docs/adr/0007-sandbox-capability-matrix.md)：修正沙箱可用性结论，
+  按"机制类别"划分隔离能力；新增 [ADR-0008](docs/adr/0008-dev-test-environment-strategy.md)：
+  开发与测试环境策略。
+- 新增 [`docs/engineering/test-environments.md`](docs/engineering/test-environments.md)：
+  测试环境分层（T0~T3）与成果保护（P-1~P-3）操作细则。
+- 新增开发日志 [0008](docs/devlog/0008-2026-09-15-环境资产预置与沙箱后端修正.md)。
 
 ### Changed
 
 - **沙箱方案**：由单一用户态命名空间隔离（bwrap/firejail）改为**分层抽象 + 能力探测 + fail-secure 降级**。
 - SRS 定向修订至 **v0.1.1**：更新 `REQ-SEC-05` 验收标准、假设项 A-1/A-2、风险 R-4 与复用清单。
 - 开发环境：以 `ms-pyright.pyright` 替换 Open VSX 上不存在的 `ms-python.vscode-pylance`；修正默认深色主题 ID 为 `Dark Modern`。
+- **隔离能力表述由"档位"改为"逐维度"**：命名空间/mount 类有效、cgroup 类（`--memory`/`--pids-limit`）
+  静默失效、setrlimit 类有效；资源限制一律改用 setrlimit。
+- 测试环境按影响范围分层为 T0~T3；破坏性测试（T2）在一次性容器内执行，工作区只读挂载。
 
 ### Security
 
