@@ -6,6 +6,11 @@
 > **执行前提**：`.ide/Dockerfile` 已构建、开发环境已能进入。
 > **记录位置**：结果写入 `docs/devlog/` 的新一篇，并回填
 > [0006 的待验证表](../devlog/0006-2026-09-15-开发环境搭建与技术栈定案.md#5-问题与卡点)。
+>
+> **当前进度（2026-09-15）**：第 0、1、2、3 步 **已完成**，
+> 结果见 [`docs/devlog/0007`](../devlog/0007-2026-09-15-开发环境验证与沙箱方案修正.md)；
+> **剩余第 4 步（W1 风险验证）未执行**，第 5 步部分完成。
+> 本清单已按实测结果修正了两处判定标准（第 1 步的扩展核对、第 2 步的沙箱判定）。
 
 ---
 
@@ -52,15 +57,17 @@ code-server --list-extensions   # 核对扩展是否真的装上了（见下方�
 | cmake | 有版本 | | ☐ |
 | codebuddy | ≥ 2.137.0 | | ☐ |
 
-> **关于扩展自检（待验证项 V-7）**：镜像构建时扩展安装是**失败不阻断**的，
+> **关于扩展自检（V-7 已结案，2026-09-15）**：镜像构建时扩展安装是**失败不阻断**的，
 > 因此清单里的每一项都要在环境内用 `code-server --list-extensions` 实际核对一次。
-> 重点确认两项：
+> **核对方法必须是"集合比对"，不是"有没有报错"**——实测的核对结果：
 >
-> 1. `tencent-cloud.coding-copilot`（CodeBuddy 扩展）——若缺失，说明 Open VSX 当时不可达，
->    重跑构建即可；
-> 2. `ms-python.vscode-pylance` ——该扩展**未上架 Open VSX**（查询返回 404），
->    极可能一直静默缺失。若确认缺失，改用 `ms-pyright.pyright`（MIT、已上架 Open VSX），
->    并把结论回填到 `docs/devlog/0006` 的 V-7。
+> | 项 | 结论 |
+> | --- | --- |
+> | `tencent-cloud.coding-copilot`（CodeBuddy 扩展） | ✅ 已装（缺失说明 Open VSX 当时不可达，重跑构建即可） |
+> | `ms-python.vscode-pylance` | ❌ **确认缺失**（Open VSX 返回 404，包不在其上架列表中）→ 已改用 `ms-pyright.pyright` |
+> | 请求 17 个 vs 实装 18 个 | 差额来自两个**被依赖自动带入**的扩展（`ms-python.vscode-python-envs`、`ms-azuretools.vscode-containers`），已核对无误 |
+>
+> 证据与完整清单见 [`docs/devlog/0007`](../devlog/0007-2026-09-15-开发环境验证与沙箱方案修正.md) §4.3。
 
 > **关于 settings.json（人工检查点）**：`.ide/settings.json` 是 JSONC，已从 `check-json`
 > 钩子中排除（决策见 `docs/devlog/0006` §2.4.4）。这意味着它的格式合法性**不再有静态保障**——
@@ -72,25 +79,60 @@ code-server --list-extensions   # 核对扩展是否真的装上了（见下方�
 
 ## 第 2 步：沙箱可用性（决定方案是否需要降级）
 
+> **本步已于 2026-09-15 执行完毕，结论：namespace 型沙箱全线不可用，
+> 方案已改为容器边界（[ADR-0006](../adr/0006-sandbox-isolation-strategy.md)）。**
+> 下方命令保留，供将来更换运行平台时重新评估；**但判定标准已修正**（见文末）。
+
 ```bash
-# 主方案：bubblewrap
+# 原主方案：bubblewrap
 bwrap --bind / / --tmpfs /tmp --proc /proc --dev /dev /bin/echo sandbox-ok
 
-# 备选方案：firejail
+# 原备选方案：firejail
 firejail --quiet --noprofile /bin/echo sandbox-ok
 ```
 
-| 命令 | 结果 | 通过 |
-| --- | --- | --- |
-| bwrap | 输出 `sandbox-ok` / 报错信息 | ☐ |
-| firejail | 输出 `sandbox-ok` / 报错信息 | ☐ |
+⚠️ **不要用退出码判断沙箱是否生效**。实测：`firejail` 输出 `sandbox-ok`、退出码 0，
+但去掉 `--quiet` 后它会打印：
+
+```text
+Warning: an existing sandbox was detected. /bin/sh will run without any additional sandboxing features
+```
+
+即它在检测到"已在沙箱中"后**放弃全部加固并直接执行**——这是一个**假阳性**。
+
+**正确的验证方法：证明隔离"确实发生"**（任选其一，或都做）：
+
+```bash
+# 方法 1：对比 namespace inode（宿主 vs 沙箱内），完全一致即"没有隔离"
+for n in user mnt pid net ipc uts; do
+  printf '%-4s host=%s sandbox=%s\n' "$n" \
+    "$(readlink /proc/self/ns/$n)" \
+    "$(firejail --quiet --noprofile /bin/sh -c "readlink /proc/self/ns/$n")"
+done
+
+# 方法 2：直接探测内核是否允许创建命名空间（本平台返回 EPERM）
+python3 -c "import ctypes,os; libc=ctypes.CDLL('libc.so.6',use_errno=True); \
+r=libc.unshare(0x10000000); print('unshare(CLONE_NEWUSER) ->', r, os.strerror(ctypes.get_errno()) if r else 'OK')"
+
+# 方法 3（当前采用的方案）：以容器为边界，验证加固参数逐项生效
+docker run --rm --network none --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --cap-drop=ALL --security-opt=no-new-privileges \
+  --pids-limit=64 --memory=256m -u 65534:65534 alpine:latest \
+  sh -c 'id; touch /x || echo "根只读 ✓"; wget -T3 -q -O- http://example.com || echo "无网络 ✓"'
+```
 
 **判定**：
 
-- ✅ 任一可用 → 沙箱方案可行，继续。
-- ❌ 两者都失败（常见于容器禁用 unprivileged user namespaces）→
-  **沙箱需降级**为「子进程 + 资源限制 + 路径白名单 + 人工确认」，
+- ✅ 沙箱内 namespace inode 与宿主**不同**，或"方法 3"的四项加固全部生效 → 隔离成立，继续。
+- ⚠️ 有输出但 inode **完全相同** → **视为不可用**（假阳性），按失败处理。
+- ❌ 不可用（本平台即如此：容器禁用了嵌套命名空间且无 `CAP_SYS_ADMIN`，
+  Landlock 又因内核 5.4 不可用）→ **改用容器边界**；
+  若连 Docker 也不可得，才降级为「子进程 + 资源限制 + 路径白名单 + 人工确认」，
   并**新增 ADR 记录**该降级决策。
+
+> **降级绝不能静默发生**：隔离不可用时的默认行为必须是**拒绝执行**（fail-secure），
+> 而不是"悄悄换成无隔离执行"。
 
 ---
 
@@ -171,10 +213,11 @@ make setup && make check
 
 ## 第 5 步：回填验证结果
 
-- [ ] 新建 `docs/devlog/0007-*.md` 记录本轮执行过程与结果
-- [ ] 回填 `docs/devlog/0006` 第 5 节的 V-1 ~ V-7 七项待验证结论
-- [ ] 若沙箱降级或 R-1 触发，**新增对应 ADR**
-- [ ] 更新 `docs/requirements/srs.md` 中受影响的需求条目
+- [x] 新建 `docs/devlog/0007-*.md` 记录本轮执行过程与结果
+- [x] 回填 `docs/devlog/0006` 第 5 节的 V-1 ~ V-8 待验证结论（并新增 V-9：firejail 假阳性）
+- [x] 沙箱方案变更 → **新增 [ADR-0006](../adr/0006-sandbox-isolation-strategy.md)**（状态：提议中，待所有者确认）
+- [ ] 更新 `docs/requirements/srs.md` 中受影响的需求条目（含 REQ-SEC-05 的验收标准）
+- [ ] ADR-0006 确认后，更新 `docs/design/threat-model/` 中"命令执行"相关威胁条目
 
 ---
 
@@ -204,8 +247,13 @@ make setup && make check
 
 ### B. bwrap / firejail 都不可用
 
-- 记录到 devlog，并**新增 ADR** 说明降级方案；
-- 降级方案：子进程 + 资源限制（CPU/内存/时间）+ 路径白名单 + 危险操作人工确认；
+**本平台已命中该分支（2026-09-15）**，处置如下：
+
+- 记录到 devlog（[0007](../devlog/0007-2026-09-15-开发环境验证与沙箱方案修正.md) §4.6 / §4.7），
+  并**新增 ADR**（[ADR-0006](../adr/0006-sandbox-isolation-strategy.md)）；
+- 第一顺位方案改为**容器边界**（Docker 一次性容器 + 加固参数）；
+- 只有在容器也不可得时，才降级为「子进程 + 资源限制（CPU/内存/时间）+ 路径白名单 + 危险操作人工确认」；
+- **降级必须显式**：默认行为是**拒绝执行**，禁止静默以无隔离方式执行；
 - 同步更新 SRS 中 REQ-SEC-05 的验收标准。
 
 ### C. `make check` 失败
