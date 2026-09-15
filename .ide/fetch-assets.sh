@@ -9,8 +9,10 @@
 #
 # 【用法】
 #   fetch-assets.sh models     [目标目录]   # 下载并校验模型（默认 /opt/models）
+#   fetch-assets.sh benchmarks [目标目录]   # 下载并校验基准任务集（默认 /opt/benchmarks）
 #   fetch-assets.sh references [目标目录]   # 按固定提交浅克隆参考仓库
-#   fetch-assets.sh verify     [模型目录]   # 只校验已有模型，不下载（用于构建自检与运行期复查）
+#   fetch-assets.sh verify     [模型目录] [基准目录]  # 只校验已有资产，不下载（构建自检与运行期复查）
+#   fetch-assets.sh plan                            # 只解析清单并打印计划，不下载
 #
 # 【设计要点】
 #   - **fail-secure**：校验和不符立即非零退出，中断镜像构建——绝不静默接受坏资产；
@@ -26,6 +28,7 @@ set -euo pipefail
 
 readonly ASSETS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/assets"
 readonly MODELS_MANIFEST="${ASSETS_DIR}/models.txt"
+readonly BENCHMARKS_MANIFEST="${ASSETS_DIR}/benchmarks.txt"
 readonly REFERENCES_MANIFEST="${ASSETS_DIR}/references.txt"
 
 log() { printf '[assets] %s\n' "$*"; }
@@ -45,18 +48,19 @@ require_file() {
 }
 
 # ---------------------------------------------------------------------------
-# models：下载并校验模型权重
+# 共用：按清单下载 + sha256 校验（模型与基准任务集同构，共用一份逻辑）
+#   清单行格式：<sha256>|<文件名>|<URL>|<格式>|<体积>|<说明>
 # ---------------------------------------------------------------------------
-cmd_models() {
-    local dest_dir="${1:-/opt/models}"
-    require_file "${MODELS_MANIFEST}"
+fetch_manifest() {
+    local manifest="$1" dest_dir="$2" label="$3"
+    require_file "${manifest}"
     mkdir -p "${dest_dir}"
 
-    local raw sha name url quant size note path actual
+    local raw sha name url fmt size note path actual
     # 先整行读入再切分：注释行的字段数与数据行不同，直接按 `|` 读会错位
     while IFS= read -r raw || [[ -n "${raw}" ]]; do
         is_skippable "${raw}" && continue
-        IFS='|' read -r sha name url quant size note <<< "${raw}"
+        IFS='|' read -r sha name url fmt size note <<< "${raw}"
         path="${dest_dir}/${name}"
 
         if [[ -f "${path}" ]]; then
@@ -69,7 +73,7 @@ cmd_models() {
             rm -f "${path}"
         fi
 
-        log "下载 ${name}（${quant}，${size}）—— 大文件可能需要数分钟"
+        log "下载${label} ${name}（${fmt}，${size}）"
         log "  来源：${url}"
         # -f：HTTP 错误即失败；-L：跟随 HF 的 302 到 CDN；--retry：网络抖动可自愈
         # --silent --show-error：抑制进度条（构建日志里是噪音），但保留错误输出
@@ -84,7 +88,109 @@ cmd_models() {
         fi
         mv "${path}.part" "${path}"
         log "  校验通过：${name}"
-    done < "${MODELS_MANIFEST}"
+    done < "${manifest}"
+}
+
+# ---------------------------------------------------------------------------
+# models：下载并校验模型权重
+# ---------------------------------------------------------------------------
+cmd_models() {
+    fetch_manifest "${MODELS_MANIFEST}" "${1:-/opt/models}" ""
+}
+
+# ---------------------------------------------------------------------------
+# benchmarks：获取并校验基准任务集
+#   支持两种来源（格式见 assets/benchmarks.txt）：
+#     file     —— 直接下载一个文件
+#     hf-rows  —— 经 HF datasets-server 的 rows API 取全部行落为 JSONL
+#                （HF 数据集多为 parquet，读它需 pyarrow；rows API 返回 JSON，
+#                 用标准库即可处理，**不引入新依赖**）
+# ---------------------------------------------------------------------------
+fetch_hf_rows() {
+    local dataset="$1" config="$2" split="$3" out="$4"
+    python3 - "$dataset" "$config" "$split" "$out" <<'PYEOF'
+import json
+import sys
+import urllib.parse
+import urllib.request
+
+dataset, config, split, out = sys.argv[1:5]
+base = "https://datasets-server.huggingface.co/rows"
+offset, written, total = 0, 0, None
+with open(out, "w", encoding="utf-8") as fh:
+    while True:
+        query = urllib.parse.urlencode(
+            {
+                "dataset": dataset,
+                "config": config,
+                "split": split,
+                "offset": offset,
+                "length": 100,
+            }
+        )
+        with urllib.request.urlopen(f"{base}?{query}", timeout=180) as resp:
+            data = json.load(resp)
+        rows = data.get("rows") or []
+        if total is None:
+            total = data.get("num_rows_total", len(rows))
+        for item in rows:
+            # 行序按 offset 递增、字段按 key 排序 → 生成结果确定，摘要可复现
+            fh.write(json.dumps(item["row"], ensure_ascii=False, sort_keys=True) + "\n")
+            written += 1
+        offset += len(rows)
+        if not rows or written >= (total or 0):
+            break
+print(f"  rows API：{dataset} {split} 取回 {written} / {total} 行")
+PYEOF
+}
+
+cmd_benchmarks() {
+    local dest_dir="${1:-/opt/benchmarks}"
+    require_file "${BENCHMARKS_MANIFEST}"
+    mkdir -p "${dest_dir}"
+
+    local raw kind sha name src config split size note path actual
+    while IFS= read -r raw || [[ -n "${raw}" ]]; do
+        is_skippable "${raw}" && continue
+        IFS='|' read -r kind sha name src config split size note <<< "${raw}"
+        path="${dest_dir}/${name}"
+
+        if [[ -f "${path}" ]]; then
+            actual="$(sha256sum "${path}" | cut -d' ' -f1)"
+            if [[ "${actual}" == "${sha}" ]]; then
+                log "跳过（已存在且校验通过）：${name}"
+                continue
+            fi
+            log "摘要不符，重新获取：${name}"
+            rm -f "${path}"
+        fi
+
+        log "获取基准 ${name}（${size}）"
+        case "${kind}" in
+            file)
+                log "  来源：${src}"
+                curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 \
+                    --output "${path}.part" "${src}" \
+                    || die "下载失败：${name}"
+                ;;
+            hf-rows)
+                log "  来源：HF 数据集 ${src}（config=${config}, split=${split}）"
+                fetch_hf_rows "${src}" "${config}" "${split}" "${path}.part" \
+                    || die "rows API 获取失败：${name}"
+                ;;
+            *)
+                die "未知的基准来源类型：${kind}（仅支持 file / hf-rows）"
+                ;;
+        esac
+
+        actual="$(sha256sum "${path}.part" | cut -d' ' -f1)"
+        if [[ "${actual}" != "${sha}" ]]; then
+            rm -f "${path}.part"
+            die "摘要不符：${name}\n  期望：${sha}\n  实际：${actual}\n  已删除该文件，构建中止。"
+        fi
+        mv "${path}.part" "${path}"
+        log "  校验通过：${name}"
+    done < "${BENCHMARKS_MANIFEST}"
 }
 
 # ---------------------------------------------------------------------------
@@ -124,25 +230,49 @@ cmd_references() {
 }
 
 # ---------------------------------------------------------------------------
-# verify：只校验已有模型，不下载（构建自检与运行期复查共用）
+# verify：只校验已有资产，不下载（构建自检与运行期复查共用）
 # ---------------------------------------------------------------------------
-cmd_verify() {
-    local dest_dir="${1:-/opt/models}"
-    require_file "${MODELS_MANIFEST}"
+verify_manifest() {
+    local manifest="$1" dest_dir="$2" label="$3"
+    require_file "${manifest}"
 
-    local raw sha name url quant size note path actual count=0
+    local raw sha name url fmt size note path actual count=0
     while IFS= read -r raw || [[ -n "${raw}" ]]; do
         is_skippable "${raw}" && continue
-        IFS='|' read -r sha name url quant size note <<< "${raw}"
+        IFS='|' read -r sha name url fmt size note <<< "${raw}"
         path="${dest_dir}/${name}"
-        [[ -f "${path}" ]] || die "模型缺失：${path}"
+        [[ -f "${path}" ]] || die "${label}缺失：${path}"
         actual="$(sha256sum "${path}" | cut -d' ' -f1)"
-        [[ "${actual}" == "${sha}" ]] || die "模型校验失败：${path}"
+        [[ "${actual}" == "${sha}" ]] || die "${label}校验失败：${path}"
         log "OK ${name}（$(du -h "${path}" | cut -f1)）"
         count=$((count + 1))
-    done < "${MODELS_MANIFEST}"
+    done < "${manifest}"
 
-    log "共校验 ${count} 个模型，全部通过"
+    log "共校验 ${count} 个${label}，全部通过"
+}
+
+verify_benchmarks() {
+    local dest_dir="${1:-/opt/benchmarks}"
+    require_file "${BENCHMARKS_MANIFEST}"
+
+    local raw kind sha name src config split size note path actual count=0
+    while IFS= read -r raw || [[ -n "${raw}" ]]; do
+        is_skippable "${raw}" && continue
+        IFS='|' read -r kind sha name src config split size note <<< "${raw}"
+        path="${dest_dir}/${name}"
+        [[ -f "${path}" ]] || die "基准文件缺失：${path}"
+        actual="$(sha256sum "${path}" | cut -d' ' -f1)"
+        [[ "${actual}" == "${sha}" ]] || die "基准文件校验失败：${path}"
+        log "OK ${name}（$(du -h "${path}" | cut -f1)）"
+        count=$((count + 1))
+    done < "${BENCHMARKS_MANIFEST}"
+
+    log "共校验 ${count} 个基准文件，全部通过"
+}
+
+cmd_verify() {
+    verify_manifest "${MODELS_MANIFEST}" "${1:-/opt/models}" "模型"
+    verify_benchmarks "${2:-/opt/benchmarks}"
 }
 
 # ---------------------------------------------------------------------------
@@ -161,6 +291,13 @@ cmd_plan() {
         log "  ${name}  [${quant}]  ${size}"
     done < "${MODELS_MANIFEST}"
 
+    log "基准任务集（目标：/opt/benchmarks）"
+    while IFS= read -r raw || [[ -n "${raw}" ]]; do
+        is_skippable "${raw}" && continue
+        IFS='|' read -r kind sha name src config split size note <<< "${raw}"
+        log "  ${name}  [${kind}]  ${size}  ← ${src}"
+    done < "${BENCHMARKS_MANIFEST}"
+
     log "参考资料（目标：/opt/references/harness）"
     while IFS= read -r raw || [[ -n "${raw}" ]]; do
         is_skippable "${raw}" && continue
@@ -174,10 +311,11 @@ main() {
     shift || true
     case "${cmd}" in
         models)     cmd_models "$@" ;;
+        benchmarks) cmd_benchmarks "$@" ;;
         references) cmd_references "$@" ;;
         verify)     cmd_verify "$@" ;;
         plan)       cmd_plan ;;
-        *) die "用法：$0 {models|references|verify|plan} [目标目录]" ;;
+        *) die "用法：$0 {models|benchmarks|references|verify|plan} [目标目录]" ;;
     esac
 }
 

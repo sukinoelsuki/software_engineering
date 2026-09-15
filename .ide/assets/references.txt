@@ -35,3 +35,4 @@ openhands|https://github.com/OpenHands/OpenHands|82203bb1011cdf0e6eb318a32111806
 aider|https://github.com/Aider-AI/aider|5dc9490bb35f9729ef2c95d00a19ccd30c26339c|Apache-2.0|大型·对照|141 MB|终端 AI 结对编程。重点是**上下文管理策略**（仓库地图 repo-map、只发送相关片段）与编辑格式设计——与本项目"上下文效率引擎"目标直接对应
 qwen-agent|https://github.com/QwenLM/qwen-agent|31a4d36d123688581a9e9744427272b33ce940e0|Apache-2.0|大型·对照|41 MB|Qwen 官方 agent 框架，函数调用与工具注册方式规范；因主模型同为 Qwen 系，其提示与工具描述写法具有可移植性
 ollama|https://github.com/ollama/ollama|38fdb5dd58c761f850cddd6ba1e78a7954646b4f|MIT|端侧·部署对照|85 MB|端侧模型部署的工程标杆（Go，单二进制分发）。本项目在 SRS §2.1 中以其为"只解决部署、不解决 agent 化"的对照，故保留源码以便实证核对
+harbor|https://github.com/harbor-framework/harbor|96a13544537e54be84c0f316f8c3156769380684|Apache-2.0|评估·主力参考|130 MB|**Terminal-Bench 团队出品的 agent 评估与优化框架**（2026-09-15 仍在活跃更新）。自我定位为"evaluating and optimizing agents and language models"，支持接入任意 agent（Claude Code / OpenHands / Codex CLI）并自建基准与并行实验环境。**与本项目"评估 Harness 增益"的主线直接对应**——是设计自研评估链路时最该先读的实现

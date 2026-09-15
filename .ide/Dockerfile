@@ -250,11 +250,38 @@ RUN set -eux; \
     bash /tmp/assets/fetch-assets.sh references /opt/references/harness
 
 # ---------------------------------------------------------------------------
-# 12. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
+# 12. 预置基准任务集（离线可跑、客观判定）
+#
+#     位置：/opt/benchmarks
+#     清单见 .ide/assets/benchmarks.txt：3 个数据集、合计约 23 MB
+#     （HumanEval+ / MBPP+ / BigCodeBench，均为 Apache-2.0）。
+#
+#     为什么必须预置进镜像：**产品定位是离线低资源环境，评测也必须在无网络下可跑**，
+#     否则测出来的能力与真实使用场景不符。
+#
+#     取数方式有两类，都带 sha256 校验、失败即中断构建：
+#       file     —— 直接下载官方文件（HumanEval+ 的 JSONL）
+#       hf-rows  —— 经 HF datasets-server 的 rows API 取全部行落为 JSONL
+#                   （HF 数据集多为 parquet，读它需引入 pyarrow；
+#                     rows API 返回 JSON，用标准库即可，**不引入新依赖**）
+#
+#     选型依据见 docs/adr/0012-benchmark-task-set-selection.md
+#     （含"只取任务定义与判定器、不连带采用它们的 agent harness"这一关键约定）。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/benchmarks.txt /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh benchmarks /opt/benchmarks
+
+# ---------------------------------------------------------------------------
+# 13. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
 #
 #     原则：凡是"失败不阻断构建"的环节，都必须在这里显式校验一次——
 #     镜像构建期的静默失败已经出现过两次：CodeBuddy 漏装（0006 §2.4.1）、
 #     扩展在 Open VSX 上 404 导致静默不装（0007 §2.5 V-7）。
+#
+#     ⚠️ 缓存代价（实测结论）：`fetch-assets.sh` 与 `models.txt` 在**同一条 COPY**
+#     中被复制，因此**改动脚本本身也会使 5 GB 模型层失效并重新下载**（约 20~25 分钟）。
+#     故：脚本改动应与清单改动**合并到同一次重建**，不要分多次改。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
     python -V; \
@@ -270,7 +297,7 @@ RUN set -eux; \
     code-server --list-extensions; \
     code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'; \
     code-server --list-extensions | grep -qix 'ms-pyright.pyright'; \
-    bash /tmp/assets/fetch-assets.sh verify /opt/models; \
+    bash /tmp/assets/fetch-assets.sh verify /opt/models /opt/benchmarks; \
     test -d /opt/references/harness; \
     test -n "$(find /opt/references/harness -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
-    du -sh /opt/models /opt/references/harness
+    du -sh /opt/models /opt/benchmarks /opt/references/harness
