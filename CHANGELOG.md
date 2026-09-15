@@ -36,6 +36,12 @@
 - 新增硬规则：**隔离是否生效必须由主动探针判定，禁止以命令退出码判定**（依据：`firejail` 静默失效的实测）。
 - 新增硬规则：**降级必须显式记录，禁止静默降级**。
 
+### Fixed
+
+- 对齐 pre-commit 钩子版本至 `uv.lock` 锁定版本（ruff / mypy / commitizen / bandit），
+  消除"钩子绿、`make check` 红"的版本分叉；并写明版本对齐规则。
+- 修正 `docs/README.md` 文档地图中 devlog 的失效链接。
+
 ---
 
 ## 版本记录说明
