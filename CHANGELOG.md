@@ -47,6 +47,9 @@
   （均由分支合并中丢失的 `docs/learning/` 篇目迁入改写）与
   [`conflict-resolution-and-branch-hygiene.md`](docs/notes/conflict-resolution-and-branch-hygiene.md)。
 - 新增开发日志 [0011](docs/devlog/0011-2026-09-16-分支分叉与开发环境重建.md)。
+- 新增 [`scripts/check-branch-hygiene.sh`](scripts/check-branch-hygiene.sh) 与 `make branch-status`：
+  列出未合入 `develop` 的分支与开放 PR（只读、不使用凭据、无法判定时记为"未知"而非"干净"）。
+- 新增 [ADR-0013](docs/adr/0013-branch-model-for-solo-dev.md)：分支模型改为 develop 主干 + 分支卫生自检。
 - 新增开发日志 [0010](docs/devlog/0010-2026-09-15-动态硬件适配与分层Harness.md)。
 - 新增 [ADR-0011](docs/adr/0011-tier-composition-revision.md)：档位构成修订为
   **S/M/L = 2B / 4B / 8B**，三档**全部可在当前云环境验证**（14B 移出档位矩阵）。
@@ -79,6 +82,11 @@
 - **档位机制表述修正**（依据三档实测）：代价随档位成倍递增（内存 1:1.8:3.2、速度 1:0.61:0.35），
   而三项任务上 2B/4B/8B **几乎打平** ⇒ 档位应表述为"按资源预算选可承受的配置"，
   而非"更强硬件给更强模型"。
+- **分支模型变更**（[ADR-0013](docs/adr/0013-branch-model-for-solo-dev.md)）：
+  `develop` 改为**工作主干**、允许直接提交，仅 `main` 保持分支保护；
+  短期分支 → `develop` 的合并方式默认改为 **merge commit**
+  （保留 devlog / CHANGELOG 逐条引用的提交哈希）；
+  分支卫生自检挂到开发环境启动与 push 流水线（**只报告，不阻断**）。
 
 ### Security
 

@@ -30,7 +30,7 @@
         │   ▲                                          │
         │   │ merge commit（发布节点，可打标签）        │
         │   │                                          │
-        │  develop     集成分支（保护）                │
+        │  develop     工作主干（可直推）               │
         │   ▲   ▲   ▲                                  │
         │   │   │   │ squidh merge                     │
         │  feat/* fix/* perf/* security/* docs/* ...   │
@@ -41,12 +41,17 @@
 | --- | --- | --- | --- | --- |
 | `main` | — | — | — | 永久 |
 | `develop` | `main` | `main`（发布时） | merge commit | 永久 |
-| `feat/<issue>-<slug>` | `develop` | `develop` | squash | 短期 |
-| `fix/<issue>-<slug>` | `develop` | `develop` | squash | 短期 |
-| `perf/<issue>-<slug>` | `develop` | `develop` | squash | 短期 |
-| `security/<issue>-<slug>` | `develop` | `develop` | squash | 短期 |
-| `docs/<slug>` | `develop` | `develop` | squash | 短期 |
-| `chore/<slug>` | `develop` | `develop` | squash | 短期 |
+| `feat/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
+| `fix/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
+| `perf/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
+| `security/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
+| `docs/<slug>` | `develop` | `develop` | merge commit | 短期 |
+| `chore/<slug>` | `develop` | `develop` | merge commit | 短期 |
+
+> **合并方式默认为 merge commit**，不用 squash：devlog 与 CHANGELOG 会逐条引用具体
+> 提交哈希，squash 会让这些引用指向不存在的对象。仅当分支只有**单个提交**、
+> 且没有任何文档引用它时，才用 squash。依据
+> [ADR-0013](../adr/0013-branch-model-for-solo-dev.md)。
 | `exp/<slug>` | `develop` | — | 归档结论后关闭 | 短期 |
 | `release/<version>` | `develop` | `main` | merge commit | 短期 |
 | `hotfix/<version>` | `main` | `main` + 回合 `develop` | merge commit | 短期 |
@@ -137,7 +142,8 @@ Refs: #58
 | 操作 | 是否需要事先批准 | 说明 |
 | --- | --- | --- |
 | 在本地短期分支上 `add` / `commit` | 不需要 | 但必须在独立分支上，且提交粒度单一、可回滚 |
-| 合并到 `main` / `develop`（即使仅本地） | **需要** | 保护分支的语义在本地同样成立 |
+| 合并到 `main`（即使仅本地） | **需要** | `main` 是受保护的发布线 |
+| 在 `develop` 上直接提交 | 不需要批准 | `develop` 已改为工作主干（[ADR-0013](../adr/0013-branch-model-for-solo-dev.md)），但仍需 Conventional Commits、pre-commit 全绿与 `make check` |
 | `git push`（任意分支） | **需要，且须先经文件内容审查** | 推送前必须把**将要推送的实际内容**（文件清单 + 逐个文件的变更内容）提交所有者审查；**审查通过后才能推送** |
 | 强推 / 改写已推送历史 / 删除远端分支 | **不允许** | 无论是否批准 |
 
@@ -152,7 +158,8 @@ Refs: #58
 
 | 方向 | 策略 | 理由 |
 | --- | --- | --- |
-| 短期分支 → `develop` | **Squash merge** | 一个分支 = 一个逻辑变更，历史线性可读 |
+| 短期分支 → `develop` | **Merge commit**（默认） | 保留提交哈希：devlog / CHANGELOG 会引用它们，squash 会使引用失效 |
+| 单提交且无文档引用的分支 → `develop` | 可 Squash merge | 无哈希引用时，线性历史更整洁 |
 | `develop` → `main` | **Merge commit** | 保留发布节点，便于 `git describe` 与回溯 |
 | `hotfix/*` → `main` | Merge commit + 回合 `develop` | 防止修复在集成线丢失 |
 
@@ -192,15 +199,21 @@ git tag -a v0.2.0 -m "Release v0.2.0"
 
 ### 分支保护（平台侧设置）
 
-在 CNB 仓库设置中应对 `main` 与 `develop` 启用：
+在 CNB 仓库设置中**只对 `main` 启用**（`develop` 已改为工作主干、允许直推，
+见 [ADR-0013](../adr/0013-branch-model-for-solo-dev.md)）：
 
-- [ ] 禁止直接推送（必须通过 PR）
-- [ ] 要求状态检查通过（`ci` 流水线）
-- [ ] 禁止强推与删除
+- [x] 禁止直接推送（必须通过 PR）——**仅 `main`**
+- [x] 要求状态检查通过（`ci` 流水线）
+- [x] 禁止强推与删除
 - [ ] （可选）要求至少 1 个评审批准
 
-> 由于是单人项目，"评审批准"由自评审 + CI 门禁承担；分支保护的核心价值在于
-> **强制变更走 PR 路径**，从而保留完整的变更记录。
+> 由于是单人项目，"评审批准"由自评审 + CI 门禁承担。
+>
+> **`develop` 为什么不再保护**：云开发环境每次从 `develop` 拉起、重启即清空上下文，
+> 于是"工作留在短期分支上"等于"下次会话看不见"——2026-09-16 已因此丢过一批内容。
+> 保护的收益（强制走 PR）小于它造成的分叉成本。防误提交的职责改由
+> Conventional Commits、pre-commit 全量钩子、`make check` 与 CI 承担；
+> **未合入分支**由 `make branch-status`（开发环境启动与 CI 均会执行）兜底。
 
 ---
 

@@ -49,7 +49,11 @@ repos:
         args: ["--fix=lf"]
       - id: forbid-submodules
       - id: no-commit-to-branch
-        args: ["--branch=main", "--branch=develop"]
+        # 只保护 main：develop 已改为**工作主干**、允许直接提交（ADR-0013）。
+        # 理由：单人开发无并行工作流，而云环境每次从 develop 拉起、重启即清空
+        # 上下文——留在短期分支上的工作下次会话"不存在"，本次已因此丢过内容。
+        # 防误提交改由 Conventional Commits、本文件其余钩子、make check 与 CI 承担。
+        args: ["--branch=main"]
 
   # ---------------------------------------------------------------------------
   # 代码风格与静态检查
