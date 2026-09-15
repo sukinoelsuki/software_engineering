@@ -232,9 +232,16 @@ WORKDIR /workspace
 #     ⚠️ 层序很重要：Docker 层缓存按顺序失效，把 GB 级下载放在靠后位置，
 #     改文档 / 改设置都不会触发重新下载；模型清单若未变，重建时直接复用缓存。
 # ---------------------------------------------------------------------------
-COPY .ide/assets/models.txt .ide/fetch-assets.sh /tmp/assets/
+#     ⚠️ 布局约束（本条是被一次真实构建失败逼出来的，勿改回平铺）：
+#     脚本用"自身所在目录 + /assets"解析清单（见 fetch-assets.sh 的 ASSETS_DIR），
+#     因此必须是 脚本 → /tmp/ide/、清单 → /tmp/ide/assets/。
+#     早期版本把两者一起 COPY 进 /tmp/assets/，脚本于是去找 /tmp/assets/assets/，
+#     构建在第 17 步以"找不到清单文件"失败。镜像布局必须复刻仓库里的 .ide/ 结构。
+# ---------------------------------------------------------------------------
+COPY .ide/fetch-assets.sh /tmp/ide/
+COPY .ide/assets/models.txt /tmp/ide/assets/
 RUN set -eux; \
-    bash /tmp/assets/fetch-assets.sh models /opt/models
+    bash /tmp/ide/fetch-assets.sh models /opt/models
 
 # ---------------------------------------------------------------------------
 # 11. 预置开源 Harness 参考资料（仅离线查阅，不参与构建与运行）
@@ -245,9 +252,9 @@ RUN set -eux; \
 #     **端侧实现为重点参考**（openharness / agentcpm / tinyagent），
 #     其余为大型实现对照（SWE-agent / OpenHands / aider / qwen-agent / ollama）。
 # ---------------------------------------------------------------------------
-COPY .ide/assets/references.txt /tmp/assets/
+COPY .ide/assets/references.txt /tmp/ide/assets/
 RUN set -eux; \
-    bash /tmp/assets/fetch-assets.sh references /opt/references/harness
+    bash /tmp/ide/fetch-assets.sh references /opt/references/harness
 
 # ---------------------------------------------------------------------------
 # 12. 预置基准任务集（离线可跑、客观判定）
@@ -268,9 +275,9 @@ RUN set -eux; \
 #     选型依据见 docs/adr/0012-benchmark-task-set-selection.md
 #     （含"只取任务定义与判定器、不连带采用它们的 agent harness"这一关键约定）。
 # ---------------------------------------------------------------------------
-COPY .ide/assets/benchmarks.txt /tmp/assets/
+COPY .ide/assets/benchmarks.txt /tmp/ide/assets/
 RUN set -eux; \
-    bash /tmp/assets/fetch-assets.sh benchmarks /opt/benchmarks
+    bash /tmp/ide/fetch-assets.sh benchmarks /opt/benchmarks
 
 # ---------------------------------------------------------------------------
 # 13. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
@@ -279,8 +286,8 @@ RUN set -eux; \
 #     镜像构建期的静默失败已经出现过两次：CodeBuddy 漏装（0006 §2.4.1）、
 #     扩展在 Open VSX 上 404 导致静默不装（0007 §2.5 V-7）。
 #
-#     ⚠️ 缓存代价（实测结论）：`fetch-assets.sh` 与 `models.txt` 在**同一条 COPY**
-#     中被复制，因此**改动脚本本身也会使 5 GB 模型层失效并重新下载**（约 20~25 分钟）。
+#     ⚠️ 缓存代价（实测结论）：脚本的 COPY 位于模型下载层**之前**，
+#     因此**改动脚本本身也会使 GB 级模型层失效并重新下载**（约 20~25 分钟）。
 #     故：脚本改动应与清单改动**合并到同一次重建**，不要分多次改。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
@@ -297,7 +304,7 @@ RUN set -eux; \
     code-server --list-extensions; \
     code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'; \
     code-server --list-extensions | grep -qix 'ms-pyright.pyright'; \
-    bash /tmp/assets/fetch-assets.sh verify /opt/models /opt/benchmarks; \
+    bash /tmp/ide/fetch-assets.sh verify /opt/models /opt/benchmarks; \
     test -d /opt/references/harness; \
     test -n "$(find /opt/references/harness -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
     du -sh /opt/models /opt/benchmarks /opt/references/harness
