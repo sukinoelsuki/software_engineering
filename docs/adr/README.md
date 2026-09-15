@@ -74,5 +74,6 @@
 | [0004](0004-python-toolchain-baseline.md) | 采用 Python + uv + ruff + mypy 工程基线 | 已接受 |
 | [0005](0005-single-primary-language.md) | 技术栈定案：Python 单一主语言（不引入 Go / TypeScript） | 已接受 |
 | [0006](0006-sandbox-isolation-strategy.md) | 命令执行沙箱的隔离策略：改用容器边界（bwrap/firejail 实测不可用） | **提议中** |
+| [0007](0007-learning-notes-archive.md) | 建立学习笔记目录（`docs/learning`，面向初学者的知识沉淀） | 已接受 |
 
 > 新增 ADR 后请同步更新本表。
