@@ -104,6 +104,10 @@
   镜像内改为复刻仓库 `.ide/` 的目录结构（脚本 `/tmp/ide/`、清单 `/tmp/ide/assets/`）。
 - **恢复 llama.cpp 版本固定**（原 V-6 修复在分支合并时被 develop 一侧覆盖而丢失）：
   由"跟随 master"改回固定 commit `69eb250`，保证性能基线与 W1 / 三档实测可比。
+- **修正开发环境镜像第 7 步构建失败**（llama.cpp 段）：版本断言误写成 `$$(git ...)`——
+  `RUN` 由 shell 执行，`$$` 展开为 shell PID、命令替换不执行，字符串变为
+  `"<PID>(git -C ... rev-parse HEAD)"`，断言恒定失败并以退出码 1 中止构建。
+  改为 `$(git ...)`，并把该写法约束写进 Dockerfile 注释。
 
 ---
 

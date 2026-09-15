@@ -180,13 +180,19 @@ RUN set -eu; \
 #
 #    注：本段曾在「合并 develop 解决冲突」时被 develop 一侧覆盖而丢失（彼时
 #    develop 仍跟随 master），本次为回收——可复现性是性能主线的前提，不是可选项。
+#
+#    ⚠️ 断言里的命令替换必须写成 `$(...)`，不能写成 `$$(...)`
+#    （2026-09-16 构建失败根因）：RUN 由 shell 执行，`$$` 展开为 **shell PID**，
+#    命令替换不会执行，字符串变成 "12345(git -C ... rev-parse HEAD)"，
+#    断言恒定失败 → `set -e` 下第 7 步退出码 1。
+#    `$$` 只在 docker-compose.yml 这类"先做变量替换"的文件里才需要转义。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
     git init -q /opt/llama.cpp; \
     git -C /opt/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp; \
     git -C /opt/llama.cpp fetch -q --depth 1 origin 69eb250670f471586fcec69caacd3c014aefb185; \
     git -C /opt/llama.cpp checkout -q --detach FETCH_HEAD; \
-    test "$$(git -C /opt/llama.cpp rev-parse HEAD)" = "69eb250670f471586fcec69caacd3c014aefb185"; \
+    test "$(git -C /opt/llama.cpp rev-parse HEAD)" = "69eb250670f471586fcec69caacd3c014aefb185"; \
     cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DGGML_NATIVE=OFF \
