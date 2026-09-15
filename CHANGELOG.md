@@ -31,6 +31,9 @@
 - 新增 [`docs/engineering/test-environments.md`](docs/engineering/test-environments.md)：
   测试环境分层（T0~T3）与成果保护（P-1~P-3）操作细则。
 - 新增开发日志 [0008](docs/devlog/0008-2026-09-15-环境资产预置与沙箱后端修正.md)。
+- 新增 [学习笔记 `docs/notes/`](docs/notes/)（**基准线任务**）与 [ADR-0009](docs/adr/0009-learning-notes.md)；
+  首批收录探针方法论、隔离机制分类、复现性与门禁三篇。
+- 新增开发日志 [0009](docs/devlog/0009-2026-09-15-留痕机制调整与资源约束澄清.md)。
 
 ### Changed
 
@@ -40,6 +43,11 @@
 - **隔离能力表述由"档位"改为"逐维度"**：命名空间/mount 类有效、cgroup 类（`--memory`/`--pids-limit`）
   静默失效、setrlimit 类有效；资源限制一律改用 setrlimit。
 - 测试环境按影响范围分层为 T0~T3；破坏性测试（T2）在一次性容器内执行，工作区只读挂载。
+- **开发日志约定调整**：行数由"硬上限"改为**软性参考**（连贯优先）；
+  新增「活待办」（最新一篇的 §7 即当前任务清单，不再另建 list）与「重拾语境」四步流程。
+- **`CODEBUDDY.md` / `AGENTS.md`**：新增"维护学习笔记""维护活待办""重拾语境"三项强制义务。
+- 澄清资源约束的准确边界：开发容器的 16 GiB / 8 核**被强制执行**；
+  受限的是"无法给子容器设 cgroup 限制"（内置 docker 为 rootless + `Cgroup Driver: none`）。
 
 ### Security
 
