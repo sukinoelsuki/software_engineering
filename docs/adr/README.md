@@ -77,6 +77,7 @@
 | [0007](0007-sandbox-capability-matrix.md) | 修正沙箱可用性结论：引入容器后端，按"机制类别"划分隔离能力 | 已接受 |
 | [0008](0008-dev-test-environment-strategy.md) | 开发与测试环境策略：共享工作区 + 一次性执行容器 + 成果先落盘 | 已接受 |
 | [0009](0009-learning-notes.md) | 建立学习笔记（`docs/notes/`）作为持续进行的主线任务 | 已接受 |
-| [0010](0010-dynamic-hardware-adaptation.md) | 动态硬件适配与分层 Harness：beta 定位下的最小可用形态 | 已接受 |
+| [0010](0010-dynamic-hardware-adaptation.md) | 动态硬件适配与分层 Harness：beta 定位下的最小可用形态 | 已接受（§5.4 已被 0011 修订） |
+| [0011](0011-tier-composition-revision.md) | 档位构成修订：三档 = 2B / 4B / 8B，全部可在当前云环境验证 | 已接受 |
 
 > 新增 ADR 后请同步更新本表。
