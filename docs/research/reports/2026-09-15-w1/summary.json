@@ -1,0 +1,9 @@
+[
+  {
+    "task": "t1",
+    "elapsed_s": 32.81,
+    "prompt_tokens": 448,
+    "completion_tokens": 418,
+    "tok_per_s": 12.74
+  }
+]

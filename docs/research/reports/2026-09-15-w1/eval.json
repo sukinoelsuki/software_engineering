@@ -1,0 +1,30 @@
+{
+  "T1": {
+    "fenced": true,
+    "parse": "ok",
+    "missing_annotations": [],
+    "mypy_rc": 1,
+    "mypy": "Found 1 error in 1 file (checked 1 source file)",
+    "behavior_rc": 0,
+    "behavior": "behavior-same"
+  },
+  "T2": {
+    "fenced": true,
+    "pytest_rc": 0,
+    "pytest": "5 passed in 0.01s"
+  },
+  "T3": {
+    "fenced": true,
+    "pytest_rc": 1,
+    "pytest": "1 failed in 0.01s",
+    "delivered_importable": false,
+    "assertions_rc_with_import": 0,
+    "assertions": "1 passed in 0.01s",
+    "coverage": "n/a",
+    "passed": false
+  },
+  "T3_mutation": {
+    "killed_mutant": true,
+    "detail": "1 failed in 0.01s"
+  }
+}
