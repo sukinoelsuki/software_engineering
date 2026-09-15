@@ -177,11 +177,22 @@ RUN set -eu; \
 #      GGML_CUDA=OFF    —— 本项目不使用 GPU（CNB 的 GPU 无免费额度）。
 #      LLAMA_CURL=ON    —— 支持从 URL 直接拉取模型。
 #
-#    TODO：当前跟随 master 分支构建。待性能基准需要复现时，应改为固定 release
-#          标签（如 --branch bXXXX）以保证可复现性。
+#    版本固定（V-6 已处理，2026-09-15）：**不再跟随 master**。
+#    固定到 commit 69eb250670f471586fcec69caacd3c014aefb185（短 SHA 69eb250，
+#    提交日期 2026-09-15，PGP 已签名）—— 这是 W1 实测数据所绑定的构建，
+#    性能结论（见 docs/research/2026-09-15-on-device-model-validation.md）
+#    只在同版本下可比，因此必须钉住。
+#    浅克隆无法直接检出任意 commit，故用 init + fetch <完整 SHA> + checkout，
+#    并即时校验 HEAD 确实是目标提交（防止静默取到别的版本）。
+#    升级方式：改下面的 SHA → 销毁开发环境 → 重新启动（触发重建），
+#    并在 docs/devlog 中记录"旧版本 → 新版本"的对照数据。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
-    git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama.cpp; \
+    git init -q /opt/llama.cpp; \
+    git -C /opt/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp; \
+    git -C /opt/llama.cpp fetch -q --depth 1 origin 69eb250670f471586fcec69caacd3c014aefb185; \
+    git -C /opt/llama.cpp checkout -q --detach FETCH_HEAD; \
+    test "$$(git -C /opt/llama.cpp rev-parse HEAD)" = "69eb250670f471586fcec69caacd3c014aefb185"; \
     cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DGGML_NATIVE=OFF \
