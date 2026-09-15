@@ -1,0 +1,19 @@
+{
+  "tier": "S",
+  "model": "MiniCPM5-2B-Q4_K_M.gguf",
+  "size_gb": 1.56,
+  "ctx": 4096,
+  "threads": 8,
+  "load_s": 1.03,
+  "vmhwm_gib": 2.59,
+  "prefill_tok_per_s": 120.2,
+  "gen_tok_per_s": 27.6,
+  "tasks": [
+    {
+      "task": "t3",
+      "elapsed_s": 19.23,
+      "prompt_tokens": 273,
+      "completion_tokens": 469
+    }
+  ]
+}

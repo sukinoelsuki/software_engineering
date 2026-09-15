@@ -14,7 +14,8 @@
 | [`design/`](design/) | 架构设计、模块设计、接口契约、**威胁模型** | 设计变更时 |
 | [`engineering/`](engineering/) | 工程流程规范：工作流、生命周期、DoD、测试策略 | 流程调整时 |
 | [`research/`](research/) | 前沿 AI 生态调研与实验结论（含失败结论） | 每次调研或实验收敛时 |
-| [`devlog/`](../devlog/) | **开发日志**（按议题/阶段分篇，过程记录） | 每次提交 |
+| [`notes/`](notes/) | **学习笔记**：学到的内容与所想所思（跨课题、可重读） | **持续进行**（基准线任务） |
+| [`devlog/`](devlog/) | **开发日志**（按议题/阶段分篇，过程记录） | 每次提交 |
 
 ---
 
@@ -27,7 +28,13 @@
 | 项目分几个阶段？现在到哪了？ | [`engineering/sdlc.md`](engineering/sdlc.md) |
 | 什么算"做完了"？ | [`engineering/definition-of-done.md`](engineering/definition-of-done.md) |
 | 测试怎么写？要覆盖到什么程度？ | [`engineering/testing-strategy.md`](engineering/testing-strategy.md) |
+| **这个测试该在哪一层跑？怎么保证成果不丢？** | [`engineering/test-environments.md`](engineering/test-environments.md) |
+| 沙箱/隔离在哪些环境真正有效？ | [`adr/0007-sandbox-capability-matrix.md`](adr/0007-sandbox-capability-matrix.md) |
+| **硬件档位与动态适配怎么设计？** | [`adr/0010-dynamic-hardware-adaptation.md`](adr/0010-dynamic-hardware-adaptation.md) |
+| **用什么任务集评测？为什么这么选？** | [`adr/0012-benchmark-task-set-selection.md`](adr/0012-benchmark-task-set-selection.md) |
 | 安全要求是什么？漏洞怎么报？ | [`../SECURITY.md`](../SECURITY.md) |
+| **中断后怎么快速恢复上下文？接下来该干什么？** | [`devlog/README.md`](devlog/README.md)（「重拾语境」+ 最新篇 §7） |
+| 我学到了什么、当时怎么想的？ | [`notes/`](notes/) |
 | 某个技术决策为什么这么定？ | [`adr/`](adr/) |
 | base project 为什么选它？ | [`proposals/0001-base-project-selection.md`](proposals/0001-base-project-selection.md) |
 | AI 代理该怎么协作？ | [`../CODEBUDDY.md`](../CODEBUDDY.md) |

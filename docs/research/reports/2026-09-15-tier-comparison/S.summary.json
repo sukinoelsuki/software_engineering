@@ -1,0 +1,31 @@
+{
+  "tier": "S",
+  "model": "MiniCPM5-2B-Q4_K_M.gguf",
+  "size_gb": 1.56,
+  "ctx": 4096,
+  "threads": 8,
+  "load_s": 1.28,
+  "vmhwm_gib": 2.68,
+  "prefill_tok_per_s": 119.08,
+  "gen_tok_per_s": 27.21,
+  "tasks": [
+    {
+      "task": "t1",
+      "elapsed_s": 20.22,
+      "prompt_tokens": 462,
+      "completion_tokens": 438
+    },
+    {
+      "task": "t2",
+      "elapsed_s": 7.48,
+      "prompt_tokens": 473,
+      "completion_tokens": 96
+    },
+    {
+      "task": "t3",
+      "elapsed_s": 8.25,
+      "prompt_tokens": 231,
+      "completion_tokens": 175
+    }
+  ]
+}

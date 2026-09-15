@@ -1,0 +1,30 @@
+{
+  "tier": "L",
+  "T1": {
+    "fenced": true,
+    "parse": "ok",
+    "missing_annotations": [],
+    "mypy_rc": 0,
+    "mypy_last": "Success: no issues found in 1 source file",
+    "behavior": "behavior-same",
+    "behavior_ok": true,
+    "pass": true
+  },
+  "T2": {
+    "fenced": true,
+    "pytest_rc": 0,
+    "pytest_last": "5 passed in 0.01s",
+    "pass": true
+  },
+  "T3": {
+    "fenced": true,
+    "pytest_rc": 1,
+    "pytest_last": "11 failed in 0.03s",
+    "pass": false,
+    "delivered_importable": false,
+    "assertions_rc_with_import": 0,
+    "assertions_last": "11 passed in 0.01s",
+    "assertions_ok": true,
+    "killed_mutant": false
+  }
+}

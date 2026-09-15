@@ -122,10 +122,10 @@ RUN set -eux; \
 #
 #    扩展源说明：code-server 默认使用 Open VSX（微软 Marketplace 的使用条款禁止
 #    非微软产品访问，故不可用）。下列扩展均已逐一核对存在于 Open VSX。
-#    已知例外：ms-python.vscode-pylance 在 Open VSX 上查无此扩展（API 两次返回 404），
-#    因此该行大概率处于"安装失败但不阻断构建"的状态 —— 记为待验证项 V-7，
-#    验证方式见 docs/engineering/post-build-checklist.md 第 1 步；若确认缺失，
-#    可改用 ms-pyright.pyright（MIT、已上架 Open VSX）作为类型检查引擎。
+#    V-7（2026-09-15 已确认）：ms-python.vscode-pylance 在 Open VSX 上查无此扩展
+#    （API 返回 404），构建期静默安装失败，环境内 code-server --list-extensions
+#    证实缺失。已改用 ms-pyright.pyright（MIT、Open VSX 有售，latest 1.1.402）
+#    作为类型检查与语言服务引擎。见 docs/devlog/0007。
 #    安装失败默认不阻断构建（避免构建期网络抖动炸掉整个镜像），
 #    但 CodeBuddy 扩展属于本项目的硬需求，已在下文自检阶段做显式校验。
 #
@@ -141,7 +141,7 @@ RUN set -eu; \
     for ext in \
         cnbcool.cnb-welcome \
         ms-python.python \
-        ms-python.vscode-pylance \
+        ms-pyright.pyright \
         ms-python.debugpy \
         charliermarsh.ruff \
         redhat.vscode-yaml \
@@ -194,6 +194,13 @@ ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
 #      - code-server（WebIDE）：~/.local/share/code-server/{User,Machine}
 #      - VS Code Desktop（Remote-SSH）：~/.vscode-server/data/{User,Machine}
 #    注：部分设置项在 Machine 作用域不生效，故同时写入 User 作用域。
+#
+#    V-4（2026-09-15 实测结论）：四条 COPY 中**只有 code-server 的 Machine 作用域
+#    真实生效**（该路径与 CNB 官方示例一致）。其余三条在运行期会被平台自身写入的
+#    文件（内容为 .cnb.yml 等 YAML schema）取代，属"写入无效但无害"——
+#    平台写入发生在本 COPY 之后，因此不会互相破坏。保留这四条的理由是：
+#    在不同平台版本或 Remote-SSH 客户端下生效范围可能不同，删掉的收益小于风险；
+#    但**不要**据此认为"只写 Machine 就够"或"四条都一定生效"。
 # ---------------------------------------------------------------------------
 COPY .ide/settings.json /root/.local/share/code-server/Machine/settings.json
 COPY .ide/settings.json /root/.local/share/code-server/User/settings.json
@@ -212,7 +219,69 @@ RUN set -eux; \
 WORKDIR /workspace
 
 # ---------------------------------------------------------------------------
-# 自检：构建时验证关键组件是否可用（失败即中断构建，避免交付一个坏环境）
+# 10. 预置端侧模型（两个 4B 级，用于横向能力对比）
+#
+#     位置：/opt/models —— **在 /workspace 之外**。理由：
+#       ① GB 级二进制不得进入版本管理；
+#       ② 工作区可能被重新克隆/清空，模型不应随之丢失。
+#
+#     清单见 .ide/assets/models.txt（sha256、体积、来源 URL 逐项记录）。
+#     校验和不符即**中断构建**——即 fail-secure：宁可构建失败，
+#     也不交付一个装了错资产的镜像。
+#
+#     ⚠️ 层序很重要：Docker 层缓存按顺序失效，把 GB 级下载放在靠后位置，
+#     改文档 / 改设置都不会触发重新下载；模型清单若未变，重建时直接复用缓存。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/models.txt .ide/fetch-assets.sh /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh models /opt/models
+
+# ---------------------------------------------------------------------------
+# 11. 预置开源 Harness 参考资料（仅离线查阅，不参与构建与运行）
+#
+#     位置：/opt/references/harness
+#     清单见 .ide/assets/references.txt：全部固定到具体**提交 SHA**（不是分支或标签），
+#     许可证均为 MIT / Apache-2.0，实测浅克隆合计约 447 MB。
+#     **端侧实现为重点参考**（openharness / agentcpm / tinyagent），
+#     其余为大型实现对照（SWE-agent / OpenHands / aider / qwen-agent / ollama）。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/references.txt /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh references /opt/references/harness
+
+# ---------------------------------------------------------------------------
+# 12. 预置基准任务集（离线可跑、客观判定）
+#
+#     位置：/opt/benchmarks
+#     清单见 .ide/assets/benchmarks.txt：3 个数据集、合计约 23 MB
+#     （HumanEval+ / MBPP+ / BigCodeBench，均为 Apache-2.0）。
+#
+#     为什么必须预置进镜像：**产品定位是离线低资源环境，评测也必须在无网络下可跑**，
+#     否则测出来的能力与真实使用场景不符。
+#
+#     取数方式有两类，都带 sha256 校验、失败即中断构建：
+#       file     —— 直接下载官方文件（HumanEval+ 的 JSONL）
+#       hf-rows  —— 经 HF datasets-server 的 rows API 取全部行落为 JSONL
+#                   （HF 数据集多为 parquet，读它需引入 pyarrow；
+#                     rows API 返回 JSON，用标准库即可，**不引入新依赖**）
+#
+#     选型依据见 docs/adr/0012-benchmark-task-set-selection.md
+#     （含"只取任务定义与判定器、不连带采用它们的 agent harness"这一关键约定）。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/benchmarks.txt /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh benchmarks /opt/benchmarks
+
+# ---------------------------------------------------------------------------
+# 13. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
+#
+#     原则：凡是"失败不阻断构建"的环节，都必须在这里显式校验一次——
+#     镜像构建期的静默失败已经出现过两次：CodeBuddy 漏装（0006 §2.4.1）、
+#     扩展在 Open VSX 上 404 导致静默不装（0007 §2.5 V-7）。
+#
+#     ⚠️ 缓存代价（实测结论）：`fetch-assets.sh` 与 `models.txt` 在**同一条 COPY**
+#     中被复制，因此**改动脚本本身也会使 5 GB 模型层失效并重新下载**（约 20~25 分钟）。
+#     故：脚本改动应与清单改动**合并到同一次重建**，不要分多次改。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
     python -V; \
@@ -226,4 +295,9 @@ RUN set -eux; \
     codebuddy --version; \
     code-server --version; \
     code-server --list-extensions; \
-    code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'
+    code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'; \
+    code-server --list-extensions | grep -qix 'ms-pyright.pyright'; \
+    bash /tmp/assets/fetch-assets.sh verify /opt/models /opt/benchmarks; \
+    test -d /opt/references/harness; \
+    test -n "$(find /opt/references/harness -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
+    du -sh /opt/models /opt/benchmarks /opt/references/harness
