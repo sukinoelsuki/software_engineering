@@ -102,6 +102,7 @@
             printf 'cmake  : %s\n' "$(cmake --version 2>&1 | head -n1)"
             printf 'bwrap  : %s\n' "$(command -v bwrap || echo '缺失')"
             printf 'llama  : %s\n' "$(command -v llama-server || echo '缺失')"
+            printf 'codebuddy: %s\n' "$(codebuddy --version 2>&1 | head -n1)"
             echo "--------------------------------------------------"
             echo "首次使用请执行：make setup && make check"
             echo "=================================================="

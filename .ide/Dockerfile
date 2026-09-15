@@ -95,9 +95,39 @@ RUN set -eux; \
     python -V
 
 # ---------------------------------------------------------------------------
-# 5. code-server 与 VS Code 扩展
+# 5. CodeBuddy（腾讯 AI 编码助手）—— 两种形态，缺一不可
+#
+#   形态 A：CLI（npm 全局包 @tencent-ai/codebuddy-code，提供 codebuddy 命令）
+#     这是 CNB【CodeBuddy Web】入口的**前置条件**：镜像内没有 codebuddy 或
+#     版本 < 2.137.0 时，云开发入口页会**直接隐藏该入口**（不报错，静默消失）。
+#     出处：https://docs.cnb.build/zh/workspaces/codebuddy-web.html
+#   形态 B：VS Code 扩展（Tencent-Cloud.coding-copilot）
+#     提供 WebIDE 内的代码补全与对话面板；该扩展已上架 Open VSX
+#     （code-server 的默认扩展源即 Open VSX），可直接按 ID 安装。
+#     出处：https://open-vsx.org/api/Tencent-Cloud/coding-copilot
+#
+#   版本固定为 2.151.0（符合本项目的依赖锁定要求，且 >= CNB 要求的 2.137.0）。
+#   升级方式：改此行版本号 → 销毁开发环境 → 重新启动（触发镜像重建）。
+#   体积提示：该包解包后约 166 MB（含按平台分发的可选依赖）。
+# ---------------------------------------------------------------------------
+RUN set -eux; \
+    npm install -g @tencent-ai/codebuddy-code@2.151.0; \
+    codebuddy --version; \
+    rm -rf /root/.npm
+
+# ---------------------------------------------------------------------------
+# 6. code-server 与 VS Code 扩展
 #    安装 code-server 后，CNB 将以【单容器模式】启动开发环境。
-#    扩展含：Python 开发、Docker、Git、YAML/TOML、Markdown/Mermaid、TS 备用。
+#    扩展含：CodeBuddy、Python 开发、Docker、Git、YAML/TOML、Markdown/Mermaid、TS 备用。
+#
+#    扩展源说明：code-server 默认使用 Open VSX（微软 Marketplace 的使用条款禁止
+#    非微软产品访问，故不可用）。下列扩展均已逐一核对存在于 Open VSX。
+#    已知例外：ms-python.vscode-pylance 在 Open VSX 上查无此扩展（API 两次返回 404），
+#    因此该行大概率处于"安装失败但不阻断构建"的状态 —— 记为待验证项 V-7，
+#    验证方式见 docs/engineering/post-build-checklist.md 第 1 步；若确认缺失，
+#    可改用 ms-pyright.pyright（MIT、已上架 Open VSX）作为类型检查引擎。
+#    安装失败默认不阻断构建（避免构建期网络抖动炸掉整个镜像），
+#    但 CodeBuddy 扩展属于本项目的硬需求，已在下文自检阶段做显式校验。
 #
 #    关于容器相关扩展：
 #      安装 ms-azuretools.vscode-docker（镜像/容器/卷管理、Dockerfile 与
@@ -117,7 +147,7 @@ RUN set -eu; \
         redhat.vscode-yaml \
         tamasfe.even-better-toml \
         ms-azuretools.vscode-docker \
-        eamodio.gitlens \
+        Tencent-Cloud.coding-copilot \
         mhutchie.git-graph \
         editorconfig.editorconfig \
         davidanson.vscode-markdownlint \
@@ -133,7 +163,7 @@ RUN set -eu; \
     done
 
 # ---------------------------------------------------------------------------
-# 6. llama.cpp（CPU 版，源码构建）
+# 7. llama.cpp（CPU 版，源码构建）
 #    本项目的主推理后端。构建参数：
 #      GGML_NATIVE=OFF —— 不在镜像构建机上做本机指令优化，保证镜像在不同
 #                          CNB 构建节点上都能运行（可移植性优先）。
@@ -158,7 +188,7 @@ RUN set -eux; \
 ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
 
 # ---------------------------------------------------------------------------
-# 7. 复制 VS Code 设置
+# 8. 复制 VS Code 设置
 #    写入两个客户端、两种作用域，确保无论通过 WebIDE 还是 Remote-SSH 进入、
 #    无论走 User 还是 Machine 作用域，设置都能生效：
 #      - code-server（WebIDE）：~/.local/share/code-server/{User,Machine}
@@ -171,7 +201,7 @@ COPY .ide/settings.json /root/.vscode-server/data/Machine/settings.json
 COPY .ide/settings.json /root/.vscode-server/data/User/settings.json
 
 # ---------------------------------------------------------------------------
-# 8. Git 基础配置与工作目录
+# 9. Git 基础配置与工作目录
 #    用户身份（user.name / user.email）不在此写死，由 CNB 注入或本地配置。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
@@ -193,4 +223,7 @@ RUN set -eux; \
     command -v git-lfs; \
     command -v cmake; \
     command -v llama-server; \
-    code-server --version
+    codebuddy --version; \
+    code-server --version; \
+    code-server --list-extensions; \
+    code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'
