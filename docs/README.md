@@ -30,6 +30,7 @@
 | 测试怎么写？要覆盖到什么程度？ | [`engineering/testing-strategy.md`](engineering/testing-strategy.md) |
 | **这个测试该在哪一层跑？怎么保证成果不丢？** | [`engineering/test-environments.md`](engineering/test-environments.md) |
 | 沙箱/隔离在哪些环境真正有效？ | [`adr/0007-sandbox-capability-matrix.md`](adr/0007-sandbox-capability-matrix.md) |
+| **硬件档位与动态适配怎么设计？** | [`adr/0010-dynamic-hardware-adaptation.md`](adr/0010-dynamic-hardware-adaptation.md) |
 | 安全要求是什么？漏洞怎么报？ | [`../SECURITY.md`](../SECURITY.md) |
 | **中断后怎么快速恢复上下文？接下来该干什么？** | [`devlog/README.md`](devlog/README.md)（「重拾语境」+ 最新篇 §7） |
 | 我学到了什么、当时怎么想的？ | [`notes/`](notes/) |

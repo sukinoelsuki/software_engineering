@@ -34,6 +34,11 @@
 - 新增 [学习笔记 `docs/notes/`](docs/notes/)（**基准线任务**）与 [ADR-0009](docs/adr/0009-learning-notes.md)；
   首批收录探针方法论、隔离机制分类、复现性与门禁三篇。
 - 新增开发日志 [0009](docs/devlog/0009-2026-09-15-留痕机制调整与资源约束澄清.md)。
+- 新增 [ADR-0010](docs/adr/0010-dynamic-hardware-adaptation.md)：动态硬件适配与分层 Harness；
+  新增学习笔记 [hardware-probing.md](docs/notes/hardware-probing.md)。
+- 预置模型清单新增 **`Qwen3-8B-Q4_K_M`（5.03 GB）** 作为 M 档主力（对应"稍好的硬件条件"）。
+- SRS 新增 `REQ-PERF-05`（硬件能力探测）与 `REQ-PERF-06`（档位化动态适配）→ **v0.1.2**。
+- 新增开发日志 [0010](docs/devlog/0010-2026-09-15-动态硬件适配与分层Harness.md)。
 
 ### Changed
 
@@ -48,6 +53,10 @@
 - **`CODEBUDDY.md` / `AGENTS.md`**：新增"维护学习笔记""维护活待办""重拾语境"三项强制义务。
 - 澄清资源约束的准确边界：开发容器的 16 GiB / 8 核**被强制执行**；
   受限的是"无法给子容器设 cgroup 限制"（内置 docker 为 rootless + `Cgroup Driver: none`）。
+- **"动态适配"收敛为可交付形态**：会话启动时探测一次 + 固定 S/M/L 三档预设 + 全过程留痕；
+  明确**不做**运行中持续优化与自动调参（避免范围膨胀）。
+- 明确硬件档位（S/M/L）与模型能力档位是**两个正交的轴**，不可互相推导。
+- 明确硬件适配的目标范围：**笔记本与个人 PC**；移动端不做适配（仅保留架构约束）。
 
 ### Security
 
