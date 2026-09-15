@@ -138,6 +138,11 @@ lightning_logs/
 # ---------------------------------------------------------------------------
 artifacts/
 reports/
+# 例外：docs/research/reports/ 是"调研与实验原始数据"的归档位置
+# （见 docs/research/README.md 笔记模板第 3 条），属于必须版本化的过程证据，
+# 体积小且经人工筛选，因此从上面的 reports/ 规则中豁免。
+!docs/research/reports/
+!docs/research/reports/**
 tmp/
 .cache/
 sandbox/
