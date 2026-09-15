@@ -138,7 +138,17 @@ lightning_logs/
 # ---------------------------------------------------------------------------
 artifacts/
 reports/
+# 例外：docs/research/reports/ 是"调研与实验原始数据"的归档位置
+# （见 docs/research/README.md 笔记模板第 3 条），属于必须版本化的过程证据，
+# 体积小且经人工筛选，因此从上面的 reports/ 规则中豁免。
+!docs/research/reports/
+!docs/research/reports/**
 tmp/
+# 删除文件时的回收站目录（由开发环境/IDE 工具生成，不是项目产物）。
+# 它若残留在工作区内，会被 ruff 扫到（ruff 默认遵循 .gitignore）或误入提交，
+# 从而在 `make check` 中产生与项目无关的报错，故显式忽略。
+.Trash-0/
+.Trash-*/
 .cache/
 sandbox/
 *.prof

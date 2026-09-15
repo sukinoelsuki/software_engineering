@@ -73,7 +73,12 @@
 | [0003](0003-select-base-project.md) | 选定 base project 与项目主线（**待决策**） | 提议中 |
 | [0004](0004-python-toolchain-baseline.md) | 采用 Python + uv + ruff + mypy 工程基线 | 已接受 |
 | [0005](0005-single-primary-language.md) | 技术栈定案：Python 单一主语言（不引入 Go / TypeScript） | 已接受 |
-| [0006](0006-sandbox-isolation-strategy.md) | 命令执行沙箱的隔离策略：改用容器边界（bwrap/firejail 实测不可用） | **提议中** |
-| [0007](0007-learning-notes-archive.md) | 建立学习笔记目录（`docs/learning`，面向初学者的知识沉淀） | 已接受 |
+| [0006](0006-sandbox-execution-degradation.md) | 沙箱执行方案定案与在受限容器中的降级（L1/L2 分层 + fail-secure） | 已接受（§4.1/§5.3 已被 0007 修正） |
+| [0007](0007-sandbox-capability-matrix.md) | 修正沙箱可用性结论：引入容器后端，按"机制类别"划分隔离能力 | 已接受 |
+| [0008](0008-dev-test-environment-strategy.md) | 开发与测试环境策略：共享工作区 + 一次性执行容器 + 成果先落盘 | 已接受 |
+| [0009](0009-learning-notes.md) | 建立学习笔记（`docs/notes/`）作为持续进行的主线任务 | 已接受 |
+| [0010](0010-dynamic-hardware-adaptation.md) | 动态硬件适配与分层 Harness：beta 定位下的最小可用形态 | 已接受（§5.4 已被 0011 修订） |
+| [0011](0011-tier-composition-revision.md) | 档位构成修订：三档 = 2B / 4B / 8B，全部可在当前云环境验证 | 已接受 |
+| [0012](0012-benchmark-task-set-selection.md) | 基准任务集选型：三层结构（外部锚点 / 自建阶梯 / 上限探测） | 已接受 |
 
 > 新增 ADR 后请同步更新本表。

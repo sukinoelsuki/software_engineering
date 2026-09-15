@@ -122,19 +122,12 @@ RUN set -eux; \
 #
 #    扩展源说明：code-server 默认使用 Open VSX（微软 Marketplace 的使用条款禁止
 #    非微软产品访问，故不可用）。下列扩展均已逐一核对存在于 Open VSX。
-#
-#    V-7 已结案（2026-09-15 实测，证据见 docs/devlog/0007 §4.3）：
-#      - ms-python.vscode-pylance **不在 Open VSX**（API 返回 404），
-#        环境内 `code-server --list-extensions` 也确认它确实静默缺失 ——
-#        构建不报错，只是少一个扩展；
-#      - 故改用 ms-pyright.pyright（MIT、Open VSX 返回 200）承担编辑器侧类型提示。
-#        注意：类型检查的**门禁**由 mypy --strict 负责，编辑器扩展只影响交互体验，
-#        换掉它不改变任何验收标准。
-#
+#    V-7（2026-09-15 已确认）：ms-python.vscode-pylance 在 Open VSX 上查无此扩展
+#    （API 返回 404），构建期静默安装失败，环境内 code-server --list-extensions
+#    证实缺失。已改用 ms-pyright.pyright（MIT、Open VSX 有售，latest 1.1.402）
+#    作为类型检查与语言服务引擎。见 docs/devlog/0007。
 #    安装失败默认不阻断构建（避免构建期网络抖动炸掉整个镜像），
-#    代价是"缺失了也不报错"。因此**任何扩展清单改动都必须在环境内**
-#    用 `code-server --list-extensions` 与清单做集合比对（含被依赖带入的扩展），
-#    不能只看构建日志。CodeBuddy 扩展属于硬需求，已在下文自检阶段做显式校验。
+#    但 CodeBuddy 扩展属于本项目的硬需求，已在下文自检阶段做显式校验。
 #
 #    关于容器相关扩展：
 #      安装 ms-azuretools.vscode-docker（镜像/容器/卷管理、Dockerfile 与
@@ -177,22 +170,11 @@ RUN set -eu; \
 #      GGML_CUDA=OFF    —— 本项目不使用 GPU（CNB 的 GPU 无免费额度）。
 #      LLAMA_CURL=ON    —— 支持从 URL 直接拉取模型。
 #
-#    版本固定（V-6 已处理，2026-09-15）：**不再跟随 master**。
-#    固定到 commit 69eb250670f471586fcec69caacd3c014aefb185（短 SHA 69eb250，
-#    提交日期 2026-09-15，PGP 已签名）—— 这是 W1 实测数据所绑定的构建，
-#    性能结论（见 docs/research/2026-09-15-on-device-model-validation.md）
-#    只在同版本下可比，因此必须钉住。
-#    浅克隆无法直接检出任意 commit，故用 init + fetch <完整 SHA> + checkout，
-#    并即时校验 HEAD 确实是目标提交（防止静默取到别的版本）。
-#    升级方式：改下面的 SHA → 销毁开发环境 → 重新启动（触发重建），
-#    并在 docs/devlog 中记录"旧版本 → 新版本"的对照数据。
+#    TODO：当前跟随 master 分支构建。待性能基准需要复现时，应改为固定 release
+#          标签（如 --branch bXXXX）以保证可复现性。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
-    git init -q /opt/llama.cpp; \
-    git -C /opt/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp; \
-    git -C /opt/llama.cpp fetch -q --depth 1 origin 69eb250670f471586fcec69caacd3c014aefb185; \
-    git -C /opt/llama.cpp checkout -q --detach FETCH_HEAD; \
-    test "$$(git -C /opt/llama.cpp rev-parse HEAD)" = "69eb250670f471586fcec69caacd3c014aefb185"; \
+    git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama.cpp; \
     cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DGGML_NATIVE=OFF \
@@ -213,15 +195,12 @@ ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
 #      - VS Code Desktop（Remote-SSH）：~/.vscode-server/data/{User,Machine}
 #    注：部分设置项在 Machine 作用域不生效，故同时写入 User 作用域。
 #
-#    实测（2026-09-15，见 docs/devlog/0007 V-4）：**只有 Machine 那一份真正生效**。
-#      - ~/.local/share/code-server/Machine/settings.json  → 保留本文件 ✅
-#      - ~/.local/share/code-server/User/settings.json     → 被 CNB 平台启动时
-#        写入的默认设置覆盖（1017 B，含 cnb-welcome.locale 等平台自有配置）
-#      - ~/.vscode-server/data/Machine/settings.json       → 同样被覆盖
-#      - ~/.vscode-server/data/User/settings.json          → 平台在运行期重建该目录
-#    结论：不要指望 User 与 Remote-SSH 这几条路径生效（它们是冗余保险，
-#    保留成本为零，但如果某天想让某项设置生效，只能改 Machine 那一份，
-#    并且必须**销毁重建环境**才会重新写入）。
+#    V-4（2026-09-15 实测结论）：四条 COPY 中**只有 code-server 的 Machine 作用域
+#    真实生效**（该路径与 CNB 官方示例一致）。其余三条在运行期会被平台自身写入的
+#    文件（内容为 .cnb.yml 等 YAML schema）取代，属"写入无效但无害"——
+#    平台写入发生在本 COPY 之后，因此不会互相破坏。保留这四条的理由是：
+#    在不同平台版本或 Remote-SSH 客户端下生效范围可能不同，删掉的收益小于风险；
+#    但**不要**据此认为"只写 Machine 就够"或"四条都一定生效"。
 # ---------------------------------------------------------------------------
 COPY .ide/settings.json /root/.local/share/code-server/Machine/settings.json
 COPY .ide/settings.json /root/.local/share/code-server/User/settings.json
@@ -240,7 +219,69 @@ RUN set -eux; \
 WORKDIR /workspace
 
 # ---------------------------------------------------------------------------
-# 自检：构建时验证关键组件是否可用（失败即中断构建，避免交付一个坏环境）
+# 10. 预置端侧模型（两个 4B 级，用于横向能力对比）
+#
+#     位置：/opt/models —— **在 /workspace 之外**。理由：
+#       ① GB 级二进制不得进入版本管理；
+#       ② 工作区可能被重新克隆/清空，模型不应随之丢失。
+#
+#     清单见 .ide/assets/models.txt（sha256、体积、来源 URL 逐项记录）。
+#     校验和不符即**中断构建**——即 fail-secure：宁可构建失败，
+#     也不交付一个装了错资产的镜像。
+#
+#     ⚠️ 层序很重要：Docker 层缓存按顺序失效，把 GB 级下载放在靠后位置，
+#     改文档 / 改设置都不会触发重新下载；模型清单若未变，重建时直接复用缓存。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/models.txt .ide/fetch-assets.sh /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh models /opt/models
+
+# ---------------------------------------------------------------------------
+# 11. 预置开源 Harness 参考资料（仅离线查阅，不参与构建与运行）
+#
+#     位置：/opt/references/harness
+#     清单见 .ide/assets/references.txt：全部固定到具体**提交 SHA**（不是分支或标签），
+#     许可证均为 MIT / Apache-2.0，实测浅克隆合计约 447 MB。
+#     **端侧实现为重点参考**（openharness / agentcpm / tinyagent），
+#     其余为大型实现对照（SWE-agent / OpenHands / aider / qwen-agent / ollama）。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/references.txt /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh references /opt/references/harness
+
+# ---------------------------------------------------------------------------
+# 12. 预置基准任务集（离线可跑、客观判定）
+#
+#     位置：/opt/benchmarks
+#     清单见 .ide/assets/benchmarks.txt：3 个数据集、合计约 23 MB
+#     （HumanEval+ / MBPP+ / BigCodeBench，均为 Apache-2.0）。
+#
+#     为什么必须预置进镜像：**产品定位是离线低资源环境，评测也必须在无网络下可跑**，
+#     否则测出来的能力与真实使用场景不符。
+#
+#     取数方式有两类，都带 sha256 校验、失败即中断构建：
+#       file     —— 直接下载官方文件（HumanEval+ 的 JSONL）
+#       hf-rows  —— 经 HF datasets-server 的 rows API 取全部行落为 JSONL
+#                   （HF 数据集多为 parquet，读它需引入 pyarrow；
+#                     rows API 返回 JSON，用标准库即可，**不引入新依赖**）
+#
+#     选型依据见 docs/adr/0012-benchmark-task-set-selection.md
+#     （含"只取任务定义与判定器、不连带采用它们的 agent harness"这一关键约定）。
+# ---------------------------------------------------------------------------
+COPY .ide/assets/benchmarks.txt /tmp/assets/
+RUN set -eux; \
+    bash /tmp/assets/fetch-assets.sh benchmarks /opt/benchmarks
+
+# ---------------------------------------------------------------------------
+# 13. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
+#
+#     原则：凡是"失败不阻断构建"的环节，都必须在这里显式校验一次——
+#     镜像构建期的静默失败已经出现过两次：CodeBuddy 漏装（0006 §2.4.1）、
+#     扩展在 Open VSX 上 404 导致静默不装（0007 §2.5 V-7）。
+#
+#     ⚠️ 缓存代价（实测结论）：`fetch-assets.sh` 与 `models.txt` 在**同一条 COPY**
+#     中被复制，因此**改动脚本本身也会使 5 GB 模型层失效并重新下载**（约 20~25 分钟）。
+#     故：脚本改动应与清单改动**合并到同一次重建**，不要分多次改。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
     python -V; \
@@ -254,4 +295,9 @@ RUN set -eux; \
     codebuddy --version; \
     code-server --version; \
     code-server --list-extensions; \
-    code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'
+    code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'; \
+    code-server --list-extensions | grep -qix 'ms-pyright.pyright'; \
+    bash /tmp/assets/fetch-assets.sh verify /opt/models /opt/benchmarks; \
+    test -d /opt/references/harness; \
+    test -n "$(find /opt/references/harness -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
+    du -sh /opt/models /opt/benchmarks /opt/references/harness
