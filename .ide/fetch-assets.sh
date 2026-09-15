@@ -145,6 +145,30 @@ cmd_verify() {
     log "共校验 ${count} 个模型，全部通过"
 }
 
+# ---------------------------------------------------------------------------
+# plan：只解析清单并打印将获取什么，不下载、不克隆
+#   用途：① 清单纯文本改动后可在**不重建镜像**的前提下确认解析正确；
+#        ② 新增模型/参考资料时先看一眼总量是否可接受。
+# ---------------------------------------------------------------------------
+cmd_plan() {
+    local raw sha name url quant size note rest
+    local total=0
+
+    log "模型（目标：/opt/models）"
+    while IFS= read -r raw || [[ -n "${raw}" ]]; do
+        is_skippable "${raw}" && continue
+        IFS='|' read -r sha name url quant size note <<< "${raw}"
+        log "  ${name}  [${quant}]  ${size}"
+    done < "${MODELS_MANIFEST}"
+
+    log "参考资料（目标：/opt/references/harness）"
+    while IFS= read -r raw || [[ -n "${raw}" ]]; do
+        is_skippable "${raw}" && continue
+        IFS='|' read -r name url commit license rest <<< "${raw}"
+        log "  ${name}  @${commit:0:12}  [${license}]"
+    done < "${REFERENCES_MANIFEST}"
+}
+
 main() {
     local cmd="${1:-}"
     shift || true
@@ -152,7 +176,8 @@ main() {
         models)     cmd_models "$@" ;;
         references) cmd_references "$@" ;;
         verify)     cmd_verify "$@" ;;
-        *) die "用法：$0 {models|references|verify} [目标目录]" ;;
+        plan)       cmd_plan ;;
+        *) die "用法：$0 {models|references|verify|plan} [目标目录]" ;;
     esac
 }
 
