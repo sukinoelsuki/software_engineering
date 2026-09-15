@@ -18,6 +18,11 @@ repos:
       - id: check-case-conflict
       - id: check-symlinks
       - id: check-json
+        # 例外：.ide/settings.json 是 VS Code 设置文件，按编辑器与平台约定使用
+        # JSONC（允许注释），必然无法通过 JSON 解析。该文件的合法性由 VS Code
+        # 自身在运行时报错，不需静态校验。
+        # 决策与影响评估见 docs/devlog/0006 §2.4.4 与 V-8。
+        exclude: '^\.ide/settings\.json$'
       - id: check-toml
       - id: check-yaml
         args: ["--allow-multiple-documents"]
