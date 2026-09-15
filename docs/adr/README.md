@@ -79,5 +79,6 @@
 | [0009](0009-learning-notes.md) | 建立学习笔记（`docs/notes/`）作为持续进行的主线任务 | 已接受 |
 | [0010](0010-dynamic-hardware-adaptation.md) | 动态硬件适配与分层 Harness：beta 定位下的最小可用形态 | 已接受（§5.4 已被 0011 修订） |
 | [0011](0011-tier-composition-revision.md) | 档位构成修订：三档 = 2B / 4B / 8B，全部可在当前云环境验证 | 已接受 |
+| [0012](0012-benchmark-task-set-selection.md) | 基准任务集选型：三层结构（外部锚点 / 自建阶梯 / 上限探测） | 已接受 |
 
 > 新增 ADR 后请同步更新本表。
