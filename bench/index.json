@@ -1,0 +1,42 @@
+{
+  "rounds": [
+    {
+      "round_id": "2026-09-16-push",
+      "date": "2026-09-16",
+      "protocol": "bench-v2",
+      "label": "push",
+      "signature": "bench-v2|ctx=4096|threads=8|max_tokens=2048|tiers=S,M|cpu=AMD EPYC 9754 128-Core Processor",
+      "status": "complete",
+      "isolation": "user",
+      "git_commit": "73f0f235cb0f35d4d1aa3af63cd5f70a468533b9",
+      "core_hours": 0.766,
+      "perf": {
+        "S": {
+          "prefill_tok_per_s": 92.1033,
+          "gen_tok_per_s": 32.9867,
+          "request_elapsed_s": 43.3082,
+          "repeats": 3,
+          "load_seconds": 1.79,
+          "peak_memory_gib": 2.67
+        },
+        "M": {
+          "prefill_tok_per_s": 51.0933,
+          "gen_tok_per_s": 19.86,
+          "request_elapsed_s": 59.6762,
+          "repeats": 3,
+          "load_seconds": 2.76,
+          "peak_memory_gib": 4.84
+        }
+      },
+      "capability": {
+        "S": {
+          "round_pass_rate": 0.6667
+        },
+        "M": {
+          "round_pass_rate": 0.6667
+        }
+      },
+      "report": "daily/2026-09-16/report.md"
+    }
+  ]
+}
