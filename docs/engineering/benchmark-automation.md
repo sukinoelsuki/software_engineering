@@ -35,6 +35,17 @@ make bench-verify-assets
 DRY_RUN=1 BENCH_ALLOW_LOCAL=1 bash scripts/bench/publish.sh
 ```
 
+**更新基准分支（重要）**：定时任务读的是 `bench/nightly` 的 HEAD 代码，
+所以它必须与 `develop` 上**已验证**的基准代码保持一致：
+
+```bash
+# 在 develop 上跑完 make check 之后，同步过去（推送会立即触发一轮即时测试）
+git push origin develop:bench/nightly
+```
+
+不要直接在 `bench/nightly` 上开发：它是"被定时任务读取的快照"，
+不是开发分支——在它上面提交会让协议在没有 `make check` 把关的情况下生效。
+
 可覆盖的变量：`BENCH_DATA_ROOT`、`BENCH_TIERS`、`BENCH_REPEATS`、`BENCH_THREADS`、
 `BENCH_LABEL`、`BENCH_KEEP_DAYS`、`BENCH_MODEL_DIR`、`BENCH_ISOLATION`。
 
