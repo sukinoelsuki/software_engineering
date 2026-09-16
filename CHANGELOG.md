@@ -61,6 +61,9 @@
 - **引入基准任务集**（镜像内 `/opt/benchmarks`）：HumanEval+（164）、MBPP+（378）、
   BigCodeBench v0.1.4（1140），合计约 23 MB，均为 Apache-2.0，**离线可跑且每题自带单元测试**。
 - 参考资料新增 `harbor`（Terminal-Bench 团队的 agent 评估与优化框架，Apache-2.0）。
+- **完成开发环境第二轮"重建后验证"**（[post-build-checklist](docs/engineering/post-build-checklist.md) §6）：
+  镜像侧三处修复（llama.cpp 固定 `69eb250`、`ms-pyright.pyright`、预置资产摘要）全部生效；
+  三档基准复跑确认环境与基线可比（常驻内存三档逐位一致）。
 
 ### Changed
 
@@ -87,6 +90,11 @@
   短期分支 → `develop` 的合并方式默认改为 **merge commit**
   （保留 devlog / CHANGELOG 逐条引用的提交哈希）；
   分支卫生自检挂到开发环境启动与 push 流水线（**只报告，不阻断**）。
+- **基准判据的执行方式修正**：`> 10%` 判据**不得靠单次采样**执行——S 档 prefill 重复三次为
+  108.69 / 117.77 / 116.16 tok/s（极差 8.4%，首次被单个请求的 95.11 tok/s 拉低）
+  ⇒ 至少重复 3 次并报极差，且优先看**与存储/调度无关**的指标（常驻内存）。
+- 明确 `settings.json` 的**实际生效文件也会被平台后置改写**部分键
+  （`workbench.colorTheme`、`extensions.autoUpdate`）：**"改了文件" ≠ "设置生效"**，须逐项核对。
 
 ### Security
 

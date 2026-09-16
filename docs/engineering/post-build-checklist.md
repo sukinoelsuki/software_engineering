@@ -27,6 +27,23 @@
 
 ---
 
+## ✅ 第二轮执行状态（2026-09-16）
+
+**本轮执行的是第 6 步（重启后验证）**，过程、原始数据与结论见
+[开发日志 0011 §4](../devlog/0011-2026-09-16-分支分叉与开发环境重建.md#4-数据与证据)。
+
+| 检查 | 结果 |
+| --- | --- |
+| §6.1 镜像是否重建 | ✅ 生效：`llama-server` 报 `commit 69eb250`；扩展有 `ms-pyright.pyright`、无 `pylance` |
+| §6.2 首次构建耗时（V-1） | ⚠️ **仍未测得**——会话开始时镜像已构建完毕，缺少"销毁时刻 ↔ 可用时刻"配对记录（见 §6.2） |
+| §6.3 预置资产校验 | ✅ 4 个模型 + 3 个基准文件 sha256 与清单逐位一致 |
+| §6.4 复跑三档基准 | ✅ 完成（S 档重复 3 次）；内存逐位一致、吞吐在噪声范围内；**并修正了"单次采样即可下 10% 判据"的做法** |
+| §6.5 能力复核 | ✅ 三项全部符合预期（工具调用 / 关思考抽取 / 思考开启对照） |
+| 第 3 步 工程门禁 | ✅ `make setup && make check` 全绿（重建环境） |
+| 分支卫生自检（ADR-0013） | ✅ `make branch-status` 报"未合入：0 处"，5 个 PR 均标记已合入 |
+
+---
+
 ## 第 0 步：确认自定义镜像是否生效（最高优先级）
 
 ```bash
@@ -70,15 +87,15 @@ code-server --list-extensions   # 核对扩展是否真的装上了（见下方�
 | cmake | 有版本 | | ☐ |
 | codebuddy | ≥ 2.137.0 | | ☐ |
 
-> **关于扩展自检（待验证项 V-7）**：镜像构建时扩展安装是**失败不阻断**的，
-> 因此清单里的每一项都要在环境内用 `code-server --list-extensions` 实际核对一次。
-> 重点确认两项：
+> **关于扩展自检（V-7，2026-09-15 已解决，后续每次重建仍须复核）**：
+> 镜像构建时扩展安装是**失败不阻断**的，因此清单里的每一项都要在环境内用
+> `code-server --list-extensions` 实际核对一次。重点确认两项：
 >
 > 1. `tencent-cloud.coding-copilot`（CodeBuddy 扩展）——若缺失，说明 Open VSX 当时不可达，
 >    重跑构建即可；
-> 2. `ms-python.vscode-pylance` ——该扩展**未上架 Open VSX**（查询返回 404），
->    极可能一直静默缺失。若确认缺失，改用 `ms-pyright.pyright`（MIT、已上架 Open VSX），
->    并把结论回填到 `docs/devlog/0006` 的 V-7。
+> 2. `ms-pyright.pyright` ——**已替代 `ms-python.vscode-pylance`**（后者未上架 Open VSX，
+>    查询返回 404，长期静默缺失；替换决策见 `docs/devlog/0006` 的 V-7）。
+>    复核方式：列表中应**有** `ms-pyright.pyright`、**无** `ms-python.vscode-pylance`。
 
 > **关于 settings.json（人工检查点）**：`.ide/settings.json` 是 JSONC，已从 `check-json`
 > 钩子中排除（决策见 `docs/devlog/0006` §2.4.4）。这意味着它的格式合法性**不再有静态保障**——
@@ -259,12 +276,21 @@ code-server --list-extensions | sort                # 期望有 ms-pyright.pyrig
 ls /opt/models /opt/benchmarks                      # 期望 4 个模型 + 3 个基准文件
 ```
 
-| 检查项 | 期望 | 实际 | 通过 |
+| 检查项 | 期望 | 实际（2026-09-16） | 通过 |
 | --- | --- | --- | --- |
-| llama.cpp 版本 | 含 `69eb250` | | ☐ |
-| pyright 扩展 | `ms-pyright.pyright` 存在 | | ☐ |
-| pylance 扩展 | **不存在** | | ☐ |
-| settings 生效范围 | 只有 `Machine` 作用域那一份有效（V-4） | | ☐ |
+| llama.cpp 版本 | 含 `69eb250` | `version: 0.4.1-dev (build 1, commit 69eb250)` | ✅ |
+| pyright 扩展 | `ms-pyright.pyright` 存在 | 存在 | ✅ |
+| pylance 扩展 | **不存在** | 不存在 | ✅ |
+| settings 生效范围 | 只有 `Machine` 作用域那一份有效（V-4） | 结论成立；但**生效的那一份也被平台后置改写了 2 个键**（见下） | ✅ |
+
+> **V-4 补记（2026-09-16 复核）**：四条 COPY 中仍只有
+> `/root/.local/share/code-server/Machine/settings.json` 是我们写进去的那份
+> （其余三条是平台自身的 25 行版本，`~/.vscode-server/data/User/settings.json` 甚至不存在）。
+> 但这一份里有两个键的值**不是**我们在 `.ide/settings.json` 中声明的：
+> `workbench.colorTheme` 为 `One Dark Modern`（我们写的是 `Dark Modern`）、
+> `extensions.autoUpdate` 为 `"off"`（我们写的是 `false`，语义等价）。
+> 说明平台会在 COPY **之后**对本文件做后置写入——因此
+> **"改了 settings.json" ≠ "设置生效"**，涉及外观与关键开关的改动必须逐项核对实际值。
 
 ### 6.2 补测 V-1：首次构建耗时（**只有这一次机会**）
 
@@ -273,9 +299,18 @@ ls /opt/models /opt/benchmarks                      # 期望 4 个模型 + 3 个
 
 | 项 | 值 |
 | --- | --- |
-| 销毁时刻 | |
-| 环境可用时刻 | |
-| **首次构建耗时** | |
+| 销毁时刻 | 未记录（本轮开始时镜像已构建完毕） |
+| 环境可用时刻 | 未记录 |
+| **首次构建耗时** | ⚠️ **仍未测得** |
+
+> **本次处置（如实记录，不估算）**：本轮的销毁与重建由项目所有者在他处触发，
+> 会话开始时可观测到镜像**已经可用**，因此缺少"销毁时刻 ↔ 可用时刻"这对时间戳，V-1 继续挂起。
+> 容器内**只能**读到镜像构建期的文件写入时刻，可作**下界**参考（2026-09-16，+0800）：
+> `/root/.config` 02:11:13 → `llama-server` 02:13:54 → 4 个模型 02:14:27~02:18:07 →
+> 基准文件 02:19:17。仅"llama.cpp 编译完成 → 资产落盘结束"这一段就有 **≈ 5.4 分钟**，
+> 完整耗时（含基础镜像、apt、Node、code-server、CodeBuddy 这些更早的阶段）必然更长。
+>
+> **下次的正确测法**：销毁**前**记录 T0（`date -Is`）；环境可用后立即记录 T1，差值即 V-1。
 
 ### 6.3 校验预置资产
 
@@ -290,10 +325,10 @@ bash .ide/fetch-assets.sh models /opt/models
 bash .ide/fetch-assets.sh benchmarks /opt/benchmarks
 ```
 
-| 项 | 期望 | 实际 | 通过 |
+| 项 | 期望 | 实际（2026-09-16） | 通过 |
 | --- | --- | --- | --- |
-| 4 个模型 sha256 | 与 `.ide/assets/models.txt` **逐位一致** | | ☐ |
-| 3 个基准文件 sha256 | 与 `.ide/assets/benchmarks.txt` **逐位一致** | | ☐ |
+| 4 个模型 sha256 | 与 `.ide/assets/models.txt` **逐位一致** | `fetch-assets.sh verify`：4 个模型**全部通过**（1.5G / 2.4G / 2.6G / 4.7G） | ✅ |
+| 3 个基准文件 sha256 | 与 `.ide/assets/benchmarks.txt` **逐位一致** | 3 个基准文件**全部通过**（11M / 4.7M / 6.7M） | ✅ |
 
 > **不在此处抄写具体摘要值**：清单是唯一真源（取值方式为 HF API 的 `lfs.sha256`，见清单头部注释），
 > 抄写会在清单更新后产生"文档与事实分叉"。
@@ -322,30 +357,72 @@ python tier_bench.py --model /opt/models/Qwen3-8B-Q4_K_M.gguf     --tier L --ctx
 > **判定**：与基线差异 **> 10%** 即说明版本或环境引入了变化，**必须记录并查明原因**才能继续。
 > 所有数据须标注 llama.cpp 版本（`69eb250`）与量化档位。
 
+**2026-09-16 复跑结果**（同一脚本、同一参数、同版本 `69eb250`、8 核 / 16 GiB）：
+
+| 档 | 加载 | 常驻内存 | prefill | 生成 |
+| --- | --- | --- | --- | --- |
+| S（MiniCPM5-2B） | 1.28 s | 2.68 GiB | 108.69 tok/s | 25.54 tok/s |
+| M（Qwen3-4B） | 2.03 s | 4.85 GiB | 65.34 tok/s | 15.64 tok/s |
+| L（Qwen3-8B） | 3.15 s | 8.70 GiB | 35.59 tok/s | 9.06 tok/s |
+
+与基线的差异（本次 − 基线）：
+
+| 档 | 加载 | 内存 | prefill | 生成 |
+| --- | --- | --- | --- | --- |
+| S | 0% | **0** | −8.7% | −6.1% |
+| M | **−20.4%** | **0** | −3.8% | −5.8% |
+| L | **−11.8%** | **0** | −0.6% | −3.6% |
+
+**判定：环境与基线可比，不构成"版本或环境变化"的证据。** 三条依据：
+
+1. **常驻内存三档逐位一致**（2.68 / 4.85 / 8.70 GiB）——该指标不受调度与存储状态影响，
+   是"模型与量化档位没变"最硬的证据；
+2. **加载耗时的差异方向是"更快"**，且该指标跨会话本就不可控：它包含把 GB 级权重读入的开销，
+   而容器内**无法**规范化存储状态（`/proc/sys` 只读、`drop_caches` 无权限，W1 已记录，
+   本轮复测 `Cached` 仅 ≈ 300 MB 而模型共 11.5 GB，说明页缓存**不保留**）⇒
+   **加载耗时只能作为同会话内可比指标**，跨会话仅作参考；
+3. **吞吐的差异落在同一会话的重复测量极差之内**——S 档重复 3 次（同参数、同提示词）：
+   108.69 / 117.77 / 116.16 tok/s，**极差 8.4%**；其中第 1 次是被单个请求拉低的平均
+   （该次 t3 的 prefill 为 95.11 tok/s，而同提示词在第 2 次为 117.98）。逐请求看，
+   t1/t2 的 prefill 三次分别为 114.54/116.41、116.16/119.18、117.79/113.62 ⇒ 稳定。
+   生成速率三次为 25.54 / 25.56 / 25.14 tok/s（极差 1.7%）。
+
+> **因此修正判据的执行方式（重要）**：`> 10%` 本身仍可作为告警阈值，但
+> **单次采样不足以判定超阈**——至少重复 3 次并报极差（或取中位数），
+> 且优先看**与存储/调度无关的指标**（内存）是否一致。与项目性能规范中
+> "必须给出重复次数与方差"的要求一致。本次数据见
+> [devlog 0011 §4](../devlog/0011-2026-09-16-分支分叉与开发环境重建.md#4-数据与证据)。
+
 ### 6.5 复跑能力测试（重点复核"思考模式开关"）
 
 ```bash
 llama-server -m /opt/models/MiniCPM5-2B-Q4_K_M.gguf -c 8192 -t 8 --port 8080 --no-webui
 ```
 
-| 请求 | 期望 | 通过 |
-| --- | --- | --- |
-| 带 `tools` + `"tool_choice":"auto"` | `finish_reason=tool_calls` | ☐ |
-| 结构化抽取 + `"chat_template_kwargs":{"enable_thinking":false}` | `finish_reason=stop` + 合法 JSON | ☐ |
-| 同一任务**不关**思考 | 观察是否出现 `length` + 空内容 | ☐ |
+| 请求 | 期望 | 实际（2026-09-16，MiniCPM5-2B，`max_tokens` 256） | 通过 |
+| --- | --- | --- | --- |
+| 带 `tools` + `"tool_choice":"auto"` | `finish_reason=tool_calls` | `tool_calls`，参数 `{"city":"Hangzhou"}` 为合法 JSON；`content` 为空（正常） | ✅ |
+| 结构化抽取 + `"chat_template_kwargs":{"enable_thinking":false}` | `finish_reason=stop` + 合法 JSON | `stop`；`content` = `{"name":"张三","age":34,"city":"杭州"}`；`reasoning` 长度 **0** | ✅ |
+| 同一任务**不关**思考 | 观察是否出现 `length` + 空内容 | `stop`；`content` 仍为合法 JSON；`reasoning` 106 字符（未吃光预算） | ✅（如预期） |
 
-> **判定纪律（重要）**：`finish_reason=length` 且 `content` 为空 ⇒
-> **是预算耗尽，不是能力不足**。原理见
-> [`docs/notes/thinking-mode-and-token-budget.md`](../notes/thinking-mode-and-token-budget.md)。
+> **关于第 3 项"没有失败"的正确读法**：MiniCPM5-2B 的思考通道很短（本次 106~142 字符），
+> 256 的预算下不会被吃光，因此**它身上观察不到** `length` + 空内容。
+> 这不等于该风险不存在——典型的预算耗尽案例是 Qwen3.5-4B（思考 3689 字符、答案为空）。
+> 判定纪律仍必须执行：**`finish_reason=length` 且 `content` 为空 ⇒ 预算耗尽，不是能力不足**。
+> 原理见 [`docs/notes/thinking-mode-and-token-budget.md`](../notes/thinking-mode-and-token-budget.md)。
+
+> **V-14 实测口径（2026-09-16）**：以 `-c 8192` 启动且**未**指定 `-np` 时，服务端日志为
+> `n_slots = 4, n_ctx_slot = 8192, kv_unified = 'true'`——即默认开 **4 个槽位且共享 KV**。
+> 正式基准必须显式固定 `-np 1` 并把该参数写进结果，否则并发槽位与 KV 复用会改变计时口径。
 
 ### 6.6 本节覆盖的待验证项
 
-| 编号 | 事项 | 位置 |
-| --- | --- | --- |
-| V-1 | 首次构建耗时 | §6.2 |
-| V-6 | llama.cpp 版本固定是否生效 | §6.1 |
-| V-7 | pyright 替换是否生效 | §6.1 |
-| V-14 | 服务端 `n_slots`/`n_ctx_slot` 口径 | §6.5（正式基准需显式固定 `-np 1`） |
+| 编号 | 事项 | 位置 | 2026-09-16 第二轮结果 |
+| --- | --- | --- | --- |
+| V-1 | 首次构建耗时 | §6.2 | ⚠️ 仍未测得（缺"销毁 ↔ 可用"时刻）；已给出构建期下界 ≥ 5.4 min |
+| V-6 | llama.cpp 版本固定是否生效 | §6.1 | ✅ 已确认：`commit 69eb250` |
+| V-7 | pyright 替换是否生效 | §6.1 | ✅ 已确认：有 `ms-pyright.pyright`、无 `pylance` |
+| V-14 | 服务端 `n_slots`/`n_ctx_slot` 口径 | §6.5（正式基准需显式固定 `-np 1`） | ✅ 已确认：未指定时默认 4 槽位 / `n_ctx_slot=8192` / `kv_unified=true` |
 
 ---
 
