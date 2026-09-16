@@ -35,6 +35,19 @@ def test_signature_depends_on_measurement_parameters() -> None:
 
 
 @pytest.mark.unit
+def test_signature_includes_machine_identity() -> None:
+    """不同机器的数据不得混比：CPU 型号必须是签名的一部分。
+
+    依据：2026-09-16 实测同一份协议在 CI 机器与开发容器上的吞吐差 25% 以上。
+    """
+    local = make_record()
+    ci = make_record()
+    ci["env"]["runner"]["cpu_model"] = "Another CPU @ 3.00GHz"
+
+    assert comparison_signature(local["env"]) != comparison_signature(ci["env"])
+
+
+@pytest.mark.unit
 def test_index_entries_carry_comparable_metric_keys() -> None:
     """索引里的指标键必须与记录中的指标名一致，否则基线取不到。"""
     entry = _index_of(make_record())

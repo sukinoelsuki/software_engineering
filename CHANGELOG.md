@@ -112,6 +112,16 @@
 
 ### Fixed
 
+- **修正基准数据发布的 refspec**：数据分支首次创建时必须用**全限定引用名**
+  （`HEAD:refs/heads/bench/data`）——远端已存在带斜杠的分支时，短写法
+  `HEAD:bench/data` 会被 git 拒绝（`not a full refname`），这正是首轮 push
+  "流水线绿、但 `bench/data` 不存在"的原因。
+- **去掉发布阶段的错误吞并**：`make bench-publish || echo "[warn] ..."`
+  会把发布失败降级成警告，使构建**显示成功而数据一条也没有**；
+  现在失败即把构建标红。
+- **修正跨环境可比性**：比较签名加入机器标识（CPU 型号）并记入 `env.json`。
+  实测同一份协议在 CI runner 与开发容器上的吞吐相差 25% 以上
+  （S 档 prefill ≈83 vs ≈115 tok/s），不加区分会把两个环境的数据混成一条序列。
 - **修正基准流水线的 stage 脚本在 dash 下失败**：脚本由镜像的 `/bin/sh` 执行，
   而 `set -euo pipefail` 是 bash 专有语法（Debian 12 的 dash 不支持），
   导致 `bench-push` 第一行即以退出码 2 中止；`.cnb.yml` 的脚本统一改为 `set -eu`。

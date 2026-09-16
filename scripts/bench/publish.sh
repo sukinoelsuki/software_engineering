@@ -145,8 +145,12 @@ fi
 [[ -n "${CNB_TOKEN:-}" ]] || die "缺少运行期令牌 CNB_TOKEN（CI 由平台注入，禁止手工写死）"
 
 # 凭据通过 credential helper 传入：不写进 remote URL，也不写进 git config。
+# 目标必须写成**全限定引用名** `refs/heads/<branch>`：数据分支首次创建时远端没有
+# 同名引用，`HEAD:bench/data` 会被 git 拒绝
+# （`error: The destination you provided is not a full refname`，
+#  提示即为 `HEAD:refs/heads/bench/data`）。2026-09-16 首次真实运行即因此失败。
 git -C "${WORKTREE}" \
     -c credential.helper='!f() { echo username=cnb; echo "password=${CNB_TOKEN}"; }; f' \
-    push origin "HEAD:${DATA_BRANCH}"
+    push origin "HEAD:refs/heads/${DATA_BRANCH}"
 
 log "已推送到 ${DATA_BRANCH}（来源 ${CURRENT_BRANCH}，日期 ${LATEST_DAY}）"

@@ -98,7 +98,12 @@ def make_record(
                 "build_id": "123",
                 "build_url": "",
             },
-            "runner": {"cpus": "8", "memory_gib": "16.0", "nproc": 8},
+            "runner": {
+                "cpus": "8",
+                "memory_gib": "16.0",
+                "nproc": 8,
+                "cpu_model": "Example CPU @ 2.50GHz",
+            },
             "llama": {
                 "binary": "/opt/llama.cpp/build/bin/llama-server",
                 "version": "version: 0.4.1-dev",

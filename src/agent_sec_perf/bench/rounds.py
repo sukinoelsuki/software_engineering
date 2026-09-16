@@ -433,6 +433,9 @@ def _env_fingerprint(
             "cpus": os.environ.get("CNB_CPUS") or str(os.cpu_count() or 0),
             "memory_gib": os.environ.get("CNB_MEMORY") or _total_memory_gib(),
             "nproc": os.cpu_count(),
+            # CPU 型号是"这台机器"的标识：同一份协议的 CI 数据与开发环境数据
+            # 实测吞吐差 25% 以上（2026-09-16），不加区分地混比就是口径错误。
+            "cpu_model": _cpu_model(),
         },
         "llama": {
             "binary": binary,
@@ -443,6 +446,21 @@ def _env_fingerprint(
         "python": platform.python_version(),
         "models": models,
     }
+
+
+def _cpu_model() -> str:
+    """从 ``/proc/cpuinfo`` 读取 CPU 型号（取第一条 ``model name``）。
+
+    读不到时返回 ``unknown``——不编造。
+    """
+    try:
+        for line in pathlib.Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() == "model name":
+                return value.strip() or "unknown"
+    except OSError:
+        return "unknown"
+    return "unknown"
 
 
 def _total_memory_gib() -> str:

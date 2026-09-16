@@ -29,9 +29,16 @@ _METRICS: tuple[tuple[str, str], ...] = (
 
 
 def comparison_signature(env: Mapping[str, object]) -> str:
-    """生成可比性签名：签名相同才允许放在同一条序列上比较。"""
+    """生成可比性签名：签名相同才允许放在同一条序列上比较。
+
+    签名包含**测量参数**与**机器标识**（CPU 型号）。后者是 2026-09-16 加的：
+    同一天实测到同一份协议在 CI 机器与开发容器上的吞吐相差 25% 以上
+    （CI：S 档 prefill ≈83 tok/s；开发容器 ≈115 tok/s），若不加区分，
+    跨环境的数据会被当成"环境退化"或"环境改进"。
+    """
     params = cast("Mapping[str, object]", env.get("params") or {})
     tiers = cast("Sequence[object]", params.get("tiers") or [])
+    runner = cast("Mapping[str, object]", env.get("runner") or {})
     return "|".join(
         [
             str(env.get("protocol")),
@@ -39,6 +46,7 @@ def comparison_signature(env: Mapping[str, object]) -> str:
             f"threads={params.get('threads')}",
             f"max_tokens={params.get('max_tokens')}",
             "tiers=" + ",".join(str(tier) for tier in tiers),
+            f"cpu={runner.get('cpu_model')}",
         ]
     )
 

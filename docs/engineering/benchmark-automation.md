@@ -145,6 +145,9 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 
 | 症状 | 最可能的原因 | 处置 |
 | --- | --- | --- |
+| **流水线是绿的，但 `bench/data` 没出现** | 发布阶段被 `\|\| echo` 吞掉；或推送 refspec 写法不对 | 查 `endStages` 的日志；推送必须用**全限定引用名**（见下一行）。已去掉吞错误的写法：发布失败会让构建变红 |
+| 发布报 `error: The destination you provided is not a full refname` | 远端已存在**带斜杠**的分支（如 `bench/nightly`）时，`HEAD:bench/data` 这类短写法会被 git 拒绝 | 目标写成 `HEAD:refs/heads/bench/data`（脚本已修正）；此现象在本地假远端可复现 |
+| 同一份协议在两个环境数字差 20%+ | 不同机器（CI runner 与开发容器实测差 25% 以上） | 比较签名已含 CPU 型号：跨环境数据**各成一条序列**，不要直接比 |
 | 流水线第一行就报 `sh: 1: set: Illegal option -o pipefail`（退出码 2） | 阶段脚本由镜像的 `/bin/sh`（dash）执行，而脚本用了 bash 专有的 `pipefail` | 改为 `set -eu`；需要 pipefail 时显式切 bash。**注意**：非 `-e` 的 `set -uo pipefail` 会让整段脚本中止，看起来像"什么都没做" |
 | 同一份 `.cnb.yml` 昨天能跑、今天同一处挂 | 镜像用了浮动标签（`python:3.12` 已从 Debian 12 漂到 13，dash 版本随之变化） | 镜像钉到发行版（`python:3.12-bookworm`），与开发镜像同源；两条硬规则见 §3 的提示框 |
 | 只有某个分支/某条流水线挂，另一条正常 | 两条流水线用的镜像不同（本例：门禁用 `python:3.12`，基准用 `.ide/Dockerfile` 的 bookworm） | 先比镜像，再比脚本：**同一份配置在不同基础镜像上语义可能不同** |
