@@ -47,6 +47,14 @@
   （均由分支合并中丢失的 `docs/learning/` 篇目迁入改写）与
   [`conflict-resolution-and-branch-hygiene.md`](docs/notes/conflict-resolution-and-branch-hygiene.md)。
 - 新增开发日志 [0011](docs/devlog/0011-2026-09-16-分支分叉与开发环境重建.md)。
+- **新增基准自动化数据流水线**（[ADR-0014](docs/adr/0014-benchmark-automation.md) +
+  [运行手册](docs/engineering/benchmark-automation.md)）：`make bench-round` 一轮跑三档
+  × N 次重复并产出数据、报告与索引；`bench/nightly` 上挂三种触发（推送即时轮 /
+  每日 04:00 夜轮 / 周一深跑 / 页面手动补跑），结果由 CI 发布到 `bench/data` 数据分支，
+  **任意分支可 `git fetch` 取数**。
+- 新增 `src/agent_sec_perf/bench/`（协议、夹具、隔离执行、客观判定、统计、schema 校验、
+  报告）与对应单测；测量脚手架自此随仓库走，不再因环境重建而丢失。
+- SRS 新增 `REQ-PERF-07`（基准自动化与可比时间序列）、`REQ-PERF-08`（测量纪律）。
 - 新增 [`scripts/check-branch-hygiene.sh`](scripts/check-branch-hygiene.sh) 与 `make branch-status`：
   列出未合入 `develop` 的分支与开放 PR（只读、不使用凭据、无法判定时记为"未知"而非"干净"）。
 - 新增 [ADR-0013](docs/adr/0013-branch-model-for-solo-dev.md)：分支模型改为 develop 主干 + 分支卫生自检。

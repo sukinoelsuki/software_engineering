@@ -19,7 +19,8 @@ PYTEST_XDIST ?= -n auto
 
 .PHONY: help setup lint format format-check typecheck test test-cov test-security \
         security security-bandit security-audit commit-check changelog bump \
-        check branch-status clean distclean
+        check branch-status clean distclean \
+        bench-round bench-publish bench-verify-assets
 
 # ---------------------------------------------------------------------------
 help: ## 显示所有可用目标
@@ -109,6 +110,40 @@ check: format-check lint typecheck test security ## 完整自检（提交 PR 前
 branch-status: ## 分支卫生自检：列出未合入 develop 的分支与开放 PR
 	@bash scripts/check-branch-hygiene.sh --base develop \
 		$(if $(STRICT),--strict,) $(if $(OFFLINE),--offline,)
+
+# ---------------------------------------------------------------------------
+# 基准自动化（决策见 docs/adr/0014-benchmark-automation.md，运行方式见
+# docs/engineering/benchmark-automation.md）
+#
+# 所有参数都用变量暴露：CI 与本地跑的是**同一条命令**，CI 只改变量，
+# 不另写一套流程（与 .cnb.yml 头部约定一致）。
+# ---------------------------------------------------------------------------
+BENCH_DATA_ROOT ?= .bench-data
+BENCH_TIERS     ?= S,M,L
+BENCH_REPEATS   ?= 10
+BENCH_THREADS   ?= 8
+BENCH_LABEL     ?= local
+BENCH_KEEP_DAYS ?= 30
+BENCH_MODEL_DIR ?= /opt/models
+# 隔离模式：user = 非特权 uid + 资源上限 + 最小环境（默认；CI 必须用这个）
+BENCH_ISOLATION ?= user
+
+bench-round: ## 跑一轮基准并落盘（BENCH_TIERS/BENCH_REPEATS/BENCH_THREADS/BENCH_LABEL 可覆盖）
+	PYTHONPATH=$(PWD)/src $(UV) run python -m agent_sec_perf.bench.rounds \
+		--data-root $(BENCH_DATA_ROOT) \
+		--model-dir $(BENCH_MODEL_DIR) \
+		--tiers $(BENCH_TIERS) \
+		--repeats $(BENCH_REPEATS) \
+		--threads $(BENCH_THREADS) \
+		--label $(BENCH_LABEL) \
+		--isolation $(BENCH_ISOLATION) \
+		--keep-days $(BENCH_KEEP_DAYS)
+
+bench-verify-assets: ## 校验预置资产摘要（复用构建期脚本，不引入第二个真源）
+	bash .ide/fetch-assets.sh verify $(BENCH_MODEL_DIR) /opt/benchmarks
+
+bench-publish: ## 校验并发布数据到数据分支（只推送被允许的分支；CI 专用）
+	bash scripts/bench/publish.sh
 
 # ---------------------------------------------------------------------------
 clean: ## 清理构建与缓存产物

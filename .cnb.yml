@@ -134,9 +134,186 @@
             make branch-status || echo "[warn] 分支自检未执行（不影响开发）"
 
 # ============================================================================
+# 基准自动化（仅挂在 bench/nightly 分支）
+#
+# 为什么单独一条分支（而不是挂在 develop 上）：
+#   1. **crontab 只支持单一明确分支名**（不支持 glob），必须选一条；
+#   2. 定时任务取**该分支 HEAD** 的代码 ⇒ 把测试代码与日常开发分开，
+#      才能保证"同一份协议反复测"——协议一变，前后数据就不可比（ADR-0014）；
+#   3. 数据写入独立的数据分支 `bench/data`，**不回写本分支**，
+#      因此不存在"CI 推数据 → 又触发一轮测试"的死循环。
+#
+# 三种触发各司其职（互不遮挡，见 docs/engineering/benchmark-automation.md）：
+#   push        —— 改了测试代码立刻跑一轮（R=3，S/M 两档，快速反馈）
+#   crontab     —— 周二~周日 04:00 夜轮（R=10，三档）；周一 04:00 深跑（R=20 + 线程 4 对照）
+#   web_trigger —— 手动补跑（页面上点一下，不改变量）
+#
+# 关键设计点：
+#   - `runner.cpus: 8` ⇒ 内存 = 8 × 2 GiB = 16 GiB；**不能降到 4 核**：
+#     L 档常驻 8.70 GiB，4 核只有 8 GiB，会 OOM（ADR-0014）；
+#   - 复用 `.ide/Dockerfile` 的镜像（模型与 llama.cpp 已预置）：构建输入未变时命中
+#     制品库缓存，因此 nightly 不必每晚重新下载 GB 级权重；
+#   - `lock` 串行化：保证同一时刻**只有一轮**基准在跑，否则两个 runner 抢 CPU
+#     会让吞吐数字失去可比性（这是数据有效性的要求，不是省钱）；
+#   - 发布放在 `endStages`：即使测量阶段失败也把**已完成的部分数据**落盘
+#     （半份数据比没有数据好，但会被标记为 partial）。
+# ============================================================================
+bench/nightly:
+  # --------------------------------------------------------------------------
+  # 推送即跑：验证新的测试代码能跑通，不求统计精度
+  # --------------------------------------------------------------------------
+  push:
+    - name: bench-push
+      runner:
+        cpus: 8
+      docker:
+        build:
+          dockerfile: .ide/Dockerfile
+          by:
+            - .ide/settings.json
+            - .ide/assets/models.txt
+            - .ide/assets/benchmarks.txt
+            - .ide/assets/references.txt
+            - .ide/fetch-assets.sh
+      lock:
+        key: bench-cpu
+        wait: true
+        timeout: 3600
+      stages:
+        - name: verify
+          script: |
+            set -euo pipefail
+            make setup
+            make check
+        - name: round-quick
+          script: |
+            set -euo pipefail
+            make bench-round BENCH_TIERS=S,M BENCH_REPEATS=3 BENCH_LABEL=push
+      endStages:
+        - name: publish
+          script: |
+            set -uo pipefail
+            make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
+
+  # --------------------------------------------------------------------------
+  # 夜轮：周二~周日 04:00（Asia/Shanghai）三档各重复 10 次
+  # --------------------------------------------------------------------------
+  "crontab: 0 4 * * 2-6,0":
+    - name: bench-nightly
+      runner:
+        cpus: 8
+      docker:
+        build:
+          dockerfile: .ide/Dockerfile
+          by:
+            - .ide/settings.json
+            - .ide/assets/models.txt
+            - .ide/assets/benchmarks.txt
+            - .ide/assets/references.txt
+            - .ide/fetch-assets.sh
+      lock:
+        key: bench-cpu
+        wait: true
+        timeout: 3600
+      stages:
+        - name: prepare
+          script: |
+            set -euo pipefail
+            make setup
+        - name: round-nightly
+          timeout: 90m
+          script: |
+            set -euo pipefail
+            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=10 BENCH_LABEL=nightly
+      endStages:
+        - name: publish
+          script: |
+            set -uo pipefail
+            make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
+
+  # --------------------------------------------------------------------------
+  # 深跑：周一 04:00 —— 更多重复（20 次）+ 线程数对照（4 线程，R=5）
+  #   线程 4 的轮次与线程 8 的轮次**不是同一条序列**（比较签名不同），
+  #   用途是回答"核数变少时该降哪一档"，即 REQ-PERF-05/06 的取数。
+  # --------------------------------------------------------------------------
+  "crontab: 0 4 * * 1":
+    - name: bench-deep
+      runner:
+        cpus: 8
+      docker:
+        build:
+          dockerfile: .ide/Dockerfile
+          by:
+            - .ide/settings.json
+            - .ide/assets/models.txt
+            - .ide/assets/benchmarks.txt
+            - .ide/assets/references.txt
+            - .ide/fetch-assets.sh
+      lock:
+        key: bench-cpu
+        wait: true
+        timeout: 7200
+      stages:
+        - name: prepare
+          script: |
+            set -euo pipefail
+            make setup
+        - name: round-deep
+          timeout: 150m
+          script: |
+            set -euo pipefail
+            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=20 BENCH_LABEL=deep
+        - name: round-threads4
+          timeout: 60m
+          script: |
+            set -euo pipefail
+            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=5 BENCH_THREADS=4 BENCH_LABEL=deep-t4
+      endStages:
+        - name: publish
+          script: |
+            set -uo pipefail
+            make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
+
+  # --------------------------------------------------------------------------
+  # 手动补跑：页面上点一下即可（不改变量，等价于夜轮）
+  # --------------------------------------------------------------------------
+  web_trigger_bench:
+    - name: bench-manual
+      runner:
+        cpus: 8
+      docker:
+        build:
+          dockerfile: .ide/Dockerfile
+          by:
+            - .ide/settings.json
+            - .ide/assets/models.txt
+            - .ide/assets/benchmarks.txt
+            - .ide/assets/references.txt
+            - .ide/fetch-assets.sh
+      lock:
+        key: bench-cpu
+        wait: true
+        timeout: 3600
+      stages:
+        - name: prepare
+          script: |
+            set -euo pipefail
+            make setup
+        - name: round-manual
+          timeout: 90m
+          script: |
+            set -euo pipefail
+            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=5 BENCH_LABEL=manual
+      endStages:
+        - name: publish
+          script: |
+            set -uo pipefail
+            make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
+
+# ============================================================================
 # TODO（随项目推进补充，需先确认 CNB 语法）：
 #   - 发布流程：tag_push "v*" → 构建制品 + 生成发布说明
 #   - 安全扫描：SCA 依赖与许可证扫描（PR 增量）
-#   - 性能基准：benchmark 流水线（手动/定时触发，不阻塞日常提交）
+#   - 基准数据保留期检查：每月确认 bench/data 的体积与清理效果
 #   - 定时任务：每周依赖更新检查
 # ============================================================================
