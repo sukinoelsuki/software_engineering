@@ -112,6 +112,13 @@
 
 ### Fixed
 
+- **修正基准流水线的 stage 脚本在 dash 下失败**：脚本由镜像的 `/bin/sh` 执行，
+  而 `set -euo pipefail` 是 bash 专有语法（Debian 12 的 dash 不支持），
+  导致 `bench-push` 第一行即以退出码 2 中止；`.cnb.yml` 的脚本统一改为 `set -eu`。
+- **把 CI 镜像由浮动标签改为钉住发行版**：`python:3.12` 已从 Debian 12 漂到 Debian 13
+  （dash 版本随之变化，同一份配置因此在不同时间行为不同、并与开发镜像分叉），
+  现统一为 `python:3.12-bookworm`。两条规则已写入 `.cnb.yml` 头部并由
+  `tests/unit/test_cnb_config.py` 检查。
 - 对齐 pre-commit 钩子版本至 `uv.lock` 锁定版本（ruff / mypy / commitizen / bandit），
   消除"钩子绿、`make check` 红"的版本分叉；并写明版本对齐规则。
 - 修正 `docs/README.md` 文档地图中 devlog 的失效链接。

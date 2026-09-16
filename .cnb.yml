@@ -11,6 +11,20 @@
 #   - pull_request 属于「不可信事件」（配置取自源分支，存在被篡改风险），
 #     因此本流水线中不得使用任何密钥、令牌或敏感凭据。
 #     参见：https://docs.cnb.cool/zh/build/trigger-rule.md
+#
+# 【两条硬规则，2026-09-16 由一次真实故障换来】
+#   1. **阶段脚本由镜像的 `/bin/sh` 执行，不得使用 bash 专有语法。**
+#      特别是 `set -euo pipefail`：Debian 12 的 dash（0.5.12-2）不支持
+#      `set -o pipefail`，会在第一行直接报 `sh: 1: set: Illegal option -o pipefail`
+#      并以退出码 2 中止——连后续 stage 都不会执行。因此这里一律写 `set -eu`；
+#      需要 pipefail 时显式切到 bash（`if [ -n "${BASH_VERSION:-}" ]`）。
+#      注意：`make` 目标本身走 bash（Makefile 里 `SHELL := /bin/bash`），不受影响。
+#   2. **镜像不得使用浮动标签。** 原先写 `python:3.12`，该标签已从 Debian 12
+#      （bookworm，dash 0.5.12-2）漂到 Debian 13（trixie，dash 0.5.12-12，
+#      支持 pipefail）——同一份配置在不同时间行为不同，且与开发镜像
+#      （`.ide/Dockerfile` 的 `FROM python:3.12-bookworm`）分叉。
+#      现统一为 `python:3.12-bookworm`，与开发镜像同源。
+#      依据与证据：docs/devlog/0012 §5、docs/notes/reproducibility-and-gates.md。
 # ============================================================================
 
 "**":
@@ -20,22 +34,22 @@
   push:
     - name: ci
       docker:
-        image: python:3.12
+        image: python:3.12-bookworm
       stages:
         - name: prepare
           script: |
-            set -euo pipefail
+            set -eu
             command -v make >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq --no-install-recommends make)
             make setup
 
         - name: verify
           script: |
-            set -euo pipefail
+            set -eu
             make check
 
         - name: commit-message
           script: |
-            set -euo pipefail
+            set -eu
             # 仅在非首个提交时校验提交信息规范
             if git rev-parse HEAD~1 >/dev/null 2>&1; then
               make commit-check
@@ -45,7 +59,7 @@
 
         - name: branch-status
           script: |
-            set -euo pipefail
+            set -eu
             # 只报告，不阻断：分支卫生是提醒而非质量门禁（ADR-0013）。
             # 需要真正阻断时改用 `make branch-status STRICT=1`（脚本 --strict）。
             make branch-status || echo "[warn] 分支自检未完成"
@@ -56,17 +70,17 @@
   pull_request:
     - name: ci-pr
       docker:
-        image: python:3.12
+        image: python:3.12-bookworm
       stages:
         - name: prepare
           script: |
-            set -euo pipefail
+            set -eu
             command -v make >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq --no-install-recommends make)
             make setup
 
         - name: verify
           script: |
-            set -euo pipefail
+            set -eu
             make check
 
   # --------------------------------------------------------------------------
@@ -182,17 +196,17 @@ bench/nightly:
       stages:
         - name: verify
           script: |
-            set -euo pipefail
+            set -eu
             make setup
             make check
         - name: round-quick
           script: |
-            set -euo pipefail
+            set -eu
             make bench-round BENCH_TIERS=S,M BENCH_REPEATS=3 BENCH_LABEL=push
       endStages:
         - name: publish
           script: |
-            set -uo pipefail
+            set -u
             make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
 
   # --------------------------------------------------------------------------
@@ -218,17 +232,17 @@ bench/nightly:
       stages:
         - name: prepare
           script: |
-            set -euo pipefail
+            set -eu
             make setup
         - name: round-nightly
           timeout: 90m
           script: |
-            set -euo pipefail
+            set -eu
             make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=10 BENCH_LABEL=nightly
       endStages:
         - name: publish
           script: |
-            set -uo pipefail
+            set -u
             make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
 
   # --------------------------------------------------------------------------
@@ -256,22 +270,22 @@ bench/nightly:
       stages:
         - name: prepare
           script: |
-            set -euo pipefail
+            set -eu
             make setup
         - name: round-deep
           timeout: 150m
           script: |
-            set -euo pipefail
+            set -eu
             make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=20 BENCH_LABEL=deep
         - name: round-threads4
           timeout: 60m
           script: |
-            set -euo pipefail
+            set -eu
             make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=5 BENCH_THREADS=4 BENCH_LABEL=deep-t4
       endStages:
         - name: publish
           script: |
-            set -uo pipefail
+            set -u
             make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
 
   # --------------------------------------------------------------------------
@@ -297,17 +311,17 @@ bench/nightly:
       stages:
         - name: prepare
           script: |
-            set -euo pipefail
+            set -eu
             make setup
         - name: round-manual
           timeout: 90m
           script: |
-            set -euo pipefail
+            set -eu
             make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=5 BENCH_LABEL=manual
       endStages:
         - name: publish
           script: |
-            set -uo pipefail
+            set -u
             make bench-publish || echo "[warn] 数据发布失败（不影响本轮结论，但需查明）"
 
 # ============================================================================

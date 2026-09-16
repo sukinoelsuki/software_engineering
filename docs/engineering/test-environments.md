@@ -87,8 +87,10 @@ docker run --rm \
 ### 3.3 T3：独立容器 / 干净环境回归
 
 ```bash
-# 本地 CI 预演（与 .cnb.yml 的 CI 同源：python:3.12 容器 + make check）
-docker run --rm -v "$PWD":/w -w /w python:3.12 \
+# 本地 CI 预演（与 .cnb.yml 的 CI 同源：python:3.12-bookworm 容器 + make check）
+# 注意钉到发行版：`python:3.12` 是浮动标签，已从 Debian 12 漂到 13（见
+# docs/notes/reproducibility-and-gates.md 第四节）
+docker run --rm -v "$PWD":/w -w /w python:3.12-bookworm \
   bash -lc 'make setup && make check'
 ```
 
@@ -129,7 +131,7 @@ docker run --rm -v "$PWD":/w -w /w python:3.12 \
 
 | 环境 | 跑什么 | 说明 |
 | --- | --- | --- |
-| CNB `push` / `pull_request` | `make setup && make check`（`python:3.12` 容器） | 门禁，见 [`.cnb.yml`](../../.cnb.yml) |
+| CNB `push` / `pull_request` | `make setup && make check`（`python:3.12-bookworm` 容器，与开发镜像同源） | 门禁，见 [`.cnb.yml`](../../.cnb.yml) |
 | 本地 T0 | 同上（`make check`） | 提交前自检 |
 | 本地 T3 | 同 CI 同源容器 | 干净环境预演，按需 |
 | 本地 T2 | 安全对抗性用例 | **CI 暂不纳入**（需要 docker 服务，且属按需执行） |

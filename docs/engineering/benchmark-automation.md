@@ -61,6 +61,17 @@ git push origin develop:bench/nightly
 所有触发共用一把锁（`bench-cpu`）：**同一时刻只有一轮在跑**。
 并发测量会让吞吐数字失去可比性，所以这一步是硬约束，不是优化。
 
+> **改流水线前必读两条硬规则**（`tests/unit/test_cnb_config.py` 会检查）：
+>
+> 1. **阶段脚本由镜像的 `/bin/sh` 执行**（Debian 12 上是 dash），
+>    因此不要写 `set -euo pipefail` 这类 bash 专有语法——dash 会在第一行报
+>    `Illegal option -o pipefail` 并以退出码 2 中止，**后续 stage 也不会执行**；
+> 2. **镜像必须钉到发行版**（`python:3.12-bookworm`），不要用 `python:3.12` 这类浮动标签：
+>    后者已从 Debian 12 漂到 Debian 13，导致同一份配置在不同时间行为不同，
+>    并与开发镜像（bookworm）分叉。
+>
+> 这两条是 2026-09-16 那次 `bench-push` 失败的完整根因（§7 前两行）。
+
 ## 4. 参数与预算
 
 `runner.cpus: 8` ⇒ 内存 16 GiB（内存 = 核数 × 2 GiB）。**不要降到 4 核**：
@@ -102,6 +113,9 @@ L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM。
 
 | 症状 | 最可能的原因 | 处置 |
 | --- | --- | --- |
+| 流水线第一行就报 `sh: 1: set: Illegal option -o pipefail`（退出码 2） | 阶段脚本由镜像的 `/bin/sh`（dash）执行，而脚本用了 bash 专有的 `pipefail` | 改为 `set -eu`；需要 pipefail 时显式切 bash。**注意**：非 `-e` 的 `set -uo pipefail` 会让整段脚本中止，看起来像"什么都没做" |
+| 同一份 `.cnb.yml` 昨天能跑、今天同一处挂 | 镜像用了浮动标签（`python:3.12` 已从 Debian 12 漂到 13，dash 版本随之变化） | 镜像钉到发行版（`python:3.12-bookworm`），与开发镜像同源；两条硬规则见 §3 的提示框 |
+| 只有某个分支/某条流水线挂，另一条正常 | 两条流水线用的镜像不同（本例：门禁用 `python:3.12`，基准用 `.ide/Dockerfile` 的 bookworm） | 先比镜像，再比脚本：**同一份配置在不同基础镜像上语义可能不同** |
 | `prefill` 极差几十~几百 % | 服务端复用 KV 前缀，"1 token 的 prefill"混进来了 | 确认每次重复都重启了服务；看日志里 `prompt eval time = ... / 1 tokens` 是否存在；`valid_prefill_repeats < repeats` 即为该情形 |
 | 某档 `timing_lines_ok` 为假 / 计时行数不符 | 日志格式或请求数变了（升级 llama.cpp、改了任务数） | 看 `logs/<档>_r01.server.log` 的 `slot print_timing` 行数；确认后提协议版本 |
 | 输出为空且 `finish_reason=length` | **预算耗尽**，不是能力不足 | 报告会自动标红；调 `--max-tokens` 或关思考（见 `notes/thinking-mode-and-token-budget.md`） |
