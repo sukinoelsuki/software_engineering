@@ -50,6 +50,7 @@
 | [on-device-model-selection.md](on-device-model-selection.md) | **不存在"当前最好的端侧模型"**——只有某条轴、某个约束下更合适；厂商榜单只能当线索 | 2026-09-15 对 OpenBMB / Qwen 官方模型卡的核查；档位调整见 ADR-0011 |
 | [thinking-mode-and-token-budget.md](thinking-mode-and-token-budget.md) | **"模型一个字都不输出"通常是预算被思考吃光**，不是能力不足 | 2026-09-15 W1 实测（llama-server build 69eb250）；复跑见 checklist §6.5 |
 | [conflict-resolution-and-branch-hygiene.md](conflict-resolution-and-branch-hygiene.md) | **冲突取舍会按内容丢东西**：按文件"取一侧"时，合并结果树与目标分支相等**恰恰是丢失的证据**；合并后必须反向核对另一侧 | 2026-09-16 分叉合并（PR #3，`7741c75` vs `e2b0594`）；见 devlog 0011 |
+| [dev-agent-model-selection.md](dev-agent-model-selection.md) | **档位名不能推断能力，自报分数不能直接比较**——倍率最低的档位在该批模型里基准分最高，中价档反而最弱；引用模型分数必须标注口径与来源性质 | 2026-09-18 对 CodeBuddy 可用模型的调研（厂商 model card / 收录站 / 社区实测，均为二手）；倍率来自产品内截图 |
 
 ---
 
