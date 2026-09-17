@@ -26,6 +26,14 @@ main        稳定发布线（保护分支，只能通过 PR 合入）
 
 - 命名：全小写，单词用 `-` 连接，禁止中文与空格；必须带 Issue 编号（`docs`/`chore` 可省略）。
 - 发布相关：`release/<version>`、`hotfix/<version>`。
+- ⚠️ **例外（长驻：不合回、不得删除、只由 CI 写）**：`bench/nightly`、`bench/data`
+  ——基准自动化专用，理由见 [ADR-0014 §2.1](../../../docs/adr/0014-benchmark-automation.md)、
+  例外条件见 [ADR-0013 §9](../../../docs/adr/0013-branch-model-for-solo-dev.md)。
+  **这一行不能省**：上面的默认规则是"短期分支合回 `develop`"，
+  省略它就会推出相反的错误动作。
+- 完整分支矩阵与合并策略以 [`docs/engineering/git-workflow.md`](../../../docs/engineering/git-workflow.md)
+  与 [ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md) 为准；
+  本摘要只写"**日常会用到 + 省略会误导**"的内容（分工口径见该文 §2）。
 - **禁止**直接向 `main` 提交（已由 pre-commit 的 `no-commit-to-branch --branch=main` 拦截）；
   `develop` 是**工作主干、允许直推**
   （[ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md)）。
