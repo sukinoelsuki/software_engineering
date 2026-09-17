@@ -1,0 +1,100 @@
+{
+  "perf": {
+    "S": {
+      "repeats": 3,
+      "prefill_tok_per_s": {
+        "n": 3,
+        "median": 88.7833,
+        "min": 68.8133,
+        "max": 89.1033,
+        "spread_pct": 22.85,
+        "values": [
+          68.8133,
+          88.7833,
+          89.1033
+        ]
+      },
+      "gen_tok_per_s": {
+        "n": 3,
+        "median": 25.6833,
+        "min": 19.92,
+        "max": 25.72,
+        "spread_pct": 22.58,
+        "values": [
+          19.92,
+          25.6833,
+          25.72
+        ]
+      },
+      "request_elapsed_s": {
+        "n": 3,
+        "median": 52.4971,
+        "min": 52.3715,
+        "max": 111.0261,
+        "spread_pct": 111.73,
+        "values": [
+          111.0261,
+          52.4971,
+          52.3715
+        ]
+      },
+      "load_seconds": 1.57,
+      "load_spread_pct": 861.52,
+      "model_load_seconds_log": null,
+      "peak_memory_gib": 2.67,
+      "valid_prefill_repeats": 3,
+      "server": {
+        "n_slots": 1,
+        "n_ctx_slot": 4096
+      }
+    },
+    "M": {
+      "repeats": 3,
+      "prefill_tok_per_s": {
+        "n": 3,
+        "median": 48.9433,
+        "min": 48.6833,
+        "max": 50.2633,
+        "spread_pct": 3.23,
+        "values": [
+          48.9433,
+          48.6833,
+          50.2633
+        ]
+      },
+      "gen_tok_per_s": {
+        "n": 3,
+        "median": 15.01,
+        "min": 14.9867,
+        "max": 15.2533,
+        "spread_pct": 1.78,
+        "values": [
+          15.2533,
+          15.01,
+          14.9867
+        ]
+      },
+      "request_elapsed_s": {
+        "n": 3,
+        "median": 71.7164,
+        "min": 71.6812,
+        "max": 72.3031,
+        "spread_pct": 0.87,
+        "values": [
+          71.6812,
+          72.3031,
+          71.7164
+        ]
+      },
+      "load_seconds": 2.76,
+      "load_spread_pct": 0.02,
+      "model_load_seconds_log": null,
+      "peak_memory_gib": 4.84,
+      "valid_prefill_repeats": 3,
+      "server": {
+        "n_slots": 1,
+        "n_ctx_slot": 4096
+      }
+    }
+  }
+}

@@ -1,0 +1,296 @@
+{
+  "capability": {
+    "S": {
+      "round_pass_rate": 0.6667,
+      "tasks": {
+        "t1": {
+          "passed": 0,
+          "n": 3,
+          "rate": 0.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 2,
+              "mypy_tail": "mypy: error: Cannot read file\n'.bench-data/daily/2026-09-17/work/S_r01_t1/t1_fixed.py': No such file or\ndirectory",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            },
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 2,
+              "mypy_tail": "mypy: error: Cannot read file\n'.bench-data/daily/2026-09-17/work/S_r02_t1/t1_fixed.py': No such file or\ndirectory",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            },
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 2,
+              "mypy_tail": "mypy: error: Cannot read file\n'.bench-data/daily/2026-09-17/work/S_r03_t1/t1_fixed.py': No such file or\ndirectory",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            }
+          ]
+        },
+        "t2": {
+          "passed": 3,
+          "n": 3,
+          "rate": 1.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t2",
+              "passed": 5,
+              "fenced": true,
+              "pytest_rc": 0,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": ".....                                                                    [100%]\n5 passed in 0.01s"
+            },
+            {
+              "task": "t2",
+              "passed": 5,
+              "fenced": true,
+              "pytest_rc": 0,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": ".....                                                                    [100%]\n5 passed in 0.01s"
+            },
+            {
+              "task": "t2",
+              "passed": 5,
+              "fenced": true,
+              "pytest_rc": 0,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": ".....                                                                    [100%]\n5 passed in 0.01s"
+            }
+          ]
+        },
+        "t3": {
+          "passed": 3,
+          "n": 3,
+          "rate": 1.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t3",
+              "passed": true,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 0,
+              "delivered_counts": {
+                "passed": 11,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": true,
+              "killed_mutant": true
+            },
+            {
+              "task": "t3",
+              "passed": true,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 0,
+              "delivered_counts": {
+                "passed": 11,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": true,
+              "killed_mutant": true
+            },
+            {
+              "task": "t3",
+              "passed": true,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 0,
+              "delivered_counts": {
+                "passed": 11,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": true,
+              "killed_mutant": true
+            }
+          ]
+        }
+      }
+    },
+    "M": {
+      "round_pass_rate": 0.6667,
+      "tasks": {
+        "t1": {
+          "passed": 0,
+          "n": 3,
+          "rate": 0.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 2,
+              "mypy_tail": "mypy: error: Cannot read file\n'.bench-data/daily/2026-09-17/work/M_r01_t1/t1_fixed.py': No such file or\ndirectory",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            },
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 2,
+              "mypy_tail": "mypy: error: Cannot read file\n'.bench-data/daily/2026-09-17/work/M_r02_t1/t1_fixed.py': No such file or\ndirectory",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            },
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 2,
+              "mypy_tail": "mypy: error: Cannot read file\n'.bench-data/daily/2026-09-17/work/M_r03_t1/t1_fixed.py': No such file or\ndirectory",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            }
+          ]
+        },
+        "t2": {
+          "passed": 3,
+          "n": 3,
+          "rate": 1.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t2",
+              "passed": 5,
+              "fenced": true,
+              "pytest_rc": 0,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": ".....                                                                    [100%]\n5 passed in 0.01s"
+            },
+            {
+              "task": "t2",
+              "passed": 5,
+              "fenced": true,
+              "pytest_rc": 0,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": ".....                                                                    [100%]\n5 passed in 0.01s"
+            },
+            {
+              "task": "t2",
+              "passed": 5,
+              "fenced": true,
+              "pytest_rc": 0,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": ".....                                                                    [100%]\n5 passed in 0.01s"
+            }
+          ]
+        },
+        "t3": {
+          "passed": 3,
+          "n": 3,
+          "rate": 1.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t3",
+              "passed": true,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 0,
+              "delivered_counts": {
+                "passed": 7,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": true,
+              "killed_mutant": true
+            },
+            {
+              "task": "t3",
+              "passed": true,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 0,
+              "delivered_counts": {
+                "passed": 7,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": true,
+              "killed_mutant": true
+            },
+            {
+              "task": "t3",
+              "passed": true,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 0,
+              "delivered_counts": {
+                "passed": 7,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": true,
+              "killed_mutant": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}
