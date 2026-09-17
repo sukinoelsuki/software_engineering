@@ -75,6 +75,55 @@
         }
       },
       "report": "daily/2026-09-17/report.md"
+    },
+    {
+      "round_id": "2026-09-18-nightly",
+      "date": "2026-09-18",
+      "protocol": "bench-v2",
+      "label": "nightly",
+      "signature": "bench-v2|ctx=4096|threads=8|max_tokens=2048|tiers=S,M,L|cpu=AMD EPYC 9754 128-Core Processor",
+      "status": "complete",
+      "isolation": "user",
+      "git_commit": "9d24ec828434c0fa9f45450d31a6c31c0aaa39d6",
+      "core_hours": 6.859,
+      "perf": {
+        "S": {
+          "prefill_tok_per_s": 92.205,
+          "gen_tok_per_s": 26.1067,
+          "request_elapsed_s": 51.2842,
+          "repeats": 10,
+          "load_seconds": 1.53,
+          "peak_memory_gib": 2.67
+        },
+        "M": {
+          "prefill_tok_per_s": 50.93,
+          "gen_tok_per_s": 15.49,
+          "request_elapsed_s": 70.4763,
+          "repeats": 10,
+          "load_seconds": 2.68,
+          "peak_memory_gib": 4.84
+        },
+        "L": {
+          "prefill_tok_per_s": 27.5983,
+          "gen_tok_per_s": 8.855,
+          "request_elapsed_s": 156.2231,
+          "repeats": 10,
+          "load_seconds": 4.01,
+          "peak_memory_gib": 8.69
+        }
+      },
+      "capability": {
+        "S": {
+          "round_pass_rate": 0.6667
+        },
+        "M": {
+          "round_pass_rate": 0.6667
+        },
+        "L": {
+          "round_pass_rate": 0.3333
+        }
+      },
+      "report": "daily/2026-09-18/report.md"
     }
   ]
 }
