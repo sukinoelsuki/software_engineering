@@ -55,6 +55,8 @@
 | `exp/<slug>` | `develop` | — | 归档结论后关闭 | 短期 |
 | `release/<version>` | `develop` | `main` | merge commit | 短期 |
 | `hotfix/<version>` | `main` | `main` + 回合 `develop` | merge commit | 短期 |
+| `bench/nightly` | `develop` | **不合入** | — | **长驻**（例外，见下） |
+| `bench/data` | `bench/nightly`（CI 推入） | **不合入** | CI 快进推送，**禁止 force** | **长驻**（例外，见下） |
 
 ### 命名规则
 
@@ -69,6 +71,25 @@
 - `exp/*` 分支**允许不产生可合并代码**；
 - 但必须把**结论**（成功或失败）归档到 `docs/research/`，并关闭对应 Issue；
 - 没有归档结论的 `exp/*` 分支视为任务未完成，**不得**直接删除分支了事。
+
+### 关于 `bench/*`（基准长驻分支，**例外**）
+
+`bench/nightly` 与 `bench/data` 是本工作流里**唯一的两条长驻非主干分支**，
+依据 [ADR-0014 §2.1](../adr/0014-benchmark-automation.md) 建立，
+例外条件登记在 [ADR-0013 §9](../adr/0013-branch-model-for-solo-dev.md)。要点：
+
+- **它们不合入 `develop`，也不得删除**——这与 §2 表中其他分支的"短期 + 合回"规则**相反**，
+  是刻意的例外，不是遗漏；
+- `bench/data`（机器产出：JSON / 报告 / 日志 / 模型产物）**只由 CI 机器人写入**，
+  以快进推送更新、**禁止 force**，来源分支白名单为 `bench/nightly`；**人手不得直接提交**；
+- `bench/nightly`（基准代码）**不回写代码到 `develop`**；要进产品线的改动另开普通提交；
+- **例外不外溢**：新增任何长驻分支都必须先新增 ADR 说明理由；
+  其余分支仍严格遵守 §2 的"当次会话合回 `develop`"。
+
+> 背景：[ADR-0014 §2.1](../adr/0014-benchmark-automation.md) 的三条理由 ——
+> `crontab` 只支持单一明确分支名；定时任务取**该分支 HEAD 的代码**，故测试代码必须与
+> 日常开发分支分离（协议一变序列即断）；数据分支不被任何事件触发，避免
+> "CI 推数据 → 又触发一轮测试"的死循环。
 
 ---
 
