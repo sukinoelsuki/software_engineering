@@ -72,6 +72,12 @@
 - **完成开发环境第二轮"重建后验证"**（[post-build-checklist](docs/engineering/post-build-checklist.md) §6）：
   镜像侧三处修复（llama.cpp 固定 `69eb250`、`ms-pyright.pyright`、预置资产摘要）全部生效；
   三档基准复跑确认环境与基线可比（常驻内存三档逐位一致）。
+- 新增 [ADR-0015](docs/adr/0015-layering-and-reuse-boundary.md)：分层模型
+  （四层纵向 `UX → HARNESS → CAPABILITY → FOUNDATION` + 两横切层 `SEC`/`OBS`
+  + 零行为契约层 `contracts/`）、复用组件清单（按 8 类给出，已核验项注明 PyPI 出处、
+  未核验标【待核验】）与自研边界（5 项落到具体层 + 13 项不自研清单）；状态「提议中」，
+  选定组件须所有者逐条确认。**回应 `CODEBUDDY.md` §9 两项待办（base project 选型冻结、
+  目录结构与模块划分 ADR），并登记 A-1**。
 
 ### Changed
 
