@@ -55,6 +55,30 @@ provider:
 - 禁止大范围重写既有文件（除非任务明确要求并已确认）。
 - 修改公开接口、目录结构、CI 门禁强度前，必须获得人类确认。
 
+## 规则变更的联动更新（强制）
+
+**任何规则/决策一经修改，必须回头把所有被它覆盖的旧约束一并更新**——
+不能只改"新写的那一处"，否则旧表述会继续以"现行规则"的身份误导后续判断。
+
+| 变更类型 | 必须同步的位置 |
+| --- | --- |
+| 流程 / 技术决策 | `docs/adr/`（决策）+ `docs/engineering/`（完整定义）+ `.codebuddy/rules/`（摘要）+ `CODEBUDDY.md` / `AGENTS.md`（常驻结论） |
+| 门禁强度 | `Makefile`、`.pre-commit-config.yaml`、`.cnb.yml` 三处口径必须一致 |
+| 协作机制 | `.codebuddy/agents/` + `docs/engineering/agent-teams.md` + `CODEBUDDY.md` / `AGENTS.md` §10 |
+
+**落地动作（改动后必做一次"反向搜索"）**：用变更涉及的**旧术语、旧字段名、旧分支名、
+旧命令**在仓库内搜索，确认没有残留的旧表述。搜索范围要包含 `.codebuddy/`、
+`docs/engineering/`、`docs/adr/`、`CONTRIBUTING.md`、`README.md`。
+
+**例外（不要改）**：`docs/devlog/`、`docs/research/` 与 ADR 中**已接受决策的历史快照**
+不改——它们记录"当时发生了什么、当时怎么想"，按时间演进，事后修改即失真。
+若与现状冲突，在**新一篇**（或新的 ADR）里说明变更即可。
+
+> 实例（2026-09-18）：`develop` 于 09-16 由 [ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md)
+> 改为工作主干，但 `.codebuddy/rules/git-workflow/RULE.mdc` 与 `CODEBUDDY.md` §2
+> 直到 09-18 才被发现仍写着"禁止直接提交 develop / 合并到 develop 需事先批准"。
+> ADR-0013 §7 本就有"三处表述一致，无矛盾"的验证条目——这条验证**当时并未真正执行**。
+
 ## 依赖管理
 
 - 只使用标准库与 `pyproject.toml` 中已声明的依赖。

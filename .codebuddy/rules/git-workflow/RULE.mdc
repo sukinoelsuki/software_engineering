@@ -14,7 +14,7 @@ provider:
 
 ```text
 main        稳定发布线（保护分支，只能通过 PR 合入）
- └─ develop 集成分支（保护分支，下一版本的内容汇聚于此）
+ └─ develop 工作主干（**可直推**，见 ADR-0013）
      ├─ feat/<issue>-<slug>      新功能
      ├─ fix/<issue>-<slug>       缺陷修复
      ├─ perf/<issue>-<slug>      性能优化
@@ -26,7 +26,9 @@ main        稳定发布线（保护分支，只能通过 PR 合入）
 
 - 命名：全小写，单词用 `-` 连接，禁止中文与空格；必须带 Issue 编号（`docs`/`chore` 可省略）。
 - 发布相关：`release/<version>`、`hotfix/<version>`。
-- **禁止**直接向 `main` / `develop` 提交（已由 pre-commit 的 `no-commit-to-branch` 拦截）。
+- **禁止**直接向 `main` 提交（已由 pre-commit 的 `no-commit-to-branch --branch=main` 拦截）；
+  `develop` 是**工作主干、允许直推**
+  （[ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md)）。
 
 ## 提交规范（Conventional Commits，强制）
 
@@ -50,7 +52,8 @@ Refs: #<issue>
 
 | 方向 | 策略 | 理由 |
 | --- | --- | --- |
-| 短期分支 → `develop` | **Squash merge** | 保持线性、可读的历史 |
+| 短期分支 → `develop` | **Merge commit**（默认） | devlog / CHANGELOG 会引用提交哈希，squash 会让引用指向不存在的对象 |
+| 单提交且无文档引用的分支 → `develop` | 可 Squash merge | 无哈希引用时，线性历史更整洁 |
 | `develop` → `main` | **Merge commit** | 保留发布节点，便于回溯 |
 | `hotfix/*` → `main` | Merge commit + 回合 `develop` | 保证修复不丢失 |
 
@@ -78,9 +81,12 @@ Refs: #<issue>
 
 ### 本地操作
 
-- ✅ 本地 `git add` / `git commit` 可在当前任务范围内进行，但需满足：
-  在独立短期分支上、提交粒度单一、可回滚。
-- ⚠️ **合并到 `main` / `develop` 需事先批准**（即使只在本地）。
+- ✅ 本地 `git add` / `git commit` 可在当前任务范围内进行，需满足：提交粒度单一、可回滚。
+- ✅ **`develop` 是工作主干，允许直推、无需事先批准**（仍需 Conventional Commits、
+  pre-commit 与 `make check` 全绿）；**`main` 受保护，写入需事先批准**
+  （[ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md)）。
+- ⚠️ 短期分支只用于两类场景：`exp/*` 隔离实验、需要评审的大改动；
+  且**必须在同一次会话内合回 `develop`**。
 - ✅ 提交前必须确认 `make check` 全绿。
 - ✅ 每次提交都必须符合 Conventional Commits，否则先修正信息再提交。
 - ⚠️ 禁止使用 `--no-verify` 跳过钩子；确需跳过必须有 ADR 记录。
