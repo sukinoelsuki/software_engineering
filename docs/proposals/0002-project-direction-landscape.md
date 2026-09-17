@@ -1,6 +1,9 @@
 # 0002. 项目方向与开源组件全景（第二轮调研）
 
-- 状态：**待决策**
+- 状态：**已被 [ADR-0003](../adr/0003-select-base-project.md) 采纳（2026-09-14）**——
+  推荐的"方向 1：低资源安全 Agent Harness"被采纳为项目主线，
+  并由 [提案 0003](0003-lowspec-coding-agent.md) 细化为最终产品定义（见 ADR-0003 §5.1）。
+  本文为论证过程记录。（状态同步：2026-09-18）
 - 日期：2026-09-14
 - 关联：Issue #3、[提案 0001](0001-base-project-selection.md)、[调研笔记：CNB 环境与额度](../research/2026-09-14-cnb-quota-and-hardware.md)
 

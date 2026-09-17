@@ -1,6 +1,8 @@
 # 0003. 项目定案提案：低资源本地编码代理（LowSpec Coding Agent）
 
-- 状态：**待决策**（本提案给出完整的项目定义与范围边界）
+- 状态：**已被 [ADR-0003](../adr/0003-select-base-project.md) 采纳（2026-09-14）**；
+  本提案的产品定义即 ADR-0003 §5.1 的决策结论。本文为论证过程记录，
+  后续以 ADR-0003 §5.1 为准。（状态同步：2026-09-18）
 - 日期：2026-09-14
 - 关联：Issue #3、[提案 0002](0002-project-direction-landscape.md)、
   [调研笔记：CNB 环境与额度](../research/2026-09-14-cnb-quota-and-hardware.md)

@@ -1,6 +1,10 @@
 # 0001. base project 选型分析
 
-- **状态**：待决策（决策结论将写入 [ADR-0003](../adr/0003-select-base-project.md)）
+- **状态**：**已结案（2026-09-14）**——"fork 并重写内核"的选型框架经
+  [提案 0002](0002-project-direction-landscape.md) 与 [提案 0003](0003-lowspec-coding-agent.md) 修正，
+  推荐方案（候选 A：AIOS 类 Agent 内核）已被
+  [ADR-0003](../adr/0003-select-base-project.md) §5.2 **作废**；最终结论见 ADR-0003 §5.1。
+  本文自此为论证过程记录。（状态同步：2026-09-18）
 - **日期**：2026-09-14
 - **提案人**：Le0n3rd（决策）、AI 代理（调研与论证）
 - **关联**：Issue #3
