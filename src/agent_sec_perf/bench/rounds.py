@@ -529,6 +529,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="store_true",
         help="只校验最新一轮产出是否符合 schema（供发布脚本在提交前调用）",
     )
+    parser.add_argument(
+        "--merge-into",
+        default=None,
+        metavar="已发布数据根",
+        help="把本轮产出合并进该目录（发布阶段用）：索引按 round_id 合并、latest 报告覆盖",
+    )
     return parser.parse_args(argv)
 
 
@@ -564,12 +570,50 @@ def validate_latest(data_root: pathlib.Path) -> bool:
     return True
 
 
+def merge_into_published(*, data_root: pathlib.Path, published_root: pathlib.Path) -> int:
+    """把本轮产出合并进**已发布的**数据根目录（发布阶段专用）。
+
+    只处理两个聚合文件，语义都是"合并 / 最新"：
+
+    * ``index.json``：本轮条目按 ``round_id`` 并进已发布索引——**不丢弃历史轮次**；
+    * ``latest.md``：用本轮报告覆盖——它本来就表示"最新一轮"。
+
+    每日目录的复制由调用方完成（``publish.sh`` 用 ``cp -a`` 保留字节）。之所以不让
+    发布脚本"整体替换"数据子目录：CI 的数据根目录只有本轮，替换会删掉历史轮次，
+    数据分支于是永远只剩最新一轮（2026-09-17 的首夜发布真实发生过，见 devlog 0012）。
+
+    Returns:
+        进程退出码（0 = 成功）。
+    """
+    merged = store.merge_index_files(
+        published_root / store.INDEX_FILENAME, data_root / store.INDEX_FILENAME
+    )
+    latest = data_root / store.LATEST_REPORT_FILENAME
+    if latest.is_file():
+        store.write_text(
+            published_root / store.LATEST_REPORT_FILENAME, latest.read_text(encoding="utf-8")
+        )
+    LOGGER.info(
+        "已把本轮并进已发布索引：共 %d 轮（%s）", len(merged), published_root / store.INDEX_FILENAME
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """命令行入口：0=完成，1=部分完成，2=硬失败。"""
     args = _parse_args(argv)
     configure_logging()
     if args.validate_only:
         return 0 if validate_latest(pathlib.Path(str(args.data_root))) else 2
+    if args.merge_into:
+        try:
+            return merge_into_published(
+                data_root=pathlib.Path(str(args.data_root)),
+                published_root=pathlib.Path(str(args.merge_into)),
+            )
+        except BenchError as exc:
+            LOGGER.error("合并进已发布数据失败：%s", exc)
+            return 2
     params = RunParams(
         ctx=args.ctx,
         threads=args.threads,

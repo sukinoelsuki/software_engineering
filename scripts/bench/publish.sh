@@ -81,18 +81,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. 只同步数据子目录（绝不触碰代码）
+# 3. 把本轮数据**合并**进数据子目录（绝不删除历史，也绝不触碰代码）
+#
+# 为什么不是"整体替换"：CI 的数据根目录是全新容器里的、只有本轮，而数据分支上已经
+# 有历史轮次。整体替换会删掉历史轮次的日志/产物/报告，并把 index.json 退化成只有
+# 一条——数据分支于是永远只剩最新一轮，"跨夜序列"根本建立不起来。
+# 2026-09-17 的首夜发布在提交 diff 里已经真实删除了 09-16 的 capability.json /
+# perf.json / report.md 与全部 server.log（该次发布因 SIGPIPE 失败，数据才侥幸留存）。
 # ---------------------------------------------------------------------------
-mkdir -p "${WORKTREE}/${DATA_SUBDIR}"
-rm -rf "${WORKTREE:?}/${DATA_SUBDIR:?}"
-cp -a "${DATA_ROOT}" "${WORKTREE}/${DATA_SUBDIR}"
+readonly DAILY_SRC="${DATA_ROOT}/daily"
+[[ -d "${DAILY_SRC}" ]] || die "数据根目录下没有 daily/：${DAILY_SRC}"
+
+readonly LATEST_DAY="$(ls -1 "${DAILY_SRC}" | sort | tail -n1)"
+# 目录名参与路径构造，因此必须是严格白名单格式（防目录穿越）；
+# 不做"看起来像日期"的宽松判断。
+[[ "${LATEST_DAY}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+    || die "每日目录名不是合法日期：${LATEST_DAY:-<空>}"
+
+mkdir -p "${WORKTREE:?}/${DATA_SUBDIR:?}/daily"
+rm -rf "${WORKTREE:?}/${DATA_SUBDIR:?}/daily/${LATEST_DAY}"
+cp -a "${DAILY_SRC}/${LATEST_DAY}" "${WORKTREE}/${DATA_SUBDIR}/daily/"
+
+# 索引与 latest 报告交给生产代码合并（与跑轮次共用同一套模块，不引入第二套实现）
+PYTHONPATH="${PWD}/src" uv run python -m agent_sec_perf.bench.rounds \
+    --data-root "${DATA_ROOT}" --merge-into "${WORKTREE}/${DATA_SUBDIR}" \
+    || die "数据合并失败，拒绝发布"
 
 # 判定中间目录不入库。它们是**模型生成的 .py**，一旦进入版本库就会被代码格式化钩子
 # 改写——那等于篡改证据；产物原文已另有 artifacts/*.md 归档。
 find "${WORKTREE}/${DATA_SUBDIR}" -type d -name work -prune -exec rm -rf {} +
-
-readonly LATEST_DAY="$(ls -1 "${WORKTREE}/${DATA_SUBDIR}/daily" | sort | tail -n1)"
-[[ -n "${LATEST_DAY}" ]] || die "数据目录里没有每日记录"
 
 git -C "${WORKTREE}" add "${DATA_SUBDIR}"
 if git -C "${WORKTREE}" diff --cached --quiet; then
@@ -122,7 +139,8 @@ if git -C "${WORKTREE}" -c core.hooksPath="${EMPTY_HOOKS_DIR}" \
     log "数据提交完成（已签名）"
 else
     log "签名提交不可用，显式降级为未签名提交："
-    sed 's/^/    /' "${WORKTREE}/sign-error.log" | head -3
+    # 同上：不得用 `… | head`（pipefail 下会变成 SIGPIPE 141）。用 awk 打印前三行并缩进。
+    awk 'NR <= 3 { printf "    %s\n", $0 }' "${WORKTREE}/sign-error.log"
     git -C "${WORKTREE}" -c core.hooksPath="${EMPTY_HOOKS_DIR}" -c commit.gpgsign=false \
         -c user.name="cnb" -c user.email="cnb@cnb.cool" \
         commit -F "${COMMIT_MSG_FILE}"
@@ -131,7 +149,14 @@ fi
 rm -f "${WORKTREE}/sign-error.log"
 
 log "本次将推送的文件："
-git -C "${WORKTREE}" --no-pager show --stat --oneline HEAD | head -30
+# 不要把 git 的输出用管道接到 head：`set -o pipefail` 下 head 读完若干行即退出，
+# git 后续写入会收到 SIGPIPE（退出码 141），整条管道被判为非零 ⇒ 发布被中止。
+# 这个坑**只在输出超过截断行数时出现**：2026-09-17 首夜（135 个文件）必现，
+# 09-16（6 个文件）不暴露。先落盘、再截断即可。
+readonly STAT_FILE="$(mktemp)"
+git -C "${WORKTREE}" --no-pager show --stat --oneline HEAD > "${STAT_FILE}"
+head -30 "${STAT_FILE}"
+rm -f "${STAT_FILE}"
 
 # ---------------------------------------------------------------------------
 # 4. 推送（DRY_RUN 时到此为止）

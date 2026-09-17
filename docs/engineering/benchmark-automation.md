@@ -137,7 +137,15 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
   "https://api.cnb.cool/<repo-slug>/-/build/logs?sourceRef=bench/nightly&event=crontab&page_size=5"
 ```
 
-> 判定要点：出现 `event=crontab` 的构建 = 注册与触发都正常。
+> ⚠️ **2026-09-17 实测更正：这条命令在开发工作区会话里查不到"别人的"构建。**
+> 同一令牌下，不带过滤只返回 `total=1`（就是自己这次 vscode 构建）；
+> 加 `sourceRef=bench/nightly` 或 `event=crontab` 都是 `total=0`；
+> `swagger.json` 返回 `errcode 16`（未登录）。
+> 因此 **不能把"查不到"当作"没触发"的证据**。
+> 当前可靠的判定只有两条：① 网页上的构建历史（人看）；
+> ② **发布结果**——数据分支上出现了当天的目录，才说明"触发 + 测量 + 发布"整条链路都通。
+
+> 判定要点（网页侧）：出现 `event=crontab` 的构建 = 注册与触发都正常。
 > 若自检能触发、而 04:00 的夜轮不触发，则问题不在注册机制，而在**该条表达式本身**
 > （时区、星期字段、或"负责人被移出仓库"，见 §7 最后一行）。
 
@@ -146,6 +154,8 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 | 症状 | 最可能的原因 | 处置 |
 | --- | --- | --- |
 | **流水线是绿的，但 `bench/data` 没出现** | 发布阶段被 `\|\| echo` 吞掉；或推送 refspec 写法不对 | 查 `endStages` 的日志；推送必须用**全限定引用名**（见下一行）。已去掉吞错误的写法：发布失败会让构建变红 |
+| `make: *** [Makefile:NNN: bench-publish] Error 141` | `… \| head` 在 `set -o pipefail` 下：head 读完若干行即退出，生产者后续写入收到 SIGPIPE（141），整条管道被判为非零 ⇒ 发布中止 | 不要用管道把 git 输出接到 `head`：**先落盘、再截断**（脚本已修，`tests/unit/test_cnb_config.py` 钉住）。**它只在"输出超过截断行数"时出现**：09-17 的 135 个文件必现、09-16 的 6 个文件不暴露 |
+| 发布之后历史轮次（日志 / 产物 / 报告）消失 | 发布脚本**整体替换**了数据子目录（`rm -rf … bench` + `cp -a`），而 CI 的数据根目录只有本轮 | 发布必须是**合并**：只写本轮日期目录，索引经 `--merge-into` 按 `round_id` 并入（脚本已修，`tests/unit/test_cnb_config.py` 钉住） |
 | 发布报 `error: The destination you provided is not a full refname` | 远端已存在**带斜杠**的分支（如 `bench/nightly`）时，`HEAD:bench/data` 这类短写法会被 git 拒绝 | 目标写成 `HEAD:refs/heads/bench/data`（脚本已修正）；此现象在本地假远端可复现 |
 | 同一份协议在两个环境数字差 20%+ | 不同机器（CI runner 与开发容器实测差 25% 以上） | 比较签名已含 CPU 型号：跨环境数据**各成一条序列**，不要直接比 |
 | 流水线第一行就报 `sh: 1: set: Illegal option -o pipefail`（退出码 2） | 阶段脚本由镜像的 `/bin/sh`（dash）执行，而脚本用了 bash 专有的 `pipefail` | 改为 `set -eu`；需要 pipefail 时显式切 bash。**注意**：非 `-e` 的 `set -uo pipefail` 会让整段脚本中止，看起来像"什么都没做" |
@@ -171,6 +181,15 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 
 体积量级：约 0.5 MB/轮（压缩前后差异取决于模型产物体积），
 按每日一轮估算约 **15 MB/月**。月度回顾时确认一次即可。
+
+**发布语义（2026-09-17 修正）**：`make bench-publish` 是**合并**——只写入本轮的
+`daily/<日期>/`，索引由 `--merge-into` 按 `round_id` 并入，`latest.md` 覆盖为最新一轮。
+**任何情况下都不会删除历史轮次**。早期版本是"整体替换数据子目录"，在 CI 上会删掉
+历史轮次（数据根目录只有本轮），已废弃并被测试钉住。
+
+> 保留期清理（`BENCH_KEEP_DAYS`）目前只在**跑轮次**时对本地数据根生效，
+> 而 CI 的数据根只有本轮 ⇒ 在 CI 上等于不生效。历史轮次的清理需要在数据分支的
+> 工作副本上做（见 devlog 0012 §7）。
 
 ## 9. 相关文档
 

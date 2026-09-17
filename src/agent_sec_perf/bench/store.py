@@ -19,6 +19,9 @@ INDEX_FILENAME = "index.json"
 LATEST_REPORT_FILENAME = "latest.md"
 DAILY_DIRNAME = "daily"
 
+#: 索引保留的最大轮次数（超出后丢弃最旧的）。500 轮 ≈ 一年半的每日轮次。
+INDEX_LIMIT = 500
+
 _ROUND_STATUSES = ("complete", "partial")
 
 
@@ -201,12 +204,21 @@ def load_json(path: pathlib.Path) -> dict[str, object]:
 
 
 def load_index(data_root: pathlib.Path) -> list[dict[str, object]]:
-    """读取轮次索引（不存在则为空列表）。"""
-    payload = load_json(data_root / INDEX_FILENAME)
+    """读取数据根目录下的轮次索引（不存在则为空列表）。"""
+    return load_index_file(data_root / INDEX_FILENAME)
+
+
+def load_index_file(path: pathlib.Path) -> list[dict[str, object]]:
+    """从**具体文件**读取轮次索引（不存在则为空列表）。
+
+    与 :func:`load_index` 的分工：后者接数据根目录（跑轮次时用），前者接文件路径
+    （发布阶段在数据分支的工作副本上合并索引时用）。
+    """
+    payload = load_json(path)
     entries = payload.get("rounds")
     if entries is None:
         return []
-    sequence = _require_sequence(entries, where=f"{INDEX_FILENAME}.rounds")
+    sequence = _require_sequence(entries, where=f"{path.name}.rounds")
     return [
         cast("dict[str, object]", _require_mapping(item, where="rounds[]")) for item in sequence
     ]
@@ -216,7 +228,7 @@ def append_index(
     data_root: pathlib.Path,
     entry: Mapping[str, object],
     *,
-    limit: int = 500,
+    limit: int = INDEX_LIMIT,
 ) -> list[dict[str, object]]:
     """追加一条索引记录（按时间升序保存，超出上限丢弃最旧的）。"""
     entries = load_index(data_root)
@@ -226,6 +238,32 @@ def append_index(
     entries = entries[-limit:]
     write_json(data_root / INDEX_FILENAME, {"rounds": entries})
     return entries
+
+
+def merge_index_files(
+    target: pathlib.Path,
+    incoming: pathlib.Path,
+    *,
+    limit: int = INDEX_LIMIT,
+) -> list[dict[str, object]]:
+    """把 ``incoming`` 的轮次索引合并进 ``target``（按 ``round_id`` 去重，保持升序）。
+
+    为什么需要"合并"而不是"覆盖"：发布阶段拿到的数据根目录在 CI 里是全新容器中的、
+    只有本轮，而数据分支上已经有历史轮次。直接覆盖会让 ``index.json`` 退化成只有一条，
+    数据分支于是永远只剩最新一轮——**跨夜序列无从建立**
+    （2026-09-17 的首夜发布在提交 diff 里已经真实删除了 09-16 的记录，见 devlog 0012）。
+
+    Returns:
+        合并后的条目列表（已写入 ``target``）。
+    """
+    merged = load_index_file(target)
+    for entry in load_index_file(incoming):
+        round_id = _require_str(entry.get("round_id"), where="index entry.round_id")
+        merged = [item for item in merged if item.get("round_id") != round_id]
+        merged.append(entry)
+    merged = merged[-limit:]
+    write_json(target, {"rounds": merged})
+    return merged
 
 
 def prune_daily(data_root: pathlib.Path, *, keep_days: int, subdirs: Sequence[str]) -> list[str]:
@@ -259,10 +297,13 @@ def prune_daily(data_root: pathlib.Path, *, keep_days: int, subdirs: Sequence[st
 
 __all__ = [
     "INDEX_FILENAME",
+    "INDEX_LIMIT",
     "LATEST_REPORT_FILENAME",
     "append_index",
     "load_index",
+    "load_index_file",
     "load_json",
+    "merge_index_files",
     "now_iso",
     "prune_daily",
     "today_local",

@@ -18,6 +18,7 @@ from agent_sec_perf.bench.store import (
     append_index,
     load_index,
     load_json,
+    merge_index_files,
     prune_daily,
     today_local,
     validate_round,
@@ -117,6 +118,36 @@ def test_append_index_respects_limit(tmp_path: pathlib.Path) -> None:
         append_index(tmp_path, {"round_id": f"r{index}"}, limit=3)
 
     assert [entry["round_id"] for entry in load_index(tmp_path)] == ["r2", "r3", "r4"]
+
+
+@pytest.mark.unit
+def test_merge_index_files_keeps_history(tmp_path: pathlib.Path) -> None:
+    """合并索引必须**保留**已发布的轮次——这是"跨夜序列"能累积起来的前提。"""
+    published = tmp_path / "published"
+    incoming = tmp_path / "incoming"
+    append_index(published, {"round_id": "d0"})
+    append_index(published, {"round_id": "d1"})
+    append_index(incoming, {"round_id": "d2"})
+
+    merged = merge_index_files(published / "index.json", incoming / "index.json")
+
+    assert [entry["round_id"] for entry in merged] == ["d0", "d1", "d2"]
+    assert [entry["round_id"] for entry in load_index(published)] == ["d0", "d1", "d2"]
+
+
+@pytest.mark.unit
+def test_merge_index_files_updates_duplicate_round_id(tmp_path: pathlib.Path) -> None:
+    """同一轮次重跑时，合并的结果是"更新那一条"，而不是出现两条。"""
+    published = tmp_path / "published"
+    incoming = tmp_path / "incoming"
+    append_index(published, {"round_id": "d1", "status": "partial"})
+    append_index(incoming, {"round_id": "d1", "status": "complete"})
+
+    merge_index_files(published / "index.json", incoming / "index.json")
+
+    entries = load_index(published)
+    assert len(entries) == 1
+    assert entries[0]["status"] == "complete"
 
 
 @pytest.mark.unit
