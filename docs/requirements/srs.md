@@ -3,10 +3,10 @@
 | 项 | 内容 |
 | --- | --- |
 | 项目代号 | **TBD**（待定；产品方向已冻结，命名待定） |
-| 文档版本 | v0.1.2 |
-| 状态 | 初稿（已确认产品方向，需求条目待评审；v0.1.1 为环境验证后的定向修订） |
+| 文档版本 | v0.1.3 |
+| 状态 | 初稿（已确认产品方向，需求条目待评审；v0.1.1 为环境验证后的定向修订；v0.1.3 为一致性核查后 `REQ-PERF-04` 验收入口的定向修正，见 [一致性报告](../engineering/doc-consistency-report.md) A-12） |
 | 创建日期 | 2026-09-14 |
-| 最后更新 | 2026-09-15 |
+| 最后更新 | 2026-09-18 |
 | 负责人 | Le0n3rd（决策）、AI 代理（整理与论证） |
 | 上游依据 | [提案 0002](../proposals/0002-project-direction-landscape.md)、[提案 0003](../proposals/0003-lowspec-coding-agent.md)、[调研：CNB 环境与额度](../research/2026-09-14-cnb-quota-and-hardware.md) |
 
@@ -261,7 +261,7 @@
 | REQ-PERF-01 | 在 8 GB 设备上可完成一轮工具调用任务，且有明确延迟基线 | Must | 产出可复现的基线数据 |
 | REQ-PERF-02 | 上下文管理（压缩/观察屏蔽/检索替代全量） | Must | 同等成功率下 token 消耗下降 ≥ 30% |
 | REQ-PERF-03 | 工具描述懒加载，控制上下文占用 | Should | 工具相关 token 占用下降 ≥ 50% |
-| REQ-PERF-04 | 可复现的基准工具与报告归档 | Must | `bench` 命令产出结构化报告 |
+| REQ-PERF-04 | 可复现的基准工具与报告归档 | Must | 运行 `make bench-round`（数据根目录默认 `.bench-data`，可用 `BENCH_DATA_ROOT` 覆盖）后，`<data-root>/daily/<日期>/` 下产出 `env.json`、`perf.json`、`capability.json`、`report.md` 四份文件，并在 `<data-root>/` 下生成或更新 `index.json` 与 `latest.md`。等价 CLI 入口：`python -m agent_sec_perf.bench.rounds --data-root <dir> …`（`make bench-round` 为其薄封装）。依据：[Makefile](../../Makefile) `bench-round` 目标、[rounds.py](../../src/agent_sec_perf/bench/rounds.py)（2026-09-18 核实） |
 | **REQ-PERF-05** | **硬件能力探测**：多源交叉探测可调度核数、内存预算、磁盘、SIMD/加速器能力，并**记录每个探测值的来源** | Must | 探测所得预算与实际可用一致（容器与本地 VM 交叉验证）；同一环境重复探测结果一致。依据：[ADR-0010](../adr/0010-dynamic-hardware-adaptation.md)、[notes/hardware-probing.md](../notes/hardware-probing.md) |
 | **REQ-PERF-06** | **档位化动态适配**：会话启动时探测一次并映射到固定 3 档（S/M/L）预设配置，全过程留痕；**运行中不调整** | Must | 同一任务在 3 档下均可完成；每次运行都有"**探测值 → 决策 → 生效配置**"记录；同一探测结果产生同一配置 |
 | **REQ-PERF-07** | **基准自动化与可比时间序列**：定时（每日 04:00）与推送触发自动跑三档基准，产出结构化数据、人读报告与索引，并发布到独立数据分支；跨轮比较**只在同协议版本、同测量参数**下进行 | Must | 每轮记录环境指纹（llama.cpp 版本、模型摘要、参数、核数/内存、触发方式）与协议版本；报告给出中位数与极差；不同协议版本的数据**不被混比**。依据：[ADR-0014](../adr/0014-benchmark-automation.md) |
