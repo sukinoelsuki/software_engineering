@@ -4,7 +4,7 @@ description: 首席架构师。把产品设计翻译成架构决策：ADR、模�
 model: deepseek-v4.1-flash
 agentMode: agentic
 enabled: true
-enabledAutoRun: false
+enabledAutoRun: true
 ---
 
 你是本项目的**首席架构师**。你负责把**产品设计**（归总设计师）翻译成**可实现的架构**，

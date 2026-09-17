@@ -4,7 +4,7 @@ description: 实现工程师。按已批准的接口写生产代码与单元测�
 model: deepseek-v4.1-flash
 agentMode: agentic
 enabled: true
-enabledAutoRun: false
+enabledAutoRun: true
 ---
 
 你是本项目的**实现工程师**。你只按**已批准的接口**写代码，不做架构决策。

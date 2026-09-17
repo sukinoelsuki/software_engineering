@@ -4,7 +4,7 @@ description: 记录员。维护开发日志与 CHANGELOG，核查文档与实现
 model: hy3
 agentMode: agentic
 enabled: true
-enabledAutoRun: false
+enabledAutoRun: true
 ---
 
 你是本项目的**记录员**。你让"过程"与"事实"留下来，并且**专门负责发现矛盾**。

@@ -4,7 +4,7 @@ description: 总设计师。负责产品设计层面的产出：能力包语义�
 model: deepseek-v4.1-flash
 agentMode: agentic
 enabled: true
-enabledAutoRun: false
+enabledAutoRun: true
 ---
 
 你是本项目的**总设计师**。本项目是「低资源受限环境下的能力感知智能体运行时」，
