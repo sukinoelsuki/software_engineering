@@ -70,7 +70,7 @@
 | --- | --- | --- |
 | [0001](0001-record-architecture-decisions.md) | 采用架构决策记录（ADR） | 已接受 |
 | [0002](0002-adopt-git-workflow.md) | 采用简化 Git Flow 工作流 | 已接受 |
-| [0003](0003-select-base-project.md) | 选定 base project 与项目主线（**待决策**） | 提议中 |
+| [0003](0003-select-base-project.md) | 选定 base project 与项目主线（**方向已定**：组装开源组件 + 5 个自研模块；**复用组件清单仍待补**） | 已接受（2026-09-14） |
 | [0004](0004-python-toolchain-baseline.md) | 采用 Python + uv + ruff + mypy 工程基线 | 已接受 |
 | [0005](0005-single-primary-language.md) | 技术栈定案：Python 单一主语言（不引入 Go / TypeScript） | 已接受 |
 | [0006](0006-sandbox-execution-degradation.md) | 沙箱执行方案定案与在受限容器中的降级（L1/L2 分层 + fail-secure） | 已接受（§4.1/§5.3 已被 0007 修正） |
@@ -81,5 +81,7 @@
 | [0011](0011-tier-composition-revision.md) | 档位构成修订：三档 = 2B / 4B / 8B，全部可在当前云环境验证 | 已接受 |
 | [0012](0012-benchmark-task-set-selection.md) | 基准任务集选型：三层结构（外部锚点 / 自建阶梯 / 上限探测） | 已接受 |
 | [0013](0013-branch-model-for-solo-dev.md) | 分支模型：develop 改为工作主干（取消直推限制），以分支卫生自检兜底 | 已接受 |
+| [0014](0014-benchmark-automation.md) | 基准自动化：可比时间序列、数据分支与测量纪律 | 已接受 |
 
 > 新增 ADR 后请同步更新本表。
+> ⚠️ 索引缺项会导致读者（与代理）以为文档不存在、进而重复决策——2026-09-18 的一致性核查已发现一次（0014 缺登记）。

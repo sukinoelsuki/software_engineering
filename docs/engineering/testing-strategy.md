@@ -32,6 +32,13 @@
 | 安全 | `tests/security/` | 对抗性输入、攻击场景 | 秒级 | 拒绝行为与审计记录同时成立 |
 | 基准 | `tests/benchmark/` | 真实资源 | 分钟级 | 延迟、吞吐、内存 |
 
+> ⚠️ **当前状态（2026-09-18 核查）**：上述分层是**目标态**，实际**只有 `tests/unit/`**
+> （9 个测试模块，全部标记 `unit`）。`tests/integration/`、`tests/security/`（含 `corpus/`）、
+> `tests/benchmark/` 均**尚未建立**，属 Phase 1 产出。
+> 因此 `make test-security` 目前不会匹配到任何用例——该目标已显式处理这种情况
+> （打印提示并返回 0，**不会假失败**），测试层建立后提示自动消失。
+> 依据：[`doc-consistency-report.md`](doc-consistency-report.md) 的 A-9。
+
 标记：`@pytest.mark.unit` / `integration` / `security` / `benchmark` / `slow`。
 
 ---
@@ -91,8 +98,10 @@
 - **可复现**：固定环境描述、输入规模、随机种子、预热轮次、重复次数。
 - **指标**：P50 / P95 / P99、吞吐、内存峰值；报告方差。
 - **对照组**：必须包含改动前的基线（可用 `git stash` 或上一提交测得）。
-- **归档**：原始数据以结构化文件存入 `reports/bench/<date>-<slug>/`，
-  含 `README.md`（环境与命令）与原始结果文件。
+- **归档**：机器产出走 **`bench/data` 分支**（见 [ADR-0014](../adr/0014-benchmark-automation.md)，
+  由 `make bench-publish` 发布）；人工整理的研究归档进 `docs/research/reports/<date>-<topic>/`。
+  **不使用 `reports/bench/`**——该路径经 2026-09-18 一致性核查确认**不存在**，
+  且与流水线的实际落点不同（依据：[`doc-consistency-report.md`](doc-consistency-report.md) 的 A-5）。
 - 基准**不进入**默认快速回归（`make test` 排除 `benchmark` 标记）。
 
 ---
@@ -113,7 +122,7 @@
 ```bash
 make test              # 快速回归（排除 benchmark）
 make test-cov          # 含覆盖率
-make test-security     # 仅安全测试
+make test-security     # 仅安全测试（当前无该层用例，见 §2 的状态说明）
 make check             # 完整自检（提交 PR 前必须执行）
 uv run pytest -m benchmark    # 性能基准
 ```

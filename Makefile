@@ -69,8 +69,15 @@ test: ## 运行测试（快速回归，排除 benchmark）
 test-cov: ## 运行测试并生成覆盖率报告
 	$(UV) run pytest -m "not benchmark" --cov --cov-report=term-missing --cov-report=xml
 
-test-security: ## 仅运行安全与对抗性测试
-	$(UV) run pytest -m security
+test-security: ## 仅运行安全与对抗性测试（安全测试层尚未建立，见一致性报告 A-9）
+	@$(UV) run pytest -m security; \
+	code=$$?; \
+	if [ $$code -eq 5 ]; then \
+		echo ">> 提示：当前没有 security 标记的用例（tests/security/ 尚未建立，属 Phase 1 产出）。"; \
+		echo ">> 该目标未被 make check 引用，不影响门禁；测试层建立后本提示会自动消失。"; \
+		exit 0; \
+	fi; \
+	exit $$code
 
 # ---------------------------------------------------------------------------
 # 安全

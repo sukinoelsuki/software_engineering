@@ -30,7 +30,7 @@ Pull Request
    ↓  使用 PR 模板，关联 Issue，逐条勾选检查清单
 评审（CI 门禁 + 自评审 + AI 辅助评审）
    ↓  不允许自评自合时绕过门禁
-合并（Squash 合入 develop；发布时合入 main 并打标签）
+合并（**merge commit** 合入 develop；发布时合入 main 并打标签）
    ↓
 CHANGELOG 更新 + 版本标签
 ```
@@ -77,7 +77,7 @@ Refs: #7
 | 分支 | 用途 | 生命周期 |
 | --- | --- | --- |
 | `main` | 稳定发布线，任何提交都应是可发布状态 | 永久 |
-| `develop` | 集成分支，下一版本的内容汇聚于此 | 永久 |
+| `develop` | **工作主干**：下一版本的内容汇聚于此，**允许直接提交**（仅 `main` 受保护，见 [ADR-0013](docs/adr/0013-branch-model-for-solo-dev.md)） | 永久 |
 | `feat/<issue>-<slug>` | 新功能 | 短期 |
 | `fix/<issue>-<slug>` | 缺陷修复 | 短期 |
 | `perf/<issue>-<slug>` | 性能优化 | 短期 |
@@ -117,7 +117,10 @@ Refs: #7
 
 ### 合并策略
 
-- 功能分支 → `develop`：**Squash merge**（保持线性、可读的历史）。
+- 功能分支 → `develop`：**merge commit**（**不用 squash**）——devlog 与 CHANGELOG 逐条引用
+  具体提交哈希，squash 会让这些引用指向不存在的对象，**证据链断裂**。
+  只有"该分支仅一个提交、且其哈希未被任何文档引用"时才可 squash。
+  依据：[`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §3.3、【ADR-0013】。
 - `develop` → `main`：**Merge commit**（保留发布节点，便于回溯）。
 - 合并后立即删除已合并的源分支。
 

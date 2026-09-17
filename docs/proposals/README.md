@@ -15,7 +15,9 @@
 
 | 编号 | 标题 | 状态 |
 | --- | --- | --- |
-| [0001](0001-base-project-selection.md) | base project 选型分析 | 待决策 |
+| [0001](0001-base-project-selection.md) | base project 选型分析（选型框架后被 0002 / 0003 修正） | 结论已被 [ADR-0003](../adr/0003-select-base-project.md) §5.1 采纳 |
+| [0002](0002-project-direction-landscape.md) | 项目方向全景 | 已被 [ADR-0003](../adr/0003-select-base-project.md) 采纳 |
+| [0003](0003-lowspec-coding-agent.md) | 低资源受限环境下的能力感知智能体运行时（产品定义） | **已被 [ADR-0003](../adr/0003-select-base-project.md) 采纳为项目主线** |
 
 ---
 

@@ -147,9 +147,12 @@ Refs: #<issue>
 ## 9. 当前待办（Phase 0）
 
 - [x] 工程骨架与流程规范
-- [ ] **base project 选型冻结**（`docs/proposals/0001-base-project-selection.md`）
-- [ ] 需求规格（SRS）与威胁模型初稿
-- [ ] 目录结构与模块划分（对应新 ADR）
+- [ ] **base project 选型冻结**：方向已定（`docs/adr/0003-select-base-project.md` §5.1
+      "组装开源组件 + 5 个自研模块"），但**"复用哪些组件 + 自研边界"的清单仍未产出** ⇒ 本项未完成
+- [ ] **需求规格 v0.2 + 威胁模型初稿**：SRS 已有 v0.1.2（49 条），但与 `devlog 0002~0004` 的讨论结果
+      已分叉（见 0004 §4）；威胁模型**仍为 0 条**（`docs/design/` 下只有 README）
+- [ ] **目录结构与模块划分 ADR**：`src/` 目前只有 `agent_sec_perf/bench/`（基准子系统），
+      产品主体六层（模型/Harness/安全/工具/UX/可观测）尚未落位
 
 ---
 

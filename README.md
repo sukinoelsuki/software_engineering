@@ -12,7 +12,7 @@
 | 组织形式 | 单人独立开发（决策、实现、评审均由本人完成，AI 作为实现与决策辅助） |
 | 周期 | 2026-09 ~ 2026-12（约 2~3 个月，多迭代） |
 | 仓库 | <https://cnb.cool/Mybase_Le0n3rd/software_engineering> |
-| 当前阶段 | **Phase 0 · 工程初始化已完成**，待进入 Phase 1（需求与设计），详见 [里程碑](docs/engineering/sdlc.md) |
+| 当前阶段 | **Phase 0 · 工程初始化（进行中）**：工程骨架与流程规范已完成；base project 的**复用组件清单**、SRS v0.2、威胁模型与模块划分 ADR **尚未完成**。详见 [里程碑](docs/engineering/sdlc.md) 与 [`CODEBUDDY.md`](CODEBUDDY.md) §9 |
 
 > ## 🚧 下一步（开发环境构建后立即执行）
 >
@@ -81,20 +81,24 @@
 ├── AGENTS.md                # 面向其他 Agent 工具的等价准则
 ├── docs/
 │   ├── adr/                 # 架构决策记录（Architecture Decision Records）
-│   ├── design/              # 设计与架构文档
+│   ├── design/              # 设计与架构文档（Phase 1 建立，当前只有 README）
+│   ├── devlog/              # 开发日志（按议题分篇；**活待办 = 最新篇 §7**）
 │   ├── engineering/         # 工程流程：Git 工作流、生命周期、DoD、测试策略
+│   ├── notes/               # 学习笔记（按主题累积，无证据不成条）
 │   ├── proposals/           # 立项与选型提案
 │   ├── requirements/        # 需求规格与用例
-│   └── research/            # 前沿 AI 生态研究笔记
-├── src/                     # 项目源码（base project 确定后落位）
-├── tests/                   # 测试（单元 / 集成 / 安全 / 性能）
+│   └── research/            # 研究结论与实验记录（含 reports/）
+├── src/agent_sec_perf/      # 项目源码（**当前只有 bench/ 基准子系统**，产品主体待落位）
+├── tests/                   # 测试（**当前只有 unit/ 层**；集成/安全/基准属 Phase 1）
 ├── scripts/                 # 开发与运维脚本
 ├── CONTRIBUTING.md          # 贡献与协作规范
 ├── SECURITY.md              # 安全策略与漏洞披露流程
 └── CHANGELOG.md             # 变更日志（Keep a Changelog）
 ```
 
-> `src/` 与 `tests/` 的具体分层结构将在 base project 选型确定后，通过新的 ADR 定义。
+> `src/` 的模块划分将在 base project 的**复用组件清单**确定后，通过新的 ADR 定义
+> （当前只有 `agent_sec_perf/bench/` 基准子系统）；`tests/` 目前只有 `unit/` 层，
+> 集成 / 安全 / 基准三层属 Phase 1 产出（见 [`docs/engineering/testing-strategy.md`](docs/engineering/testing-strategy.md) §2）。
 
 ---
 
