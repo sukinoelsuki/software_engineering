@@ -137,11 +137,14 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
   "https://api.cnb.cool/<repo-slug>/-/build/logs?sourceRef=bench/nightly&event=crontab&page_size=5"
 ```
 
-> ⚠️ **2026-09-17 实测更正：这条命令在开发工作区会话里查不到"别人的"构建。**
-> 同一令牌下，不带过滤只返回 `total=1`（就是自己这次 vscode 构建）；
-> 加 `sourceRef=bench/nightly` 或 `event=crontab` 都是 `total=0`；
-> `swagger.json` 返回 `errcode 16`（未登录）。
-> 因此 **不能把"查不到"当作"没触发"的证据**。
+> ⚠️ **2026-09-17 实测更正：不能用这条命令确认"定时任务是否触发"。**
+> 同一令牌下的实测：不带过滤只返回**最近的几条**构建——推送后为 `total=3`
+> （当前 vscode 会话 + 刚推送的 `develop` / `bench/nightly` 两条 push）；
+> 而 12 小时前 04:00 的那次 crontab 构建**不在返回中**；
+> 加 `sourceRef=bench/nightly` 或 `event=crontab` 过滤均返回 `total=0`（参数不生效）；
+> `swagger.json` 需要登录（`errcode 16`）。
+> 因此 **不能把"查不到"当作"没触发"的证据**：它适合回答"我刚推的这轮跑了没有"，
+> 不适合回答"昨夜 04:00 到底触发过没有"。
 > 当前可靠的判定只有两条：① 网页上的构建历史（人看）；
 > ② **发布结果**——数据分支上出现了当天的目录，才说明"触发 + 测量 + 发布"整条链路都通。
 
