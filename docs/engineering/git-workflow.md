@@ -32,7 +32,7 @@
         │   │                                          │
         │  develop     工作主干（可直推）               │
         │   ▲   ▲   ▲                                  │
-        │   │   │   │ squidh merge                     │
+        │   │   │   │ squash merge                     │
         │  feat/* fix/* perf/* security/* docs/* ...   │
         └─────────────────────────────────────────────┘
 ```
@@ -41,22 +41,26 @@
 | --- | --- | --- | --- | --- |
 | `main` | — | — | — | 永久 |
 | `develop` | `main` | `main`（发布时） | merge commit | 永久 |
-| `feat/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
-| `fix/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
-| `perf/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
-| `security/<issue>-<slug>` | `develop` | `develop` | merge commit | 短期 |
-| `docs/<slug>` | `develop` | `develop` | merge commit | 短期 |
-| `chore/<slug>` | `develop` | `develop` | merge commit | 短期 |
-
-> **合并方式默认为 merge commit**，不用 squash：devlog 与 CHANGELOG 会逐条引用具体
-> 提交哈希，squash 会让这些引用指向不存在的对象。仅当分支只有**单个提交**、
-> 且没有任何文档引用它时，才用 squash。依据
-> [ADR-0013](../adr/0013-branch-model-for-solo-dev.md)。
+| `feat/<issue>-<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
+| `fix/<issue>-<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
+| `perf/<issue>-<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
+| `security/<issue>-<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
+| `docs/<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
+| `chore/<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
 | `exp/<slug>` | `develop` | — | 归档结论后关闭 | 短期 |
 | `release/<version>` | `develop` | `main` | merge commit | 短期 |
 | `hotfix/<version>` | `main` | `main` + 回合 `develop` | merge commit | 短期 |
 | `bench/nightly` | `develop` | **不合入** | — | **长驻**（例外，见下） |
 | `bench/data` | `bench/nightly`（CI 推入） | **不合入** | CI 快进推送，**禁止 force** | **长驻**（例外，见下） |
+
+> **表下注（合并方式）**
+>
+> - 标"**（默认）**"的行：短期分支合入 `develop` **默认用 merge commit、不用 squash**
+>   ——devlog 与 CHANGELOG 会逐条引用具体提交哈希，squash 会让这些引用指向不存在的对象。
+>   唯一的例外是**只有单个提交、且没有任何文档引用它**的分支，此时可用 squash。
+> - 其余行（`develop → main`、`release/*`、`hotfix/*`）的 merge commit 是该分支的
+>   **规定动作**，**不适用**上述 squash 例外。
+> - 依据：[ADR-0013 §5.5](../adr/0013-branch-model-for-solo-dev.md)；完整策略见本文 §4「合并策略」。
 
 ### 命名规则
 
