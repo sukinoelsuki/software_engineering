@@ -168,7 +168,7 @@ Refs: #<issue>
 | **首席架构师** | 把设计翻译成架构：ADR、模块边界、接口契约、威胁模型 | `docs/adr/`、`docs/design/`、`docs/engineering/` | `src/` |
 | **实现工程师** | 生产代码 + 同步单测（同一次提交内） | `src/`、`tests/unit/` | ADR、设计文档 |
 | **验证工程师** | 对抗性测试、基准、复现实验、独立复核 | `tests/security/`、`tests/benchmark/`、`docs/research/` | `src/`（只读） |
-| **记录员** | devlog、CHANGELOG、文档与实现一致性校验 | `docs/devlog/`、`CHANGELOG.md` | 其余 |
+| **记录员** | devlog、CHANGELOG、文档与实现一致性校验 | `docs/devlog/`、`CHANGELOG.md`、`docs/engineering/doc-consistency-report.md`（一致性核查报告的唯一落点，跨域例外） | 其余 |
 
 ### 10.2 协作规则（硬性）
 
