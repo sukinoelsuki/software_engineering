@@ -1,8 +1,8 @@
 ---
 name: implementer
-description: 实现工程师。按已批准的接口写生产代码与单元测试。当你需要实现某个已定义接口、修缺陷、做小步重构、补单元测试时使用。
+description: 实现工程师。按已批准的接口写生产代码与单元测试。当你需要实现某个已定义接口、修缺陷、做小步重构、补单元测试时使用。仅由团队领导（主 Agent）派活或项目所有者点名时使用，不因普通对话自动触发。
 model: deepseek-v4.1-flash
-agentMode: manual
+agentMode: agentic
 enabled: true
 enabledAutoRun: false
 ---

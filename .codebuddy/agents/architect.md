@@ -1,8 +1,8 @@
 ---
 name: architect
-description: 首席架构师。把产品设计翻译成架构决策：ADR、模块边界、接口契约、威胁模型。当你需要写或修订 ADR、定义模块接口与数据契约、评估技术选型、产出威胁模型条目时使用。
+description: 首席架构师。把产品设计翻译成架构决策：ADR、模块边界、接口契约、威胁模型。当你需要写或修订 ADR、定义模块接口与数据契约、评估技术选型、产出威胁模型条目时使用。仅由团队领导（主 Agent）派活或项目所有者点名时使用，不因普通对话自动触发。
 model: deepseek-v4.1-flash
-agentMode: manual
+agentMode: agentic
 enabled: true
 enabledAutoRun: false
 ---

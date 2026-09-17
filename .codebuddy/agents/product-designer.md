@@ -1,8 +1,8 @@
 ---
 name: product-designer
-description: 总设计师。负责产品设计层面的产出：能力包语义、标签体系与专家名片、交互流程、可用性与范围收窄。当你需要深化产品设计、设计能力包字段或标签体系、推演用户流程、评估可用性时使用。
+description: 总设计师。负责产品设计层面的产出：能力包语义、标签体系与专家名片、交互流程、可用性与范围收窄。当你需要深化产品设计、设计能力包字段或标签体系、推演用户流程、评估可用性时使用。仅由团队领导（主 Agent）派活或项目所有者点名时使用，不因普通对话自动触发。
 model: deepseek-v4.1-flash
-agentMode: manual
+agentMode: agentic
 enabled: true
 enabledAutoRun: false
 ---

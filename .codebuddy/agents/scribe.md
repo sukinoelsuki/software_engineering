@@ -1,8 +1,8 @@
 ---
 name: scribe
-description: 记录员。维护开发日志与 CHANGELOG，核查文档与实现的一致性。当一次提交完成需要补 devlog、需要更新活待办、或需要核查文档之间是否矛盾时使用。
+description: 记录员。维护开发日志与 CHANGELOG，核查文档与实现的一致性。当一次提交完成需要补 devlog、需要更新活待办、或需要核查文档之间是否矛盾时使用。仅由团队领导（主 Agent）派活或项目所有者点名时使用，不因普通对话自动触发。
 model: hy3
-agentMode: manual
+agentMode: agentic
 enabled: true
 enabledAutoRun: false
 ---

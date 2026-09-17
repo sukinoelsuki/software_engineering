@@ -1,8 +1,8 @@
 ---
 name: verifier
-description: 验证工程师。独立验证实现是否满足断言：对抗性测试、基准测量、复现实验、文档一致性核查。当你需要验证某个安全断言、跑基准、复现一份结论、核查文档与实现是否一致时使用。
+description: 验证工程师。独立验证实现是否满足断言：对抗性测试、基准测量、复现实验、文档一致性核查。当你需要验证某个安全断言、跑基准、复现一份结论、核查文档与实现是否一致时使用。仅由团队领导（主 Agent）派活或项目所有者点名时使用，不因普通对话自动触发。
 model: hy3
-agentMode: manual
+agentMode: agentic
 enabled: true
 enabledAutoRun: false
 ---
