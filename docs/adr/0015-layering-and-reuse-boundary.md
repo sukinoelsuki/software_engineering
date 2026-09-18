@@ -685,7 +685,13 @@ src/agent_sec_perf/
 - [ ] 建立 `tests/security/` 并落 §7.2 的 S1~S3
 - [ ] 编写 `docs/design/architecture.md` 与 `docs/design/interfaces/*.md`（契约级细节）
 - [ ] 威胁模型初稿（`docs/design/threat-model/`，当前 **0 条**）——**前置交付物**，与安全层实现同步
-- [ ] 按 §7.4 完成选定组件的可安装性与类型兼容验证后，**经批准**才修改 `pyproject.toml` 的 `dependencies`
+- [x] 按 §7.4 完成选定组件的可安装性与类型兼容验证后，**经批准**才修改 `pyproject.toml` 的 `dependencies`
+      ——**2026-09-19 完成**：§7.4 的 `V7`（`uv tree` 已记录）/`V8`（`mypy --strict` 无 `# type: ignore`）/
+      `V9`（aarch64 与 win_amd64 wheel 存在）/`V10`（`make check` 全绿）均通过；
+      `dependencies` 已填装 **8 个**组件（`typer` / `rich` / `pydantic` / `platformdirs` / `urllib3` /
+      `structlog` / `tree-sitter` / `tree-sitter-python`），精确版本由 `uv.lock` 锁定。
+      **D2 的用途限定**（pydantic 仅两处）与**不引入清单**（§5.2.6）已同步写进 `pyproject.toml` 的注释。
+      ⚠️ **`D7`（构建后端）仍未决** ⇒ `[build-system]` 不动、项目仍不打包安装（`pytest` 走 `pythonpath=["src"]`）
 - [x] 在 `docs/adr/README.md` 索引中登记本文（状态：**已接受（2026-09-18）**）
 
 ---
@@ -749,3 +755,12 @@ src/agent_sec_perf/
     ⇒ 出站客户端**应显式关闭默认重试**；SSE 的 **chunk 边界 ≠ 事件边界** ⇒ 解析**必须自带行缓冲**；
   - **边界（不得放大）**：`V-j` 只证明"官方 wheel 存在"，**未在 aarch64 真机安装**；
     Termux 仍无官方 wheel，按"目标设备阶段验证"处理。
+- **2026-09-19**：**规则落地——运行期依赖已填装（`§9` 对应行动项完成）**。经 §7.4 的
+  `V7`~`V10` 全部通过后，`pyproject.toml` 的 `dependencies` 填入 **8 个**已批准且已核验的组件
+  （`typer` / `rich` / `pydantic` / `platformdirs` / `urllib3` / `structlog` / `tree-sitter` /
+  `tree-sitter-python`），精确版本由 `uv.lock` 锁定；`uv tree` 显示解析 76 个包；
+  `make check` 全绿（149 passed、`pip-audit` 无已知漏洞）。
+  **不引入清单（§5.2.6）与 D2 的用途限定已写成 `pyproject.toml` 内的注释**，避免后来者顺手加回。
+  **`D7`（构建后端）仍未决** ⇒ `[build-system]` 保持不动，项目仍不打包安装。
+  本节**不改任何结论**：它只是把"已批准的选型"落到依赖声明上。
+  配套落点：`sdlc.md` §3.1 的 `G2`/`G3` 状态同步为已完成（M0 出口准则）。

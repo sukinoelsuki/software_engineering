@@ -78,8 +78,8 @@ Phase 4  验证与交付
 | # | 判据 | 核对方式 | 现状（2026-09-19） |
 | --- | --- | --- | --- |
 | G1 | `ADR-0015` §8.2 的核验项全部有结论（含出处） | 读 **§8.2.1（结果表）**：14 项均有结论；§8.2 表内 `【待核验】` 是**提问时的原文**，**判定以 §8.2.1 为准**（**例外**：V-e 已随 D3 关闭；Termux 按"目标设备阶段验证"） | ✅ **14 项已核验**（2026-09-19；证据见 `docs/research/2026-09-19-dependency-verification.md`）；**D7（构建后端）待所有者拍板** |
-| G2 | 选定组件的可安装性与类型兼容通过（ADR-0015 §7.4 的 V7~V9） | 逐个组件的 `uv tree` 输出、最小样例的 `mypy --strict`、aarch64/win_amd64 wheel 存在性，均记录在案 | ⏳ 组件均已在隔离 venv 通过 `mypy --strict` 与 wheel 矩阵核验；**尚缺"写入项目后的 `uv tree`（V7）"** |
-| G3 | `pyproject.toml` 的 `dependencies` 已填装并锁定 | `dependencies` 非空；`uv.lock` 已更新；`make check` 全绿 | ❌ **仍为 `[]`** |
+| G2 | 选定组件的可安装性与类型兼容通过（ADR-0015 §7.4 的 V7~V9） | 逐个组件的 `uv tree` 输出、最小样例的 `mypy --strict`、aarch64/win_amd64 wheel 存在性，均记录在案 | ✅ **已完成**（2026-09-19）：wheel 矩阵 + `mypy --strict` 在隔离 venv 通过；写入项目后 `uv tree` 已记录（解析 76 个包） |
+| G3 | `pyproject.toml` 的 `dependencies` 已填装并锁定 | `dependencies` 非空；`uv.lock` 已更新；`make check` 全绿 | ✅ **已完成**（2026-09-19）：已填装 **8 个**运行期组件，精确版本由 `uv.lock` 锁定；`make check` 全绿（149 passed、`pip-audit` 无已知漏洞） |
 
 **第二级：最小可开工骨架（= Harness 的前置依赖链）**
 
