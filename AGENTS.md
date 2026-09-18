@@ -108,6 +108,11 @@ Refs: #<issue>
 > 原先两处口径不一致（文档列了 `security`、门禁不接受）已由 A-16 更正，
 > 并由 `tests/unit/test_commit_message_contract.py` 逐一实测钉住。
 
+版本与发布：**版本号只表达"到达了哪个里程碑"，不由提交历史推导**（ADR-0019）——
+只能取 `pyproject.toml` 的 `[tool.lowspec.releases]` 台账里列出的值，
+由 **`make release VERSION=x.y.z`** 落定（**`make bump` 已废除**，会拒绝执行）；
+`main` 写入与打标签是**所有者动作**（B 类）。
+
 ---
 
 ## 4. 代码规范（摘要）

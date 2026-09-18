@@ -86,6 +86,7 @@
 | [0016](0016-cnb-platform-integration-and-remote-write-authorization.md) | CNB 平台集成（官方 Skills 与 `cnb-cli`）与远端写入授权分级：A 类改事后报告，B~F 保持事先批准/禁止 | 已接受（2026-09-18，方案 B） |
 | [0017](0017-project-level-agent-skills.md) | 建立项目级 Agent Skills 目录（`.codebuddy/skills/`）与其产出域归属：只放流程型 Skill、一律指向权威源 | 已接受（2026-09-18） |
 | [0018](0018-agent-team-collaboration-mechanism.md) | Agent 团队的协作机制：主 Agent 恒为领导、角色文件域独占、回报通道三条机制、成本纪律 | 已接受（2026-09-18） |
+| [0019](0019-release-and-version-policy.md) | 版本发布口径：版本号**里程碑驱动**（台账为机器真源、`make release` 显式落定、4 副本一致性检查、`make bump` 废除） | 已接受（2026-09-19，处置 A-17） |
 
 > 新增 ADR 后请同步更新本表。
 > ⚠️ 索引缺项会导致读者（与代理）以为文档不存在、进而重复决策——2026-09-18 的一致性核查已发现一次（0014 缺登记）。

@@ -24,7 +24,13 @@ packages = ["src/agent_sec_perf"]
 
 [project]
 name = "agent-sec-perf"
-version = "0.1.0"
+# 版本号**不由提交历史推导**：它只能取 `[tool.lowspec.releases]` 台账里列出的里程碑值。
+# 当前 `0.0.0` = **尚未到达第一个里程碑**（第一个里程碑是 `0.0.1`「框架搭完」）。
+# 落定方式：`make release VERSION=x.y.z`（流程见 docs/engineering/git-workflow.md §5，
+# 决策见 docs/adr/0019-release-and-version-policy.md）；`make bump` 已被改为拒绝执行。
+# 本值有 **4 处副本**（本行 / [tool.commitizen].version / src/agent_sec_perf/__init__.py /
+# uv.lock），一致性由 tests/unit/test_release_policy.py 机器检查。
+version = "0.0.0"
 description = "原生智能系统的安全与加速工程实践（项目代号 TBD）"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -176,12 +182,44 @@ markers = [
 # ============================================================================
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "0.0.0"
 tag_format = "v$version"
-version_files = ["pyproject.toml:^version"]
+# 版本号共 4 处副本，其中两处（本文件 / 包内 `__version__`）由本字段同步；
+# `uv.lock` 的那份由 `uv lock` 同步（`make release` 会跑）。缺任何一处都会被
+# `tests/unit/test_release_policy.py` 拦下——这正是"忘了一处"不再能静默通过的原因。
+version_files = ["pyproject.toml:^version", "src/agent_sec_perf/__init__.py:__version__"]
 update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"
 annotated_tag = true
+# 安全网（一致性报告 A-17 的处置）：缺省 `False` 会把 `feat!:` / `BREAKING CHANGE`
+# 直接推到 `1.0.0`；而本项目 Phase 0 内**不得出现 `1.0.0`**（版本阶梯见下）。
+# 置 `true` 后破坏性变更只动 MINOR，因此**即使有人误跑** `cz bump` 也越不过 0.x。
+major_version_zero = true
+
+# ============================================================================
+# 版本里程碑台账（发布口径的**唯一机器真源**）
+#
+# 版本号不表达"改了多少提交"，只表达"**到达了哪个里程碑**"。
+# 判据必须**可核对**（能回答"到没到"），否则就会退回到"感觉差不多可以发版了"。
+# 落定流程：`make release VERSION=x.y.z` —— 且只能落在本表列出的值上；
+# 机器检查见 tests/unit/test_release_policy.py，完整口径见 docs/engineering/git-workflow.md §5。
+#
+# ⚠️ 新增里程碑 = 一次**显式**决策：必须同时给出可核对的判据，并在 PR / ADR 中说明来源。
+# ============================================================================
+[[tool.lowspec.releases.milestones]]
+version = "0.0.0"
+name = "工程基线（未发布）"
+criteria = "工程骨架与流程规范就位；**不产生标签**，仅表示尚未到达第一个里程碑"
+
+[[tool.lowspec.releases.milestones]]
+version = "0.0.1"
+name = "框架搭完"
+criteria = "M0 出口准则全部达成（docs/engineering/sdlc.md §3.1 的 G1~G9，其中 G9 分层不变性为机器检查）"
+
+[[tool.lowspec.releases.milestones]]
+version = "0.1.0"
+name = "首个可用版本"
+criteria = "端到端可跑：能完成一次完整 agent 会话（简单 CLI 交互 + 调用工具 + 审计可回放）"
 
 # ============================================================================
 # 覆盖率

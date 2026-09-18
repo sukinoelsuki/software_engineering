@@ -89,6 +89,14 @@
 
 ### Changed
 
+- **版本号改为「里程碑驱动」**（一致性报告 A-17 的处置；决策见
+  [ADR-0019](docs/adr/0019-release-and-version-policy.md)）：版本号不再由提交历史推导，
+  只能取 `pyproject.toml` 的 `[tool.lowspec.releases]` 台账里列出的里程碑值，
+  由 `make release VERSION=x.y.z` 落定；`make bump` 改为**拒绝执行**（避免误把版本交给
+  提交历史），并置 `major_version_zero = true` 作安全网（破坏性变更只动 MINOR，
+  越不过 `0.x`）。**当前版本由 `0.1.0` 更正为 `0.0.0`**——按阶梯 `0.0.1` 才有判据
+  （"框架搭完"），而框架尚未搭完。版本号的 4 处副本（`[project]` / `[tool.commitizen]` /
+  包内 `__version__` / `uv.lock`）改由 `tests/unit/test_release_policy.py` 机器检查一致性。
 - **`security` 不再是提交 `type`**（一致性报告 A-16，所有者裁决"文档对齐门禁"）：
   `type` 的合法集合**由门禁实际接受者决定**，而 commitizen 插件的类型集是硬编码的、
   不含 `security` 且无法通过配置扩展。5 处文档（`CONTRIBUTING.md` / `CODEBUDDY.md` /
