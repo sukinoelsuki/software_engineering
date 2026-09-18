@@ -121,27 +121,71 @@
 
 ## ④ 验证独立性：实现者单测之外有无独立用例抓住回归（变异探针）
 
-> 进行中：独立用例 `tests/security/test_t08_independent_spawn_env.py` 已落地（干净代码下 1 passed）。
-> 变异证据（哪几个用例在变异后变红）将在追加提交中填入。纪律：变异经 monkeypatch 或
-> "改-测-还原单命令"完成，禁止把变异留在共享工作区；每次变异后 `git diff` 复核已还原。
+**独立用例**：`tests/security/test_t08_independent_spawn_env.py::test_spawned_child_env_is_exactly_minimal_whitelist`
+（真实子进程 dump `os.environ` 键集，与独立写死的最小清单比对；干净代码下 1 passed）。
+
+**变异方法（纪律已遵守）**：用 `python` 就地改 `src/agent_sec_perf/foundation/proc.py` → 跑目标用例
+（canary + 静态守卫 + 我的独立用例 + `tests/unit/test_foundation_proc.py` 全部 6 例）→
+`git checkout --` 还原 → `git diff --stat` 复核 `proc.py` 已干净。**变异从未留在共享工作区**。
+
+### 变异 A：`spawn` 默认改回 `dict(os.environ)`（继承父环境）
+
+锚点行 `child_env = minimal_env(cwd) if env is None else dict(env)`
+⇒ `child_env = dict(os.environ) if env is None else dict(env)`。
+
+结果：**3 failed, 6 passed**
+- ❌ `tests/security/test_spawn_credentials_canary.py`（实现者运行时 canary）
+- ❌ `tests/unit/test_foundation_proc.py::test_spawn_defaults_to_minimal_env_not_inherited`（实现者）
+- ❌ **`tests/security/test_t08_independent_spawn_env.py`（我的独立用例）** ← 独立性证据
+- ✅ `test_spawn_env_explicit.py`（静态守卫，**按设计不抓默认回归**，与运行时 canary 互补）
+
+**结论 A**：默认被回退时，实现者的 canary 与**我的独立用例同时变红**——即便删掉实现者全部测试，
+本笔记的独立用例仍能抓住该回归。验证独立性**充分**。
+
+### 变异 B：让 `minimal_env` 混入 `**os.environ`
+
+锚点 `    return {` ⇒ `    return {**os.environ,`（父环境先铺底，再覆盖 6 个键）。
+
+结果：**6 failed, 3 passed**
+- ❌ `tests/security/test_spawn_credentials_canary.py`（实现者）
+- ❌ `tests/unit/test_foundation_proc.py::test_minimal_env_is_exactly_the_allowed_whitelist`（实现者）
+- ❌ `tests/unit/test_foundation_proc.py::test_minimal_env_exposes_no_credential_like_keys`（实现者）
+- ❌ `tests/unit/test_foundation_proc.py::test_spawn_defaults_to_minimal_env_not_inherited`（实现者）
+- ❌ `tests/unit/test_foundation_proc.py::test_run_user_isolation_still_uses_minimal_env`（实现者）
+- ❌ **`tests/security/test_t08_independent_spawn_env.py`（我的独立用例）** ← 独立性证据
+- ✅ `test_spawn_env_explicit.py`、`test_spawn_inherits_only_when_env_is_explicitly_passed`、
+  `test_run_root_isolation_still_inherits_parent_env`（这三例本就不该因 B 变红）
+
+**结论 B**：`minimal_env` 被混入父环境时，实现者 5 例 + **我的独立用例**同时变红。独立性**充分**。
+
+> 注意（非缺陷，是设计互补）：`test_spawn_env_explicit.py` 在 A、B 两种变异下**都不红**——
+> 它只守"调用点是否显式写 `env=`"，与 `spawn` 默认值无关；这正印证"默认最小 + 调用点显式"
+> 是**刻意互补的两层**，不是重复劳动。删除任一变异都不会让静态守卫误报。
 
 ---
 
-## 三态总览（截至本笔记）
+## 三态总览（最终）
 
-- **已验证**：① 封装层三出口 env 策略与调用点枚举；① `run_inherit_env` 不执行模型产物；
-  ② argv 无令牌、日志重定向不泄漏父内容；④ 独立运行时 canary 用例在干净代码下通过。
-- **未验证**：③ `llama-server` 在最小环境下是否启动失败/行为改变（无二进制+模型）。
-- **未发现缺口但未穷尽**：② 中 `cwd` 目录的文件系统可达面（属 T-12，本任务不覆盖）；
-  全仓 `subprocess` 枚举已全量覆盖，但 shell 脚本层（非 Python 封装）未做凭据流追踪。
+- **已验证**：① 封装层三出口 env 策略与调用点全量枚举；① `run_inherit_env` 两个调用点
+  （`evaluate.py:178` mypy 静态检查、`rounds.py:414` `--version` 指纹）**均不执行模型产物**；
+  ② argv（`server_argv`）无令牌、日志重定向只捕获子进程自身输出不泄漏父内容；
+  ④ 独立运行时 canary 干净代码下通过，且变异 A/B 下与实现者用例**同时**变红（独立性充分）。
+- **未验证**：③ `llama-server`（C++ 二进制）在最小环境下是否启动失败/行为改变
+  （本环境无二进制与模型；已写明需要的条件）。
+- **未发现缺口但未穷尽**：② 中 `cwd` 目录的文件系统可达面属 T-12（本任务不覆盖）；
+  shell 脚本层（`scripts/**`）未做凭据流追踪（仅确认其不启动 `llama-server`）。
 - **已确认残余**：`run(isolation="root")` 仍全量继承父环境，且无程序化拦截禁止 CI 使用
-  （仅 `report.py` 文本警告）——与 T-08 同族的未缓解项。
+  （仅 `report.py` 文本警告）——与 T-08 同族的未缓解项，建议升为 fail-secure 拦截或至少
+  在 `make check`/CI 入口断言禁止 `isolation=root`。
 
 ---
 
-回报：（本轮首笔，④ 变异证据待追加）
-状态：进行中
-改动：新增 tests/security/test_t08_independent_spawn_env.py（独立运行时 canary）
-验证：干净代码下该用例 1 passed；①②③ 已用源码证据得出独立结论
-遗留：④ 变异探针证据待本会话追加提交
-需领导裁决：③ 的端到端验证条件是否纳入后续排期
+回报：
+状态：完成
+改动：新增 tests/security/test_t08_independent_spawn_env.py（独立运行时 canary，干净 1 passed）；
+      docs/research/2026-09-18-t08-independent-review.md（①②③④ 独立复核笔记）
+验证：make check 全绿（111 passed，含本笔记新增用例）；变异 A/B 均经"改-测-还原单命令"
+      完成且 git diff 复核 proc.py 已干净；独立性确认（我的用例在 A/B 下均变红）
+遗留：③ llama-server 端到端副作用未验证（无二进制+模型，已列验证条件）；
+      agent-teams.md 存在一笔非本域、非本次产生的未提交改动，未触碰
+需领导裁决：是否将 isolation=root 的 CI 禁止从"文本警告"升级为 fail-secure 拦截（T-08 同族残余）
