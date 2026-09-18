@@ -192,20 +192,27 @@ Refs: #<issue>
 
 - [x] 工程骨架与流程规范
 - [ ] **base project 选型冻结**：方向已定（[ADR-0003](docs/adr/0003-select-base-project.md) §5.1
-      "组装开源组件 + 5 个自研模块"）；"复用哪些组件 + 自研边界"的清单**已产出**
-      （[ADR-0015](docs/adr/0015-layering-and-reuse-boundary.md) §5.2/§5.3），但该 ADR 状态为
-      **提议中**——**待所有者确认其 §8.1 的 D1~D10** ⇒ 本项未完成；
-      **确认前不得开工 `src/`（无新依赖可用）**
+      "组装开源组件 + 5 个自研模块"）；"复用哪些组件 + 自研边界"的清单**已产出并经所有者批准**
+      （[ADR-0015](docs/adr/0015-layering-and-reuse-boundary.md) §5.2/§5.3；**D1~D10 已于
+      2026-09-18 批准**，D7 暂缓待 V-a）
+      ⇒ 本项**仍未完成**，但**未完成的原因已变**：卡点不在决策，而在**组件尚未落装**——
+      ADR-0015 §8.2 的 V-a~V-o（**14 项**，V-e 随 D3 改选关闭）未核验，
+      `pyproject.toml` 的运行期 `dependencies` 仍为 `[]`
+      ⇒ **`cli/`（Typer）、`model/`（urllib3）、`harness/context/`（tree-sitter）、
+      `foundation/logging.py`（structlog）等无依赖可用，无法开工**
 - [ ] **需求规格 v0.2**：SRS 已有 v0.1.3（49 条；2026-09-18 修正 `REQ-PERF-04`
       验收入口与编号规范），但与 `devlog 0002~0004` 的讨论结果已分叉（见 0004 §4）；
       另待所有者确认 `devlog 0005` 的 S-1~S-10 / Q-1~Q-8
 - [x] **威胁模型初稿**：**已建立**（`docs/design/threat-model/`，**13 条** `T-01`~`T-13`）；
       状态分布：已缓解并验证 **0** / 部分缓解 **8** / 未缓解 **5** ⇒ 属**待办清单式的**，
       **不构成"安全已到位"的结论**
-- [ ] **目录结构与模块划分 ADR**：[ADR-0015](docs/adr/0015-layering-and-reuse-boundary.md) §5.4
-      已给出方案（`src/` 新增 8 个模块目录、`bench/` 保持独立），**待其 D8 确认后落地**；
-      `src/` 目前仍只有 `agent_sec_perf/bench/`（基准子系统）。
-      分层以 ADR-0015 §5.1 为准（四层纵向 + 两个横切能力层 + 零行为契约层）
+- [x] **目录结构与模块划分 ADR**：[ADR-0015](docs/adr/0015-layering-and-reuse-boundary.md)
+      §5.1/§5.4 **已接受并落地**——`src/` 新增 8 个模块目录、`contracts/` 最小契约与
+      `docs/design/interfaces/` 已产出、`bench/{proc,paths,errors}.py` 已提升为 `foundation/`、
+      分层不变性 R1~R5 已落成 `tests/unit/test_architecture_layers.py`（`bench/` 保持独立）。
+      分层以 ADR-0015 §5.1 为准（四层纵向 + 两个横切能力层 + 零行为契约层）。
+      ⚠️ **六层中 `security/` `observability/` `model/` `tools/` `harness/` `cli/` 仍只有空
+      `__init__.py`**（实现未开始）⇒ 逐项缺口与先后次序见 ADR-0015 §9
 
 ---
 
