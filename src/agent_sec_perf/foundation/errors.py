@@ -32,3 +32,20 @@ class IsolationError(BenchError):
 
     这种情况**不得**回退到普通执行：那等于把"隔离失败"伪装成"隔离成功"。
     """
+
+
+class ModelUnavailableError(BenchError):
+    """模型后端不可达 / 未就绪 / 已达重试上限（``docs/design/interfaces/model.md`` §3）。
+
+    调用方处置：**路由降级**到另一后端（``REQ-MODEL-05``）。
+    刻意**不**继承 :class:`ProtocolError`：后者语义是"基准参数/协议不可比"，处置是**中止**；
+    合并会让两种不同处置被同一个 ``except`` 捕获。
+    """
+
+
+class ModelProtocolError(BenchError):
+    """模型响应不符合契约（缺 ``choices``、``content`` 与 ``tool_calls`` 皆空等）。
+
+    调用方处置：**重试一次**，仍失败则回喂给模型（``REQ-HARNESS-02``）。
+    同样**不**继承 :class:`ProtocolError`，理由同上。
+    """
