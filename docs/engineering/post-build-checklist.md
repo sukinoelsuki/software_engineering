@@ -73,6 +73,8 @@ command -v bwrap             # 期望 /usr/bin/bwrap
 command -v git-lfs           # 期望有输出
 cmake --version | head -n1   # 期望有输出
 codebuddy --version          # 期望 >= 2.137.0
+cnb --version                # 期望 >= 1.15.36（见下方说明）
+ls -l ~/.codebuddy/skills    # 期望：符号链接非空（官方 CNB Skill 落点，见下方说明）
 code-server --list-extensions   # 核对扩展是否真的装上了（见下方说明）
 ```
 
@@ -86,6 +88,8 @@ code-server --list-extensions   # 核对扩展是否真的装上了（见下方�
 | git-lfs | 有路径 | | ☐ |
 | cmake | 有版本 | | ☐ |
 | codebuddy | ≥ 2.137.0 | | ☐ |
+| cnb-cli | ≥ 1.15.36 | | ☐ |
+| 官方 CNB Skill | 5 个已装（见下方说明） | | ☐ |
 
 > **关于扩展自检（V-7，2026-09-15 已解决，后续每次重建仍须复核）**：
 > 镜像构建时扩展安装是**失败不阻断**的，因此清单里的每一项都要在环境内用
@@ -102,6 +106,20 @@ code-server --list-extensions   # 核对扩展是否真的装上了（见下方�
 > 一旦写错，表现为"设置静默不生效"而不是报错，很容易被忽略。
 > 因此每次改动该文件后，都必须销毁并重启环境，确认主题与关键设置确实生效
 > （相关待验证项：V-4）。
+
+> **关于 `cnb-cli` 与官方 CNB Skill（[ADR-0016](../adr/0016-cnb-platform-integration-and-remote-write-authorization.md) 接入后必查）**：
+> 这两项是**镜像内新增的第三方代码**，其"没装上"**不阻断构建**（与扩展同类）
+> ⇒ 沿用本节口径，必须在环境内**显式校验一次**：
+>
+> 1. `cnb --version` 应输出 ≥ **1.15.36**。
+>    口径冲突须留意：`ADR-0016` §5.6 把"`cnb --version` 是否存在"记为**【待验证】**
+>    （其 `V1` 因此只用 `cnb --help`）⇒ **若该命令不存在**，改用 `cnb --help`（退出码 0 即通过），
+>    并把结论回填 `ADR-0016` §10 的 `U6`，**不得**把"能跑"写成"版本已核"。
+> 2. 官方 CNB Skill 已安装，**5 个**：`cnb-api`、`cnb-docs`、`cnb-code-review`、`cnb-pr-analysis`、
+>    `cnb-pipeline`；落点 `~/.codebuddy/skills/` 的**符号链接非空**（`ls -l` 可核）。
+>    名称口径待核验：上述 `cnb-pipeline` 与 [`ADR-0017`](../adr/0017-project-level-agent-skills.md)
+>    §5.3.2 的**项目内** Skill **同名** ⇒ 实测落点后**按实际名称回填本表**，并登记
+>    `ADR-0016` §10 的 `U12`；在此之前**不得**假设官方与项目内的同名 Skill 是同一个。
 
 ---
 
@@ -274,6 +292,7 @@ llama-server -m /root/models/Qwen3-4B-Q4_K_M.gguf -c 4096 -t 8 -tb 8 \
 llama-server --version                              # 期望输出包含 69eb250
 code-server --list-extensions | sort                # 期望有 ms-pyright.pyright，无 ms-python.vscode-pylance
 ls /opt/models /opt/benchmarks                      # 期望 4 个模型 + 3 个基准文件
+cnb --version ; ls -l ~/.codebuddy/skills           # 期望与 .ide/assets/ 清单一致（ADR-0016 §5.4 L4）
 ```
 
 | 检查项 | 期望 | 实际（2026-09-16） | 通过 |
@@ -282,6 +301,11 @@ ls /opt/models /opt/benchmarks                      # 期望 4 个模型 + 3 个
 | pyright 扩展 | `ms-pyright.pyright` 存在 | 存在 | ✅ |
 | pylance 扩展 | **不存在** | 不存在 | ✅ |
 | settings 生效范围 | 只有 `Machine` 作用域那一份有效（V-4） | 结论成立；但**生效的那一份也被平台后置改写了 2 个键**（见下） | ✅ |
+| cnb-cli / Skill 版本与 `.ide/assets/` 清单一致 | 与清单**逐项一致**（清单是唯一真源） | | ☐ |
+
+> **2026-09-18 追加一项（`ADR-0016` 接入后适用）**：上表末行是**追加**的检查项
+> （`cnb --version` 与 `ls -l ~/.codebuddy/skills` 已加进本节命令块）。
+> 本节开头"本轮待确认三项"是 **2026-09-16 那一轮**的快照，按"只增不改"**不回改**。
 
 > **V-4 补记（2026-09-16 复核）**：四条 COPY 中仍只有
 > `/root/.local/share/code-server/Machine/settings.json` 是我们写进去的那份

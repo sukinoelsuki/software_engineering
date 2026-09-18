@@ -137,6 +137,11 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
   "https://api.cnb.cool/<repo-slug>/-/build/logs?sourceRef=bench/nightly&event=crontab&page_size=5"
 ```
 
+> **若已接入 `cnb-cli`**（[ADR-0016](../adr/0016-cnb-platform-integration-and-remote-write-authorization.md)）：
+> 上述查询可用 `cnb` 命令替代 `curl`；但**不得**用它绕过
+> [`git-workflow.md`](git-workflow.md) §4 的**授权分级**——平台写能力
+> （建 PR / 合并 PR / 触发流水线）仍按 A~F 分级处置。
+
 > ⚠️ **2026-09-17 实测更正：不能用这条命令确认"定时任务是否触发"。**
 > 同一令牌下的实测：不带过滤只返回**最近的几条**构建——推送后为 `total=3`
 > （当前 vscode 会话 + 刚推送的 `develop` / `bench/nightly` 两条 push）；
