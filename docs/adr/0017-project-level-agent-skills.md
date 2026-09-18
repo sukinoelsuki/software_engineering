@@ -1,8 +1,9 @@
 # 0017. 建立项目级 Agent Skills 目录（`.codebuddy/skills/`）与其产出域归属
 
-- **状态**：**提议中**（待项目所有者拍板；**本文只是决策草案，不含任何目录或文件的创建**）
+- **状态**：**已接受**（2026-09-18；项目所有者拍板**采纳方案 B**——建立 `.codebuddy/skills/`、
+  只放流程型 Skill、产出域归首席架构师；协作机制另开 [ADR-0018](0018-agent-team-collaboration-mechanism.md)）
 - **日期**：2026-09-18
-- **决策者**：`Le0n3rd`（待批准）／AI 代理（整理与论证）
+- **决策者**：`Le0n3rd`（批准）／AI 代理（整理与论证）
 - **相关**：[ADR-0001](0001-record-architecture-decisions.md)（ADR 制度）、
   [ADR-0009](0009-learning-notes.md)（学习笔记：另一处"持续进行"的载体，与本决策的分工同理）、
   [ADR-0013](0013-branch-model-for-solo-dev.md) §9.4（**引文漂移**的教训：引用优先写章节名）、
@@ -234,7 +235,12 @@ flowchart TD
 | 权威源 | [`docs/engineering/agent-teams.md`](../engineering/agent-teams.md)（§3 / §6 / §8 各小节）、[`CODEBUDDY.md`](../../CODEBUDDY.md) §10 |
 | **不写什么** | 角色定义与产出域表（属 `.codebuddy/agents/` 与 `CODEBUDDY.md` §10.1）、实测数据（属 `agent-teams.md` §8.1/§8.11）、模型档位与成本纪律（属 §10.3） |
 
-#### 5.3.2 `cnb-pipeline`
+#### 5.3.2 `repo-ci-conventions`
+
+> **2026-09-18 改名（接受前的最后一版修订）**：本小节原定名为 `cnb-pipeline`。
+> 核验官方 Skill 清单时发现 `cnb/skills/cnb-skill` 仓库内**已有一个同名 Skill `cnb-pipeline`**
+> ⇒ 为免"同名两处"，项目内 Skill **改名为 `repo-ci-conventions`**。
+> 改名只涉及**名称与分工表述**，本小节的**流程要点与权威源不变**。
 
 | 项 | 内容 |
 | --- | --- |
@@ -242,17 +248,21 @@ flowchart TD
 | 触发条件 | 增删/修改 `.cnb.yml` 的 event、stage、`endStages`、`runner`、`docker` 时；流水线出现诡异失败时 |
 | 流程要点（只写顺序） | ① 阶段脚本由镜像的 `/bin/sh`（Debian 12 的 dash）执行 ⇒ **禁 `set -o pipefail`**，一律 `set -eu`；② 镜像**钉到发行版**（`python:3.12-bookworm`），**禁浮动标签**；③ 流水线里的 `make setup` / `make check` **必须带 `LOCAL_HOOKS=0`**；④ `build.by` **必须列全构建期输入**（漏了直接构建报错）；⑤ `cpus` ⇒ 内存 = **× 2 GiB**（8 核 = 16 GiB，**不得降到 4 核**：L 档常驻 8.70 GiB 会 OOM）；⑥ 基准必须用 `lock` **串行**（并发测量会让吞吐失去可比性）；⑦ `endStages` 的发布**不得吞错**（`\|\| echo` 会把"没数据"伪装成"绿"）；⑧ 不用管道接 `head`（SIGPIPE 141） |
 | 权威源 | `.cnb.yml` 头部注释与其内联注释、[`docs/engineering/benchmark-automation.md`](../engineering/benchmark-automation.md) §3/§7、[`ADR-0014`](0014-benchmark-automation.md) §2.1/§2.9、[`docs/devlog/0012`](../devlog/0012-2026-09-16-基准自动化数据流水线.md) §3/§5 |
-| **不写什么** | ⚠️ **本 Skill 不管"怎么调平台 API"**——那是官方 `cnb-skill` 的职责（见下"分工"）；也不复述基准**测量口径**（属 `benchmark-protocol`）与数据发布脚本的实现（属 `scripts/bench/publish.sh`） |
+| **不写什么** | ⚠️ **本 Skill 不管"怎么调平台 API"**——那是官方 `cnb-pipeline` 的职责（见下"分工"）；也不复述基准**测量口径**（属 `benchmark-protocol`）与数据发布脚本的实现（属 `scripts/bench/publish.sh`） |
 | 机器检查 | `tests/unit/test_cnb_config.py`（本 Skill 只提示"改完要跑它"） |
 
-**与官方 `cnb-skill` 的分工（必须写明，否则会重复）**：
+**与官方 `cnb-pipeline` 的分工（必须写明，否则会重复）**：
 
-| 维度 | 官方 `cnb-skill`（[ADR-0016](0016-cnb-platform-integration-and-remote-write-authorization.md) 接入） | 项目内 `cnb-pipeline`（本 ADR） |
+| 维度 | 官方 `cnb-pipeline`（属 `cnb/skills/cnb-skill` 仓库；[ADR-0016](0016-cnb-platform-integration-and-remote-write-authorization.md) 接入） | 项目内 `repo-ci-conventions`（本 ADR） |
 | --- | --- | --- |
-| 管什么 | **调平台 API**：仓库/Issue/PR/Git/代码评审、流水线触发与日志、构建状态、成员、制品库、搜索 | **本仓库 `.cnb.yml` 的约定与历史坑** |
+| 管什么 | **CNB 平台通用的 `.cnb.yml` 语法**与**构建失败诊断** | **本仓库的具体约定与历史坑** |
 | 来源 | `cnb.cool` 官方组织，镜像内全局安装，钉 commit | 本仓库 `.codebuddy/skills/`，随仓库走 |
 | 变更节奏 | 跟随上游 | 跟随本仓库的流水线演进 |
-| 交叉引用 | （上游无法引用本项目） | 在 `cnb-pipeline` 文首写一行"需要调用平台 API 时，用 `cnb` 命令；其用法见官方 `cnb-skill`" |
+| 交叉引用 | （上游无法引用本项目） | 在 `repo-ci-conventions` 文首写一行"需要调用平台 API 时，用 `cnb` 命令；其用法见官方 `cnb-pipeline`" |
+
+> **补充（2026-09-18 回填）**：官方 Skill 中另有 `cnb-api` / `cnb-code-review` / `cnb-pr-analysis` / `cnb-docs`
+> 分别覆盖 API、代码评审、PR 分析、文档等能力——它们与项目内四个 Skill **同样不得互相复述**；
+> 项目内 `repo-ci-conventions` 文首的指向行只指向**与它同名语义最近**的官方 `cnb-pipeline`。
 
 > **判据**：两者的交集**必须为空**。若某条内容同时像"API 用法"和"仓库约定"，
 > 归**前者**（API 用法）——因为仓库约定应能被本地文件（`.cnb.yml`、`Makefile`、测试）证明，
@@ -277,6 +287,54 @@ flowchart TD
 | 流程要点（只写顺序） | ① 跑之前确认**同签名**（协议版本、ctx、threads、max_tokens、tiers **与 CPU 型号**）——**跨环境/跨签名不得直接比较**；② 必须**显式 `-np 1`** 并把该参数写进结果（默认 4 槽位共享 KV 会改变计时口径）；③ 报告必须给**重复次数与极差**，**单次采样不足以判定超阈**；④ **加载耗时跨会话不可比**（容器内无法规范化存储状态）⇒ 只作同会话指标；⑤ 对照必须**同会话内**做；⑥ 任何会改变测量口径的改动**必须提 `PROTOCOL_VERSION`** 并记 devlog；⑦ 发布用 `make bench-publish`（**合并**而非替换，且不得吞错） |
 | 权威源 | [`docs/engineering/benchmark-automation.md`](../engineering/benchmark-automation.md)（§4/§5/§7）、[`docs/engineering/post-build-checklist.md`](../engineering/post-build-checklist.md) §6.4（同会话对照与极差判据）、[`ADR-0014`](0014-benchmark-automation.md)、[`docs/notes/evaluation-pitfalls.md`](../notes/evaluation-pitfalls.md) |
 | **不写什么** | 具体基准数字（属 `bench/data` 分支）、发布脚本实现、CI 触发配置（属 `cnb-pipeline`） |
+
+#### 5.3.5 官方 `cnb-skill` 仓库的 Skill 清单与安装方式（2026-09-18 回填）
+
+> 本小节**只补事实**，不改变本节前四小节的结论（ADR「只增不改」）。
+
+**事实 1 · 官方 Skill 共 11 个**（来源：`cnb/skills/cnb-skill` 仓库 `skills/` 目录列表，
+访问日期 2026-09-18；抓取时该页显示的最新提交为 `8399c383`）：
+
+| # | Skill | # | Skill |
+| --- | --- | --- | --- |
+| 1 | `cnb-api` | 7 | `cnb-pr-analysis` |
+| 2 | `cnb-code-commit` | 8 | `cnb-repo-knowledge-base` |
+| 3 | `cnb-code-review` | 9 | `cnb-tapd-resource-fetcher` |
+| 4 | `cnb-docs` | 10 | `cnb-text-path-converter` |
+| 5 | `cnb-npc-search` | 11 | `cnb-upload-attachment` |
+| 6 | `cnb-pipeline` | | |
+
+**事实 2 · 领导裁决只装 5 个**：
+
+| 项 | 内容 |
+| --- | --- |
+| **装（5）** | `cnb-api` · `cnb-docs` · `cnb-code-review` · `cnb-pr-analysis` · `cnb-pipeline` |
+| **不装（6）** | `cnb-code-commit` · `cnb-npc-search` · `cnb-repo-knowledge-base` · `cnb-tapd-resource-fetcher` · `cnb-text-path-converter` · `cnb-upload-attachment` |
+
+排除理由：
+
+1. `cnb-code-commit` **与项目既有门禁重叠**（PR 模板、Conventional Commits 门禁）
+   ⇒ 会构成"**两处口径**"，按本文 §5.2 的归入判定与 §5.3.2 的分工判据，**归本仓库既有门禁**，不引入第三方口径；
+2. 其余 5 个（`cnb-npc-search`、`cnb-repo-knowledge-base`、`cnb-tapd-resource-fetcher`、
+   `cnb-text-path-converter`、`cnb-upload-attachment`）本项目当前**用不上**；
+3. **成本理由（S-2 的直接应用）**：官方 Skill 的 `description` 是**常驻上下文**，
+   11 个全部安装 ≈ 常驻量翻倍 ⇒ 11 → 5 是**可量化的成本削减**，不是审美偏好。
+
+**事实 3 · 安装路径（实现事实，来源为本次落地的实测记录）**：
+
+| 项 | 事实 |
+| --- | --- |
+| `skills add` 是否支持钉 commit / ref | **不支持** ⇒ 官方安装路径由 [ADR-0016](0016-cnb-platform-integration-and-remote-write-authorization.md) §5.4 的 **L2 降级为 L3** |
+| L3 的做法 | `git clone` → `git checkout <SHA>` → 落到 `~/.agents/skills/<name>/`，并在 `~/.codebuddy/skills/<name>` 建**符号链接** |
+| 可钉 commit | `bcd25870ed100db43c257c3c5feca6c776645914` |
+| 「HEAD 会漂」是否已实测 | **是**：上述 SHA 取自本次落地时的 HEAD，而本文写作时抓取同一页面已显示 `8399c383` ⇒ **必须按取到时 SHA 钉死** |
+| `cnb --version` 是否存在 | **存在**，返回 `1.15.36` |
+| `skills` 的版本 | 钉 **1.5.0**；1.6 / 1.7 要求 node ≥ 22.20，而镜像为 node **20.20.2** |
+
+> **与 ADR-0016 的关系（不得分叉）**：本节事实对应 ADR-0016 §10 的 U1 / U2 / U3 / U6（原为**【待核验】**）。
+> 本次改动**不含 ADR-0016**（不在产出白名单）⇒ 上述事实是否回填 ADR-0016、
+> 以及"钉 commit 与所装目录内容一致"是否需要复核，**留待 ADR-0016 的域主处理**。
+> 在回填之前，ADR-0016 §10 的【待核验】标记**仍然有效**，本节事实**不得**被表述为"ADR-0016 已核验"。
 
 ### 5.4 产出域归属
 
@@ -362,7 +420,7 @@ flowchart TD
 | 维度 | [ADR-0016](0016-cnb-platform-integration-and-remote-write-authorization.md) | 本 ADR（0017） |
 | --- | --- | --- |
 | 决策对象 | CNB 官方 Skills 与 `cnb-cli` **是否进镜像**、远端写入授权**如何分级** | **项目内** `.codebuddy/skills/` 是否建立、边界与产出域 |
-| 交集 | **只有一个**：项目内 `cnb-pipeline` 与官方 `cnb-skill` 的分工（§5.3.2 的表） | 同左 |
+| 交集 | **只有一个**：项目内 `repo-ci-conventions` 与官方 `cnb-pipeline` 的分工（§5.3.2 的表） | 同左 |
 | 分叉风险 | 若两文各写一份"分工"，就会出现两份口径 | ⇒ **分工表只在本文写**；ADR-0016 只留一行指向本文 |
 
 ---
@@ -473,7 +531,8 @@ flowchart TD
 
 ## 11. 修订记录
 
-> 本 ADR 尚**未被接受**；接受后正文结论不再原地修改（ADR 只增不改）。
+> 本 ADR 已于 2026-09-18 **被接受**；此后正文结论不再原地修改（ADR 只增不改）。
+> 下列第 2~4 条属**接受前的最后一版修订**（补事实与编排性改名），一并登记以免被误读为"接受后改写"。
 
 - **2026-09-18**：初稿。状态**提议中**。依据：`.codebuddy/` 现状（`agents/`、`rules/`、`teams/`）、
   `CODEBUDDY.md`/`AGENTS.md` §7/§10、`project-conventions` 与 `docs-and-adr` 规则、
@@ -481,3 +540,24 @@ flowchart TD
   `post-build-checklist.md` §6.4、`devlog 0012` §3/§5、`devlog 0013` §3/§6/§7、`devlog 0014` §7、
   `tests/unit/test_cnb_config.py` 的存在与其检查项。
   **本 ADR 不创建任何目录或文件**；`.codebuddy/skills/` 当前仍不存在。
+- **2026-09-18**：**状态 提议中 → 已接受**（所有者拍板采纳方案 B）。
+- **2026-09-18**：**编排性改名（接受前）**：§5.3.2 项目内 Skill 由 `cnb-pipeline` 改名为
+  **`repo-ci-conventions`**，并重写与官方 `cnb-pipeline` 的分工表（§5.3.2）与 §5.7 的对应单元格。
+  原因：官方 `cnb/skills/cnb-skill` 仓库内已有同名 Skill `cnb-pipeline` ⇒ 同名会造成"两处口径"。
+  **流程要点与权威源不变**。
+- **2026-09-18**：**回填事实（接受前）**：新增 §5.3.5「官方 `cnb-skill` 仓库的 Skill 清单与安装方式」——
+  官方 Skill 共 **11 个**（列全名）、领导裁决**只装 5 个**（排除 6 个，含与项目门禁重叠的 `cnb-code-commit`）、
+  以及安装路径的实现事实（`skills add` 不支持钉 commit ⇒ 降级 **L3**；可钉 commit
+  `bcd25870ed100db43c257c3c5feca6c776645914`；`cnb --version` = `1.15.36`；`skills` 钉 `1.5.0`）。
+  **只补事实，未改结论**；ADR-0016 §10 的对应【待核验】项**仍未回填**（见该小节末注）。
+- **2026-09-18**：**§10 的 U6 结案（不改 §10 正文）**：以
+  `git log -S '协作机制变更' -- CODEBUDDY.md` 得引入提交 `c327ca6`（2026-09-18 08:02:05），
+  **晚于** `.codebuddy/agents/` 的建立提交 `e8e0885`（2026-09-18 04:19:33）
+  ⇒ **建立当时 `CODEBUDDY.md` §7 不含该行**。同批核验：「新目录的建立必须先在 ADR 中说明理由」
+  由 `7609bb9`（2026-09-14 21:01:27）引入，**早于** `e8e0885` ⇒ 该规则**当时已在生效**。
+  结论与处置见 [ADR-0018](0018-agent-team-collaboration-mechanism.md) §5.2「追溯登记」。
+- **2026-09-18**：**落地（本文的 §8 后续行动未全部执行，不得据本文认为已完成）**：
+  `.codebuddy/skills/` 与 4 个 `SKILL.md` 已建立（`agent-team-protocol`、`repo-ci-conventions`、
+  `devlog-protocol`、`benchmark-protocol`）；`.codebuddy/rules/project-conventions/RULE.mdc`
+  的「目录约定」与「依赖管理」已同步。**§7 的 V1~V6（含 `tests/unit/test_skills_layout.py`）
+  与 §8 的其余联动项（`CODEBUDDY.md`/`AGENTS.md` §10.1、`.codebuddy/agents/*`）本次未执行**。
