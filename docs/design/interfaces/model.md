@@ -31,7 +31,7 @@
 | `tool_call_id` | `str \| None` | **仅** `role == TOOL` 必填；回指它所响应的 `ToolCallRequest.call_id` |
 
 ```python
-class Role(str, Enum):
+class Role(StrEnum):
     SYSTEM = "system"  # 我方生成的系统指令（可信）
     USER = "user"  # 用户输入（不可信）
     ASSISTANT = "assistant"  # 模型输出（不可信）
@@ -87,7 +87,7 @@ class TokenUsage:
 ### 2.3 `CapabilityTier`（**成员【待定】**，Q1）
 
 ```python
-class CapabilityTier(str, Enum):
+class CapabilityTier(StrEnum):
     """**模型能力**档位。与**硬件档位** S/M/L 是两条正交的轴（ADR-0010 §5.2），
     二者不可互相推导、**不得混用**。
 
@@ -109,7 +109,7 @@ class CapabilityTier(str, Enum):
 ### 2.4 `FinishReason`（**新增**）
 
 ```python
-class FinishReason(str, Enum):
+class FinishReason(StrEnum):
     STOP = "stop"  # 正常结束
     LENGTH = "length"  # 触达 max_tokens / 上下文上限（**截断**）
     TOOL_CALLS = "tool_calls"  # 请求调用工具
@@ -216,7 +216,7 @@ ADR-0015 §5.1.2 写作 `chat(messages, tools, ...)`，其中 `...` 的**其余�
 
 ## 5. 对 `contracts/model.py` 的改动清单
 
-1. 新增 `Role` / `FinishReason` / `TokenUsage` 三个 `(str, Enum)` / `frozen dataclass`；
+1. 新增 `Role` / `FinishReason` / `TokenUsage` 三个 `(StrEnum)` / `frozen dataclass`；
 2. `ChatMessage` 补 `role` / `content` / `tool_calls` / `tool_call_id`；
 3. `ModelResponse` 补 5 个字段；
 4. `CapabilityTier` 补 3 个**占位**成员并注明【待定】（U1）；

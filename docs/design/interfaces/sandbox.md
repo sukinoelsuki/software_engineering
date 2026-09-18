@@ -30,7 +30,7 @@
 ### 2.1 `IsolationDimension` / `IsolationMechanism`（**新增**）
 
 ```python
-class IsolationDimension(str, Enum):
+class IsolationDimension(StrEnum):
     FILESYSTEM = "filesystem"
     NETWORK = "network"
     USER = "user"
@@ -41,7 +41,7 @@ class IsolationDimension(str, Enum):
     PROCESS_COUNT = "process_count"
 
 
-class IsolationMechanism(str, Enum):
+class IsolationMechanism(StrEnum):
     NONE = "none"  # 该维度未隔离
     SETRLIMIT = "setrlimit"  # 内核 per-process rlimit（ADR-0007 机制类别三）
     NAMESPACE = "namespace"  # 命名空间 / mount 类（ADR-0007 机制类别一）
@@ -93,7 +93,7 @@ class IsolationDimensionStatus:
 ### 2.3 `SandboxTier`（**新增**）
 
 ```python
-class SandboxTier(str, Enum):
+class SandboxTier(StrEnum):
     L0 = "l0"  # 拒绝执行（所有探针未通过）
     L1 = "l1"  # RestrictedProcessBackend：始终可用（ADR-0006 §5.3）
     L2_NAMESPACE = "l2-namespace"  # NamespaceBackend：bwrap / firejail（ADR-0007 §4.2 的 L2-N）
@@ -220,7 +220,7 @@ ADR-0007 §4.2 明确"档位选择是**逐维度**的"，且不同后端 / 参�
 ## 4. 对 `contracts/sandbox.py` 的改动清单
 
 1. 新增 `IsolationDimension` / `IsolationMechanism` / `IsolationDimensionStatus` / `SandboxTier`
-   四个类型（前两个与 `SandboxTier` 为 `(str, Enum)`，`IsolationDimensionStatus` 为 `frozen dataclass`）；
+   四个类型（前两个与 `SandboxTier` 为 `(StrEnum)`，`IsolationDimensionStatus` 为 `frozen dataclass`）；
 2. `SandboxRequest` 补 6 个字段；
 3. `SandboxResult` 补 7 个字段；
 4. `IsolationMatrix` 补 4 个字段（**逐维度**结构）；

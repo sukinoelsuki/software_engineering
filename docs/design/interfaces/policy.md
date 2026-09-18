@@ -29,7 +29,7 @@ Q5（`PolicyDecision` 字段）。
 ### 2.1 `Capability`（Q1）
 
 ```python
-class Capability(str, Enum):
+class Capability(StrEnum):
     READ_FILE = "read_file"  # 读取文件 / 列目录
     WRITE_FILE = "write_file"  # 创建 / 修改 / 删除文件
     EXECUTE_COMMAND = "execute_command"  # 启动子进程（唯一经 foundation.proc）
@@ -53,7 +53,7 @@ class Capability(str, Enum):
 ### 2.2 `RiskLevel`（Q1）
 
 ```python
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     LOW = "low"  # 低代价、可逆
     MEDIUM = "medium"  # 常规特权操作，建议单次确认
     HIGH = "high"  # 高代价 / 难以撤销，必须展示风险说明

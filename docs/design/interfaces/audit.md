@@ -29,7 +29,7 @@
 ### 2.1 `AuditEventKind`（**新增**）
 
 ```python
-class AuditEventKind(str, Enum):
+class AuditEventKind(StrEnum):
     POLICY_DECISION = "policy_decision"  # 一次策略求值（REQ-SEC-06）
     APPROVAL = "approval"  # 一次人工确认选择（REQ-UX-02：本次/总是/拒绝均被审计）
     TOOL_CALL = "tool_call"  # 一次工具调用的发起与结果（REQ-SEC-06 / REQ-OBS-01）
@@ -44,7 +44,7 @@ class AuditEventKind(str, Enum):
 ### 2.2 `AuditOutcome`（**新增**）
 
 ```python
-class AuditOutcome(str, Enum):
+class AuditOutcome(StrEnum):
     ALLOW = "allow"  # 放行（策略 / 审批）
     DENY = "deny"  # 拒绝（策略 / 拒答）
     CONFIRM = "confirm"  # 待人工确认（尚未执行）
@@ -140,7 +140,7 @@ class AuditSink(Protocol):
 
 ## 3. 对 `contracts/audit.py` 的改动清单
 
-1. 新增 `AuditEventKind` / `AuditOutcome` 两个 `(str, Enum)`；
+1. 新增 `AuditEventKind` / `AuditOutcome` 两个 `(StrEnum)`；
 2. `AuditEvent` 补 10 个字段（其中后 6 个有默认值）；
 3. import 补 `field`（`dataclasses`）、`Capability` / `RiskLevel`（`contracts/policy.py`）；
 4. `AuditSink` **保持不变**；

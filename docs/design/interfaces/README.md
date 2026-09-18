@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | C1 | **只依赖标准库**，不依赖任何第三方包、也不依赖本项目其它模块（R3） | 契约必须零信任面、零版本耦合；由 `tests/unit/test_architecture_layers.py` 的 V1 机器检查 |
 | C2 | 数据结构用 `@dataclass(frozen=True)`；行为接口用 `typing.Protocol` | 数据不可变 ⇒ 天然线程友好、可安全回放；Protocol ⇒ 实现可替换、测试可注入 fake |
-| C3 | 枚举用 `(str, Enum)`，值用**小写英文** | 可直接 JSON 序列化进审计与消息；避免 `IntEnum` 的隐式比较陷阱 |
+| C3 | 枚举用 **`enum.StrEnum`**（`from enum import StrEnum`），值用**小写英文** | 可直接 JSON 序列化进审计与消息；`str(member)` 返回**值**本身。**不要**写成 `(str, Enum)`——Python ≥3.12 下会被 ruff `UP042` 判为应升级（2026-09-18 实测：照抄旧写法即被门禁拦下） |
 | C4 | 集合字段用 `tuple` / `frozenset` / `Mapping`，**不用** `list` / `set` / `dict` | 与 `frozen=True` 一致；防止共享可变状态被就地篡改 |
 | C5 | 函数签名的**可变参数一律 `keyword-only`**（`*` 之后） | 避免调用点位置参数错位；`chat`/`invoke`/`run` 均遵循 ADR-0015 §5.1.2 的写法 |
 | C6 | 面向"是否允许 / 是否需要确认"的字段，默认值取**最保守**的一方 | fail-secure（`SECURITY.md` 第 4 问）；default-deny 不能靠调用方记得传参 |
