@@ -111,6 +111,62 @@ def test_legit_path_within_root_is_resolved_not_over_rejected(
     assert _is_within(resolved, root)
 
 
+#: 前缀欺骗用的兄弟目录名：都**以允许根的字符串为前缀**，但**不是**它的子路径
+_SPOOF_SUFFIXES = ("-evil", "2", ".bak", "_backup")
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("suffix", _SPOOF_SUFFIXES)
+def test_sibling_directory_sharing_root_prefix_is_rejected(
+    suffix: str, tmp_path: pathlib.Path
+) -> None:
+    """第 4 类攻击：**前缀欺骗**（`/tmp/foo` vs `/tmp/foobar`）必须被拒绝。
+
+    这是"看起来实现了、其实没有"的高发点：用**字符串前缀**判断"是否在白名单内"的实现
+    会在这类输入上**放行**（``"/tmp/foobar/x".startswith("/tmp/foo")`` 为真），
+    而 ``resolve_within`` 按**路径分量**判断，必须拒绝。威胁模型 `T-02` 点名建议补此用例。
+
+    用例内先断言"这个输入**确实**能骗过字符串前缀式判断"——否则本用例形同虚设
+    （若哪天攻击输入不再构成前缀欺骗，该断言会失败，提醒我们换输入）。
+    """
+    root = tmp_path / "allowed"
+    root.mkdir()
+    spoof = tmp_path / f"{root.name}{suffix}"
+    spoof.mkdir()
+    secret = spoof / "secret.txt"
+    secret.write_text("topsecret", encoding="utf-8")
+
+    assert str(secret.resolve()).startswith(str(root.resolve())), (
+        "本用例的前提是'字符串前缀式判断会放行'——该输入已不满足此前提，请更换输入"
+    )
+
+    with pytest.raises(PathNotAllowedError):
+        paths.resolve_within(secret, [root], what="asset")
+    with pytest.raises(PathNotAllowedError):
+        paths.resolve_within(spoof, [root], what="asset")
+    # 同一攻击经由 `..` 先回上一层、再进入兄弟目录，同样必须被拒绝
+    with pytest.raises(PathNotAllowedError):
+        paths.resolve_within(root / ".." / spoof.name / "secret.txt", [root], what="asset")
+
+
+@pytest.mark.security
+@pytest.mark.parametrize("name", ["allowed-ish.txt", "allowed2", "allowed.bak"])
+def test_files_inside_root_sharing_root_name_are_accepted(
+    name: str, tmp_path: pathlib.Path
+) -> None:
+    """边界正确性：**位于根目录内**、文件名与根同前缀的文件必须被接受。
+
+    与上一条成对：上一条防"过宽"（把兄弟目录当自己人），这条防"过窄"
+    （把根内的合法文件当越界）。两者同时成立，才说明判据是"路径分量"而不是"字符串前缀"。
+    """
+    root = tmp_path / "allowed"
+    root.mkdir()
+    candidate = root / name
+    candidate.write_text("data", encoding="utf-8")
+
+    assert paths.resolve_within(candidate, [root], what="asset") == candidate.resolve()
+
+
 @pytest.mark.security
 def test_path_traversal_rejection_depends_on_protection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

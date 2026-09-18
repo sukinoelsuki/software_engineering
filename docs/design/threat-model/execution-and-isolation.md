@@ -135,15 +135,25 @@
   4. **Windows 语义未覆盖**：UNC、盘符、大小写不敏感文件系统、8.3 短名。
      `REQ-PLAT-01` 要求跨平台，**当前只在 Linux 验证过** 【待验证】。
 - **验证方式**：
-  - **已有（行为，2026-09-18，`f436b0b`）**：`S2` 的"**拒绝**"半——落地位置 `tests/security/`：
-    `test_path_traversal_rejected.py`（11 用例：覆盖第 1~4 类输入 + 边界正确性 + 变异验证）与
-    `test_path_validation_seam.py`（2 接缝用例）。**变异验证**：临时移除 `resolve_within` 拒绝分支后
-    **9 个拒绝用例 `DID NOT RAISE`（失败）**，恢复后 `raise` 回到 `paths.py:39`、工作树干净。
+  - **已有（行为，2026-09-18，`f436b0b`；同日追加前缀欺骗用例）**：`S2` 的"**拒绝**"半——
+    落地位置 `tests/security/`：`test_path_traversal_rejected.py`（**18 用例**：覆盖第 1~4 类输入 +
+    边界正确性 + 变异验证 + 4 种前缀欺骗 + 3 种"根内同前缀文件名"）与
+    `test_path_validation_seam.py`（2 接缝用例）。**变异验证（一）**：临时移除 `resolve_within`
+    拒绝分支后 **9 个拒绝用例 `DID NOT RAISE`（失败）**，恢复后 `raise` 回到 `paths.py:39`、工作树干净。
   - **仍缺（`S2` 的"**且留审计**"半）**：对这些输入断言"留下审计记录"——**当前无法验证**，
     因为 `AuditSink`（`observability/audit.py`）在仓库中**不存在**；验证者**拒绝造测**（正确）。
     **第 5 类（Windows / UNC / 盘符）**亦仍缺：本机为 Linux，`REQ-PLAT-01` 的多平台 job 未建。
-  - 建议补一条**参数化**用例覆盖第 4 类前缀欺骗（`/tmp/foo` vs `/tmp/foobar`），
-    它是"看起来实现了其实没有"的高发点。
+  - **第 4 类（前缀欺骗）已补（2026-09-18）**：`/tmp/foo` vs `/tmp/foobar` 这类
+    "**字符串前缀为真、路径分量不为真**"的输入，按**参数化**覆盖 4 种兄弟目录名
+    （`-evil` / `2` / `.bak` / `_backup`）＋ 3 种"位于根内、文件名与根同前缀"的**边界正确性**用例
+    （`test_sibling_directory_sharing_root_prefix_is_rejected` /
+    `test_files_inside_root_sharing_root_name_are_accepted`）。
+    **变异验证（二）**：把判据改成字符串前缀式
+    （`resolved == root_resolved or str(resolved).startswith(str(root_resolved))`）后，
+    4 个前缀欺骗用例**全部 `DID NOT RAISE`（失败）**，而 3 个边界正确性用例**仍通过**
+    ⇒ 断言**精准且非恒过**；恢复后 `git diff src/` 为空。
+    用例内另有前置断言"该输入**确实**能骗过字符串前缀式判断"——若哪天输入不再构成前缀欺骗，
+    它会失败并提醒更换输入（防用例退化为恒过）。
   - **【待验证】项**：Windows/UNC 输入 → 在 win_amd64 运行器上跑同一组参数化输入
     （验证方式：CI 多平台 job，`REQ-PLAT-01`）。
 - **相关**：`REQ-SEC-05`/`REQ-SEC-09`、`ADR-0006 §6`（风险表"路径白名单被绕过"）、`ADR-0015 §7.2`（`S2`）。
