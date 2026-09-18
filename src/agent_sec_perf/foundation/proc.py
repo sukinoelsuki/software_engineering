@@ -20,7 +20,10 @@ import os
 import pathlib
 import resource
 import shutil
-import subprocess  # nosec B404 —— 本模块是全项目唯一子进程封装层，导入 subprocess 即其职责（登记：ADR-0014 §2.9）
+
+# 本模块是全项目唯一子进程封装层，导入 subprocess 即其职责。
+# 豁免登记：docs/adr/0014-benchmark-automation.md §2.9
+import subprocess  # nosec B404
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -139,10 +142,9 @@ def run(
     env = _isolated_env(cwd) if isolated else dict(os.environ)
 
     try:
-        # 安全豁免说明（ruff S603 / bandit B603）：本模块是全项目**唯一**的进程启动点，
-        # 且每次调用都不经 shell、参数以列表传入、执行前先施加隔离与资源上限。
-        # 豁免已登记：docs/adr/0014-benchmark-automation.md。
-        completed = subprocess.run(  # noqa: S603 —— 不经 shell、参数为列表；执行前施加非特权 uid + rlimit + 最小环境（登记：ADR-0014 §2.9）
+        # 不经 shell、参数为列表；执行前施加非特权 uid + rlimit + 最小环境。
+        # 豁免登记：docs/adr/0014-benchmark-automation.md §2.9
+        completed = subprocess.run(  # noqa: S603
             argv,
             cwd=str(cwd),
             env=env,
@@ -184,7 +186,9 @@ def run_inherit_env(
     凡是要执行模型产物的调用，必须走 :func:`run`。
     """
     try:
-        completed = subprocess.run(  # noqa: S603 —— 仅执行自有工具链静态检查、不执行模型产物；不经 shell、参数为列表（登记：ADR-0014 §2.9）
+        # 仅执行自有工具链静态检查、不执行模型产物；不经 shell、参数为列表。
+        # 豁免登记：docs/adr/0014-benchmark-automation.md §2.9
+        completed = subprocess.run(  # noqa: S603
             argv,
             cwd=str(cwd),
             capture_output=True,
@@ -220,7 +224,9 @@ def spawn(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handle = log_path.open("wb")
     try:
-        process = subprocess.Popen(  # noqa: S603 —— 启动常驻 llama-server（自有二进制、绝对路径）；不经 shell、参数为列表（登记：ADR-0014 §2.9）
+        # 启动常驻 llama-server（自有二进制、绝对路径）；不经 shell、参数为列表。
+        # 豁免登记：docs/adr/0014-benchmark-automation.md §2.9
+        process = subprocess.Popen(  # noqa: S603
             argv,
             cwd=str(cwd),
             stdout=handle,
