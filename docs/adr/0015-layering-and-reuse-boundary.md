@@ -248,6 +248,9 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 > 未核验的一律标 **【待核验】** 并给出验证方式，**不写印象中的数字**。
 > 逐行均已由所有者于 2026-09-18 拍板（§8.1）；但**依赖仍需通过 §7.4 验证后**方可写入
 > `pyproject.toml`——**已批准 ≠ 已可安装**，未核验的许可证与体积不得写进结论性表述。
+> **行标识约定**：本节表内的行标识（如 `A1` / `B1` / `HTTP-1`）**仅用于表内引用**，
+> 与 §8.1 的决策编号 `D1~D10` **不同名、不同义**——引用时必须写明是
+> "§5.2.x 的行" 还是 "§8.1 的决策"，不得只写 `D1`。
 
 #### 5.2.1 CLI 框架与终端渲染
 
@@ -286,9 +289,9 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 
 | # | 拟选 | 用途 | 备选方案 | 选择理由 | 许可证 | 体积 / 传递依赖 | 维护活跃度 | 核验状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| D1 | **`urllib3` 2.x**（**D3 已选**；**精确版本【待核验】**） | 云端模型（OpenAI 兼容端点）的同步请求；统一超时、连接池、响应体上限。本地 `llama-server` 走回环 HTTP，可与云端共用同一薄客户端（实现 `REQ-MODEL-03` 统一抽象） | ① 标准库 `http.client`（`bench/runner.py` 现状，仅回环、无 TLS/重定向/流式便利） ② **`httpx`（本轮由拟选改为备选，理由见 D2 行）** ③ `requests`（同步单一，无类型标注；**其稳定线"同样停滞"【待核验】**） | 2.x 线**活跃**（`2.7.0` 变更日志，页面标注 2026-05-07）；**纯 Python、无编译扩展**——相对 `httpx`/`pydantic-core` 的**可移植性优势**（D-6）；**代理默认值更保守**：urllib3 的代理是**显式**的（需自己构造 `ProxyManager`），而 `httpx`/`requests` **默认读取 `HTTP(S)_PROXY` 环境变量**（需显式 `trust_env=False` 关闭）——对"出站默认拒绝 + 白名单放行"（D-4）的默认值取向更合适【此条待核验，见 V-n】 | 【待核验】（V-m：访问 PyPI `urllib3` 项目页抄录 `License`） | **纯 Python、无编译扩展**已确认；**精确运行期依赖集合【待核验】**（V-m：读 wheel `METADATA` 的 `Requires-Dist`） | `2.7.0` 变更日志页面标注 2026-05-07；另有 **`urllib3-lts`**（legacy 线的长期安全回溯，PyPI 页面标注 2026-02-22）。**两处日期来源单一，需以 PyPI 官方页二次确认 ⇒ 【待核验】**（V-m） | 【待核验】（[urllib3 changelog](https://urllib3.readthedocs.io/en/stable/changelog.html)、[PyPI urllib3](https://pypi.org/project/urllib3/)） |
-| D2 | ~~`httpx`~~ `0.28.1` | 云端模型客户端（**本轮改为备选、不选**） | ① `urllib3` 2.x（**已选**，见 D1 行） ② 标准库 `http.client` | **D3 改选 `urllib3`，理由**：① 最新稳定版 `0.28.1` 发布于 **2024-12-06**，稳定线已约 **21 个月**未更新；② **1.0 破坏性变更在即**（`0.28.0` 已移除 `proxies`/`app`、弃用 `verify` 字符串与 `cert`）；③ **默认读取 `HTTP(S)_PROXY` 环境变量**（需 `trust_env=False` 关闭），与"出站默认拒绝 + 白名单放行"不符 | BSD-3-Clause | `httpcore`、`h11`、`certifi`、`idna`、`sniffio` | ⚠️ 稳定线停滞（`0.28.1`，2024-12-06）；`1.0.dev1`（2025-07-02）→ `1.0.dev6`（2026-08-31），中间静默约 11 个月。**该预发布线仅出自 `packagetrack.dev` 单一来源，且抓取 GitHub Releases 页时未见 1.0 预发布（动态加载部分失败、仅第 1 页）⇒ 需以 PyPI 官方页二次确认** | 版本与许可证 ✅ 已核验（[PyPI httpx](https://pypi.org/project/httpx/)）；1.0 预发布线与维护状态【待核验】（V-e：**随 D3 改选而关闭**，保留为改选依据） |
-| D3 | ~~`openai` SDK~~ `3.14.1` | 云端模型客户端 | — | **本期不引入**：本地 `llama-server` 已是 OpenAI 兼容端点，自研薄客户端可同时覆盖本地与云端，避免为云端引入重量级 SDK 与版本耦合（详见 §5.2.6） | Apache-2.0 | 文档提到 `pydantic`、`websockets`，以及一个名为 `httpx2` 的默认 HTTP 客户端；**精确依赖集合未核验 ⇒ 【待核验】** | 3.14.1 发布于 2026-09-15 | 版本与许可证 ✅ 已核验（[PyPI openai](https://pypi.org/project/openai/)）；依赖集合【待核验】 |
+| HTTP-1 | **`urllib3` 2.x**（**D3 已选**；**精确版本【待核验】**） | 云端模型（OpenAI 兼容端点）的同步请求；统一超时、连接池、响应体上限。本地 `llama-server` 走回环 HTTP，可与云端共用同一薄客户端（实现 `REQ-MODEL-03` 统一抽象） | ① 标准库 `http.client`（`bench/runner.py` 现状，仅回环、无 TLS/重定向/流式便利） ② **`httpx`（本轮由拟选改为备选，理由见 HTTP-2 行）** ③ `requests`（同步单一，无类型标注；**其稳定线"同样停滞"【待核验】**） | 2.x 线**活跃**（`2.7.0` 变更日志，页面标注 2026-05-07）；**纯 Python、无编译扩展**——相对 `httpx`/`pydantic-core` 的**可移植性优势**（D-6）；**代理默认值更保守**：urllib3 的代理是**显式**的（需自己构造 `ProxyManager`），而 `httpx`/`requests` **默认读取 `HTTP(S)_PROXY` 环境变量**（需显式 `trust_env=False` 关闭）——对"出站默认拒绝 + 白名单放行"（D-4）的默认值取向更合适【此条待核验，见 V-n】 | 【待核验】（V-m：访问 PyPI `urllib3` 项目页抄录 `License`） | **纯 Python、无编译扩展**已确认；**精确运行期依赖集合【待核验】**（V-m：读 wheel `METADATA` 的 `Requires-Dist`） | `2.7.0` 变更日志页面标注 2026-05-07；另有 **`urllib3-lts`**（legacy 线的长期安全回溯，PyPI 页面标注 2026-02-22）。**两处日期来源单一，需以 PyPI 官方页二次确认 ⇒ 【待核验】**（V-m） | 【待核验】（[urllib3 changelog](https://urllib3.readthedocs.io/en/stable/changelog.html)、[PyPI urllib3](https://pypi.org/project/urllib3/)） |
+| HTTP-2 | ~~`httpx`~~ `0.28.1` | 云端模型客户端（**本轮改为备选、不选**） | ① `urllib3` 2.x（**已选**，见 HTTP-1 行） ② 标准库 `http.client` | **D3 改选 `urllib3`，理由**：① 最新稳定版 `0.28.1` 发布于 **2024-12-06**，稳定线已约 **21 个月**未更新；② **1.0 破坏性变更在即**（`0.28.0` 已移除 `proxies`/`app`、弃用 `verify` 字符串与 `cert`）；③ **默认读取 `HTTP(S)_PROXY` 环境变量**（需 `trust_env=False` 关闭），与"出站默认拒绝 + 白名单放行"不符 | BSD-3-Clause | `httpcore`、`h11`、`certifi`、`idna`、`sniffio` | ⚠️ 稳定线停滞（`0.28.1`，2024-12-06）；`1.0.dev1`（2025-07-02）→ `1.0.dev6`（2026-08-31），中间静默约 11 个月。**该预发布线仅出自 `packagetrack.dev` 单一来源，且抓取 GitHub Releases 页时未见 1.0 预发布（动态加载部分失败、仅第 1 页）⇒ 需以 PyPI 官方页二次确认** | 版本与许可证 ✅ 已核验（[PyPI httpx](https://pypi.org/project/httpx/)）；1.0 预发布线与维护状态【待核验】（V-e：**随 D3 改选而关闭**，保留为改选依据） |
+| HTTP-3 | ~~`openai` SDK~~ `3.14.1` | 云端模型客户端 | — | **本期不引入**：本地 `llama-server` 已是 OpenAI 兼容端点，自研薄客户端可同时覆盖本地与云端，避免为云端引入重量级 SDK 与版本耦合（详见 §5.2.6） | Apache-2.0 | 文档提到 `pydantic`、`websockets`，以及一个名为 `httpx2` 的默认 HTTP 客户端；**精确依赖集合未核验 ⇒ 【待核验】** | 3.14.1 发布于 2026-09-15 | 版本与许可证 ✅ 已核验（[PyPI openai](https://pypi.org/project/openai/)）；依赖集合【待核验】 |
 
 #### 5.2.5 结构化日志、代码检索、测试、打包
 
@@ -306,7 +309,7 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 | 组件 | 为什么不引入 | 何时重新评估 |
 | --- | --- | --- |
 | `openai` SDK | 本地与云端都走 **OpenAI 兼容协议**；自研薄客户端（基于 `urllib3` 2.x）可一次覆盖两类，避免云端与本地两条路径的语义分叉（`REQ-MODEL-03` 的验收标准就是"同一上层代码可无差别调用"）。SDK 会带来自己的 `pydantic` / `websockets` 依赖与版本锁定 | 当出现"多家 provider 差异显著、重试与流式语义复杂"的实证时 |
-| `httpx` | **本轮由拟选改为不选（D3）**：① 最新稳定版 `0.28.1` 停留在 **2024-12-06**（稳定线约 21 个月未更新）；② **1.0 破坏性变更在即**（`0.28.0` 已移除 `proxies`/`app`、弃用 `verify` 字符串与 `cert`）；③ **默认读取 `HTTP(S)_PROXY` 环境变量**（需显式 `trust_env=False` 关闭），与"出站默认拒绝 + 白名单放行"（D-4）的默认值取向不符。统一 HTTP 客户端改用 `urllib3` 2.x（§5.2.4 D1） | 当 `urllib3` 无法满足需求（如必须异步 HTTP、或需要 `httpx` 的特定特性）时，或 `httpx` 1.0 正式稳定后 |
+| `httpx` | **本轮由拟选改为不选（D3）**：① 最新稳定版 `0.28.1` 停留在 **2024-12-06**（稳定线约 21 个月未更新）；② **1.0 破坏性变更在即**（`0.28.0` 已移除 `proxies`/`app`、弃用 `verify` 字符串与 `cert`）；③ **默认读取 `HTTP(S)_PROXY` 环境变量**（需显式 `trust_env=False` 关闭），与"出站默认拒绝 + 白名单放行"（D-4）的默认值取向不符。统一 HTTP 客户端改用 `urllib3` 2.x（§5.2.4 行 HTTP-1） | 当 `urllib3` 无法满足需求（如必须异步 HTTP、或需要 `httpx` 的特定特性）时，或 `httpx` 1.0 正式稳定后 |
 | `llama-cpp-python` | 以**源码编译（CMake）**为主，会把推理内核绑进 Python 进程；与 ADR-0014 的测量纪律（固定 `llama-server` 版本、进程级隔离、每次重复重启）冲突（SRS 的 `V-6` 未决项正与此相关） | 若出现"必须进程内推理"的硬需求（本期无） |
 | `Textual`（TUI） | `REQ-UX-05` 是 **Should**；CLI 未稳定前做 TUI 会重复返工 | CLI 稳定且 Should 项开始排期时 |
 | `MCP Python SDK` | `REQ-TOOL-02` 是 **Should**；MCP 引入**外部工具来源**，属新的信任边界，必须先有策略引擎与审计（即"安全层先于工具扩张"） | 安全层骨架落地且有对抗性测试之后 |
@@ -327,7 +330,7 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 
 | # | 模块（ADR-0003 §5.1） | 落在哪层 | 我们写什么 | 我们**不**写什么 | 与复用组件的接缝 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 本地 + 云端统一模型层与能力探测 | L2 能力层 `model/` | `ModelClient` Protocol 的两个实现（`LocalLlamaClient` / `CloudOpenAICompatClient`）；路由与降级；能力探针任务集与档位判定；GGUF 发现、sha256 校验、按内存预算推荐量化档 | 推理内核与量化算法（llama.cpp）；模型下载协议与缓存（HF Hub HTTP / 用户手动放置）；分词器实现 | 本地：`foundation.proc.spawn` 启 `llama-server`（复用 `bench/runner.py` 的启动与 `chat()` 思路）；云端：`urllib3` 2.x 直连 OpenAI 兼容端点（D3；`httpx` 已改为备选，见 §5.2.4 D2） |
+| 1 | 本地 + 云端统一模型层与能力探测 | L2 能力层 `model/` | `ModelClient` Protocol 的两个实现（`LocalLlamaClient` / `CloudOpenAICompatClient`）；路由与降级；能力探针任务集与档位判定；GGUF 发现、sha256 校验、按内存预算推荐量化档 | 推理内核与量化算法（llama.cpp）；模型下载协议与缓存（HF Hub HTTP / 用户手动放置）；分词器实现 | 本地：`foundation.proc.spawn` 启 `llama-server`（复用 `bench/runner.py` 的启动与 `chat()` 思路）；云端：`urllib3` 2.x 直连 OpenAI 兼容端点（D3；`httpx` 已改为备选，见 §5.2.4 行 HTTP-2） |
 | 2 | **能力自适应 Harness**（核心论点） | L3 编排层 `harness/` | ReAct 循环；**工具裁剪**（按能力档位动态选择暴露的工具集）；**提示分级**（弱档位用更结构化的提示）；会话状态与检查点；错误分级（瞬时重试 / 回喂自恢复 / 上报）；领域包加载器 | 通用 agent 编排框架；提示词模板市场；LLM SDK 封装 | 经 `contracts.Tool` 取工具；经 `security.PolicyEngine` 求权限；经 `observability.AuditSink` 记审计；经 `model.ModelClient` 调模型 |
 | 3 | **能力边界感知的安全层**（安全主线） | 横切 `security/` + `observability/` | 能力/权限模型（default-deny）；策略求值；风险分级与审批门（本次 / 总是 / 拒绝）；沙箱后端抽象与**逐维度探针**（`isolation_matrix()`，依据 ADR-0007）；能力边界拒答判定；审计事件模型与可回放查询 | 沙箱内核（复用 `setrlimit` / 平台容器能力）；加密与 TLS（标准库）；认证与账号体系（SRS Won't）；通用策略引擎（casbin） | 执行**唯一**经 `foundation.proc`（现有 `bench/proc.py` 的隔离与 rlimit 语义）；路径**唯一**经 `foundation.paths`；拒答的策略来源是领域包的安全策略（声明式） |
 | 4 | 上下文效率引擎 | L3 编排层 `harness/context/` | repo map 构造；相关性检索；上下文压缩与观察屏蔽；工具描述懒加载；token 预算管理 | 向量库 / embedding 模型（本期不做）；通用检索框架；分词器 | `tree-sitter` 提供语法树（解析），**索引与检索策略是我们写的**；token 计数用近似估算 + 服务的 usage 回执 |
@@ -611,15 +614,15 @@ src/agent_sec_perf/
 | V-b | `pydantic` 的精确传递依赖集合（`pydantic-core` 版本、`typing-extensions`、`annotated-types`、`typing-inspection`）与 wheel 体积 | D2 的体积判断；Termux 可安装性 | 读 `pydantic-2.13.5-py3-none-any.whl` 的 `METADATA` 的 `Requires-Dist` |
 | V-c | `Rich` 的传递依赖（`pygments` / `markdown-it-py`）与体积 | A2 的体积评估 | 读 `rich-15.0.0-py3-none-any.whl` 的 `METADATA` |
 | V-d | `tree-sitter-python` 语法包的版本、许可证、是否有预编译 wheel | F1 的可用性 | 访问 PyPI `tree-sitter-python` 项目页 |
-| V-e | `httpx` 的维护状态（是否已进入维护模式；1.0 的路线） | **随 D3 改选而关闭**——`httpx` 不再是拟选组件；其稳定线停滞（`0.28.1`，2024-12-06）与 1.0 破坏性变更已作为 D3 改选 `urllib3` 的**依据**记录于 §5.2.4 D2 行 | ——（保留为历史条目，不再需要核验） |
+| V-e | `httpx` 的维护状态（是否已进入维护模式；1.0 的路线） | **随 D3 改选而关闭**——`httpx` 不再是拟选组件；其稳定线停滞（`0.28.1`，2024-12-06）与 1.0 破坏性变更已作为 D3 改选 `urllib3` 的**依据**记录于 §5.2.4 行 HTTP-2 | ——（保留为历史条目，不再需要核验） |
 | V-f | `pytest-xdist` 的许可证与版本 | G1 的许可证完备性 | 访问 PyPI `pytest-xdist` 项目页 |
 | V-g | `hypothesis` 的许可证（疑为 MPL-2.0，需确认是否与项目兼容） | G2 是否纳入备选 | 访问 PyPI `hypothesis` 项目页，抄录 `License` |
-| V-h | `openai` SDK 3.x 的传递依赖（文档提到 `httpx2`） | §5.2.4 D3（`openai` 行）路径的可行性 | 读 `openai-3.14.1` wheel 的 `METADATA` |
+| V-h | `openai` SDK 3.x 的传递依赖（文档提到 `httpx2`） | §5.2.4 行 HTTP-3（`openai`）路径的可行性 | 读 `openai-3.14.1` wheel 的 `METADATA` |
 | V-i | `Typer` 0.26.0 起内嵌 Click 源码后的许可证声明是否仍为 MIT、以及 vendored 代码的许可证归属 | A1 的许可证合规 | 读 `typer-0.27.2` sdist 内的 `LICENSE` 与 vendored 目录的许可证文件 |
 | V-j | 上述组件在 **linux aarch64** 与 **Termux/Android** 上的可安装性 | D-6 可移植性 | **已知风险 + 缓解路径**（由"待核验"改写）：`pydantic-core` **无官方 Android/Termux wheel**——实查依据是社区在自行维护 Android/Termux 预编译（如社区项目 `android-pydantic-core` 与第三方 Termux wheel 索引）⇒ 官方 wheel 不覆盖该平台。**缓解**：① 移动端**非本期交付项**（SRS §6.3、Q-2）；② 回退到**手写校验**（`bench/store.py` 已验证）；③ 若必须采用社区 wheel，须在 ADR 记录**来源与摘要**（`SECURITY.md` 供应链要求）。其余组件在 **linux aarch64** 上的可安装性仍**待核验**（`pip download --only-binary=:all: --platform manylinux2014_aarch64`；Termux 无标准方法，标注为"目标设备阶段验证"） |
 | V-k | `structlog` 在 `mypy --strict` 下的实际体验（官方声明 typed，但泛型 `BoundLogger` 在严格模式下可能有摩擦） | E1 可用性 | 写一个最小样例（结构化日志 + 脱敏 processor）跑 `mypy --strict` |
 | V-l | `pydantic` 在 `mypy --strict` 下的实际体验（`BaseModel` 与严格模式） | D2 可用性 | 同上的最小样例法 |
-| V-m | `urllib3` 2.x 的**许可证、最新版本与运行期依赖集合**（D3 改选后的新增核验项） | D3 的许可证合规与体积判断；未核验前 §5.2.4 D1 的结论属"证据不完整" | 访问 PyPI `urllib3` 项目页抄录 `License` / 最新版本 / `Requires-Dist`，并读 wheel `METADATA`。**注：`2.7.0` 变更日志日期（2026-05-07）与 `urllib3-lts`（2026-02-22）目前均为单一来源，需以 PyPI 官方页二次确认** |
+| V-m | `urllib3` 2.x 的**许可证、最新版本与运行期依赖集合**（D3 改选后的新增核验项） | D3 的许可证合规与体积判断；未核验前 §5.2.4 行 HTTP-1 的结论属"证据不完整" | 访问 PyPI `urllib3` 项目页抄录 `License` / 最新版本 / `Requires-Dist`，并读 wheel `METADATA`。**注：`2.7.0` 变更日志日期（2026-05-07）与 `urllib3-lts`（2026-02-22）目前均为单一来源，需以 PyPI 官方页二次确认** |
 | V-n | `urllib3` 的**代理与环境变量行为**（是否默认读取 `HTTP(S)_PROXY`；如何显式指定代理） | D3 改选理由第 ③ 条（"代理默认值更保守"）**未逐行核对源码 ⇒ 【待核验】** | 读 `urllib3` 官方文档与源码中 `ProxyManager` / `proxy_from_url` / 环境变量处理的相关章节，确认"默认不读环境变量、需显式配置"这一断言 |
 | V-o | `urllib3` 在**三个关键写法**上的实际评估：**出站超时、响应体大小上限、SSE 流式** | D3 的可用性——安全基线要求"出站超时 + 限制响应体大小"，且云端模型可能需要 SSE 流式 | 写最小样例逐项验证：① 连接/读取超时；② 读取时限制响应体字节数（`preload_content=False` + 分块读取 + 计数）；③ 流式逐行解析 SSE |
 
@@ -640,3 +643,16 @@ src/agent_sec_perf/
 - [ ] 威胁模型初稿（`docs/design/threat-model/`，当前 **0 条**）——**前置交付物**，与安全层实现同步
 - [ ] 按 §7.4 完成选定组件的可安装性与类型兼容验证后，**经批准**才修改 `pyproject.toml` 的 `dependencies`
 - [x] 在 `docs/adr/README.md` 索引中登记本文（状态：**已接受（2026-09-18）**）
+
+---
+
+## 修订记录
+
+> 本 ADR 接受后**正文结论不再原地修改**（ADR 只增不改）；决策级变更另开新 ADR 并声明取代关系，
+> 事实补充与行标识一类的编排性修订在此登记。
+
+- **2026-09-18**：状态由「提议中」转为「**已接受**」——所有者 `Le0n3rd` 批准 §8.1 的 D1~D10。
+- **2026-09-18**：接受时的**实质变更**——**D3 由 `httpx` 改选 `urllib3` 2.x**（`httpx` 移入备选/本期不引入）；
+  理由与核验项见 §5.2.4（行 `HTTP-1` / `HTTP-2`）、§5.2.6、§8.2 V-m / V-n / V-o。
+- **2026-09-18**：§5.2.4 表内行标识由 `D1/D2/D3` 改为 **`HTTP-1/HTTP-2/HTTP-3`**，
+  与 §8.1 的决策编号 `D1~D10` 区分（消除同名异义；约定见 §5.2 表头）。
