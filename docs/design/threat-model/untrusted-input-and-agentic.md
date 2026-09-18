@@ -244,7 +244,10 @@
 - **残余风险**：
   1. **`harness/domain_pack.py` 不存在** ⇒ `R5` 目前**无被测对象**
      （`devlog 0013` §7 已登记："R5 暂无代码可测"）；`tests/unit/test_architecture_layers.py`
-     的检查项里也**没有**"禁止动态导入"的检查；
+     的检查项里也**没有**"禁止动态导入"的检查。**补充事实（2026-09-18）**：
+     `tests/security/test_no_dynamic_code_in_src.py`（`5fddcfa`）已覆盖"`src/` 内无
+     `eval` / `exec` / `importlib` / `__import__`"这一**静态**面，但它**不等同于** `R5`
+     （"领域包内 `.py` **永不**被导入"是**行为**断言，且需 `domain_pack` 作为被测对象）；
   2. **"只加载 TOML/JSON"这条约定本身无机器检查**：没有检查阻止有人写
      `importlib.import_module(pack_dir / "hooks")`；
   3. **pack 的 schema 校验失败必须拒绝（fail-secure）**——这条同样只在设计里。
@@ -256,8 +259,9 @@
     ③ 配置非法时**加载失败即拒绝**（fail-secure，不是"跳过该项继续"）。
     **落地位置 `tests/security/`；当前 `S3` 未落地**，
     且**在被测对象（`domain_pack`）落地之前无法先行**——这是本轮**唯一一条"依赖实现才能验证"**的条目。
-  - 建议同时加一条**静态**检查：`src/` 下不得出现 `importlib.import_module` / `__import__` /
-    `exec(` / `eval(`（可复用 `test_architecture_layers.py` 的 AST 扫描框架，
-    与 `T-01` 的 `subprocess` 唯一入口检查同一族）。**这条现在就能写**，不必等实现。
+  - **已落地的静态守卫**（2026-09-18，`5fddcfa`）：`tests/security/test_no_dynamic_code_in_src.py`
+    ——断言 `src/` 下不出现 `eval(` / `exec(` / `importlib` / `__import__`（词边界匹配）。
+    **定性（不得含糊）**：这是**结构性检查**，**不是行为断言** ⇒ **不改变本条状态**；
+    `S3`（行为级、需要 `domain_pack` 作为被测对象）**仍未落地**，本条仍为「未缓解」。
 - **相关**：`ADR-0015 §5.1.1`（`R5`）/§5.3（模块 5）/§7.1（R5 检查）/§7.2（`S3`）、
   `SECURITY.md` §3、`docs/design/interfaces/README.md` §5/

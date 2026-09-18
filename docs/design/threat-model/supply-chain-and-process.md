@@ -150,7 +150,9 @@
 
 ## T-08 基准数据分支的凭据暴露（`CNB_TOKEN`）
 
-**状态**：`部分缓解` ｜ **主导类别**：STRIDE-I（信息泄漏）
+**状态**：`部分缓解`（2026-09-18 重评：`spawn` 继承路径**已修复并由行为用例验证**；
+但 `run(isolation="root")` 继承路径**无缓解、无机器检查**，"逃逸后读宿主凭据"亦仍在
+⇒ **缓解集合覆盖面不全，不升为"已缓解并验证"**）｜ **主导类别**：STRIDE-I（信息泄漏）
 
 - **资产**：A-5（CI 运行期 `CNB_TOKEN`：短时、**限本仓库**、构建结束销毁）、
   以及由其保护的 A-4（仓库与 `bench/data` 时间序列）
@@ -159,15 +161,16 @@
   前提的另一半是**执行路径上有"继承父进程环境"的分支**。
 - **攻击路径**：
   1. 模型产物被 `bench` 轮次执行（`ADR-0014 §2.8` 的不可信边界：**执行它们 = 执行不可信代码**）；
-  2. 若该路径经过 `proc.run(isolation="root")`（`proc.py:142` → `dict(os.environ)`）
-     或 `proc.spawn()`（`proc.py:235`，`env=None` 时 `dict(os.environ)`）⇒ **凭据进入子进程**；
+  2. **`run(isolation="root")`**（`proc.py:148` → `dict(os.environ)`）⇒ **凭据进入子进程**
+     ——**这是当前唯一仍会继承的路径**（`spawn` 的同类缺陷已于 `8e047e6` 修复：`env=None`
+     ⇒ `minimal_env`，见「残余风险」2）；
   3. 子进程把令牌外传（**出站无控制**，见 `T-10`）或写进产物；
   4. 用令牌推送/改写本仓库——`devlog 0013` §4 已**实证** crontab 事件的令牌具备 `repo-code:rw`。
 - **影响**：完整性（仓库可被改）；**不可逆性：中高**——改动可回退，但若 `bench/data` 的
   **可比时间序列**被污染，历史结论全部可疑，那是**不可逆**的（`ADR-0014` 的可比性纪律）。
 - **现有缓解**：
-  - **干净路径（已实现）**：`proc.run(isolation="user")` 使用 `_isolated_env()`
-    （`foundation/proc.py:97-110`）——**刻意不继承 `os.environ`**；
+  - **干净路径（已实现）**：`proc.run(isolation="user")` 与 **`spawn`** 共用 `minimal_env()`
+    （`foundation/proc.py:97-111`；`run` 见 `:148`、`spawn` 见 `:235`）——**刻意不继承 `os.environ`**；
     `ADR-0014 §2.8` 的隔离方式 = 非特权 uid（nobody）+ **清空环境变量** + setrlimit + 一次性工作目录；
     默认值 `BENCH_ISOLATION ?= user`（`Makefile:136`，"CI 必须用这个"）；
   - **凭据纪律**：只用运行期 `CNB_TOKEN`（构建结束销毁）、**不新增任何密钥**、
@@ -179,52 +182,43 @@
 - **残余风险**（**含本轮读代码得到的两条**）：
   1. **`ADR-0014 §2.8` 自己登记的残余风险**："若非特权子进程逃逸，理论上仍可读到宿主进程的
      `CNB_TOKEN`（短时、限本仓库）"——**未缓解**；
-  2. **`spawn()` 的默认语义是"继承凭据"，而且当前就在继承**（2026-09-18 核实：**团队领导**逐行核实
-     `spawn()` 默认继承；验证者 `verifier-security` 独立核实 T-08 canary 可行性与 rlimit 路径；
-     接管提交者另已复跑确认：`proc.py:235` 默认 `dict(os.environ)`、
-     `bench/runner.py:122` 为**全仓唯一** `spawn` 调用点且未传 `env`）：
-     `proc.py:218` 声明 `env: Mapping[str, str] | None = None`，`:235` 在 `env is None` 时取
-     `dict(os.environ)`；而唯一调用点 `bench/runner.py:122` 是
-     `proc.spawn(argv, cwd=..., log_path=...)`——**没有传 `env=`**
-     ⇒ 常驻的 `llama-server` **确实继承了父进程环境（含 `CNB_TOKEN` 等）**。
-     **减轻事实（不得省略）**：该进程**只监听回环**——`RunParams` 在构造时强制
-     `host == "127.0.0.1"`（`bench/protocol.py:37` / `:124` / `:138-139`），且 `--host` 取同一值
-     ⇒ **不对外监听**。
-     **仍构成风险的原因**：① 凭据进入了**不受本项目控制的第三方二进制**（llama.cpp；该二进制即
-     `T-09` 的被执行资产）的进程环境，违反最小权限（`SECURITY.md` §2 第 1 条）；
-     ② 该进程**解析不可信输入**（GGUF 权重、提示词）
-     并暴露回环 HTTP 端点——一旦它被攻破（解析缺陷或同机进程），凭据**已经在它的环境里**；
-     ③ `/proc/<pid>/environ` 对本 uid 可读 ⇒ 同 uid 的任一进程都能取到。
-     ⇒ **需要一次显式决策（二选一）：在该调用点传最小 `env`，或接受并在本条登记**
-     （形态参照 `ADR-0014 §2.8` 的残余风险登记）。**不决策**等于让"继承凭据"继续作为默认行为。
-  3. **【本轮读代码得到】`isolation="root"` 无机器检查**：`proc.py:135` 只在 docstring 声明
-     "在 CI 中不得使用"；`bench` 侧由 `Makefile:136` 的变量控制，**可被命令行覆盖**
-     ⇒ "CI 必须用 `user`"这条**只是默认值，不是约束**。
-     这一位的后果比 `spawn` 更重：`bench/evaluate.py:153-160` 的 `_pytest`（**会 import 并运行
-     模型生成的代码**）用的正是 `isolation=self._isolation` ⇒ 一旦该值为 `root`，
-     执行模型产物时 **`env=dict(os.environ)`（`proc.py:142`）**，凭据直接进入**被执行产物**的进程。
+  2. ~~**`spawn()` 的默认语义是"继承凭据"，而且当前就在继承**~~ ⇒ **已消除（`8e047e6`，2026-09-18）**。
+     **历史（当时的事实）**：`proc.py` 曾声明 `env: Mapping[str, str] | None = None`，`env is None`
+     时取 `dict(os.environ)`；唯一调用点 `bench/runner.py:122` 未传 `env=` ⇒ 常驻 `llama-server`
+     继承含 `CNB_TOKEN` 的完整父环境（凭据进入**不受本项目控制的第三方二进制**、`/proc/<pid>/environ`
+     对本 uid 可读等论证见本笔提交前的版本）。
+     **处置（`8e047e6`）**：`spawn` 的 `env is None` 改为 **`minimal_env(cwd)`（默认拒绝）**；
+     调用点 `bench/runner.py:129` 改为**显式**传 `env=proc.minimal_env(...)`。
+     **验证**：行为 canary `tests/security/test_spawn_credentials_canary.py` + 静态守卫
+     `tests/security/test_spawn_env_explicit.py`（`5fddcfa` 入库，随 `8e047e6` 由 `xfail`
+     **翻正为常态断言**）+ 单测 `tests/unit/test_foundation_proc.py`。
+     **仍成立的减轻事实**：该进程只监听回环（`bench/protocol.py:37` / `:124` / `:138-139`）。
+  3. **`isolation="root"` 无机器检查——`spawn` 修复后，这是唯一的继承出口**：
+     `proc.py` 只在 docstring（`:140-141`）声明"在 CI 中不得使用"；`bench` 侧由 `Makefile:136`
+     的变量控制，**可被命令行覆盖** ⇒ "CI 必须用 `user`"这条**只是默认值，不是约束**。
+     后果最重的一处：`bench/evaluate.py:153-160` 的 `_pytest`（**会 import 并运行模型生成的代码**）
+     用的正是 `isolation=self._isolation` ⇒ 一旦该值为 `root`，执行模型产物时
+     **`env=dict(os.environ)`（`proc.py:148`）**，凭据直接进入**被执行产物**的进程。
+     ⇒ **本条保持「部分缓解」的直接依据**：`spawn` 的继承路径已闭环，**这一条仍无缓解**。
 - **验证方式**：
-  - **应有（缺验证，且可立即写）**——分三层，**首选确定性写法**（不依赖 uid 切换、门禁不抖；
-    该方案与其依据由验证者 `verifier-security` 在 2026-09-18 独立核实）：
-  - **钉住本缺陷的用例（进行中·未入库）**：验证侧正在 `tests/security/` 落一条
-    **`xfail(strict=True)`** 的 canary——**合成哨兵变量、不使用真实凭据**——把"默认继承环境"
-    这一缺陷钉成可执行断言；缺陷修复后该 `xfail` 会**转为失败**，从而**强制翻正**
-    （`strict=True` 的用途）。**该用例当前表达的是"缺陷仍在"，不构成已验证的缓解**，
-    条目状态**不因它升级**。（截至 2026-09-18 本笔提交时，仓库 `tests/` 内 `grep xfail`/`__canary__`
-    **零命中** ⇒ 属**在飞产出**，按"结论只认仓库"如实标注。）
-    a. **主判据（确定性）**：直接断言 `_isolated_env(cwd)`（`proc.py:97-110`）**不含** `os.environ`
-    的任何键、也不含凭据类键名（如 `CNB_TOKEN`）。配 **变异探针**：把 `_isolated_env` 改成返回
-    `dict(os.environ)` 后，该用例**必须失败**（证明它不是恒过）。
-    b. **补充（行为级 canary）**：父进程注入 `CNB_TOKEN=__canary__` →
-    `proc.run([<python>, "-c", "import os;print(sorted(os.environ))"], isolation="user")`
-    → 断言 ① `__canary__` **不出现在** stdout/stderr；② 子进程环境**不含** `CNB_TOKEN` 键。
-    （更贴近真实，但依赖能切到非特权 uid ⇒ 不作为唯一判据。）
-    c. **静态守卫**：断言 `proc.spawn(...)` 的调用点**必须显式传 `env=`**（把"继承凭据"从默认行为
-    改成显式选择）；可另加"`src/` 内 `os.environ` 的使用点落在白名单内"。
-    ⚠️ **写出 (c) 现在就会失败**（`bench/runner.py:122` 未传 `env=`）——这是**正确的形态**
-    （先失败后修复），但**不得**由验证者静默"改绿"：要么在该调用点补最小 `env`，
-    要么**显式登记豁免**。**这是一个需要裁决的动作，不是一个测试细节。**
-  - 落地位置：`tests/security/`。
+  - **已有（2026-09-18：`5fddcfa` 入库；随修复 `8e047e6` 由 `xfail` 翻正为常态断言）**：
+    a. **行为级 canary（本条主证据）**：`tests/security/test_spawn_credentials_canary.py`
+       ——父进程注入**合成哨兵**（`synthetic-canary-…`，**不含真实凭据**）→ 以"**不传 `env`**"
+       复刻原调用形态调 `spawn` → 断言子进程输出**不含**该哨兵。**曾以 `xfail(strict=True)`
+       钉住该缺陷**（该 xfail 的存在本身就是"缺陷当时存在"的证据），修复后标记已移除。
+    b. **静态守卫**：`tests/security/test_spawn_env_explicit.py`——`src/` 中每个 `spawn(...)`
+       调用点**必须显式传 `env=`**（括号配平解析实参文本）。与 (a) **刻意互补**：反向变异
+       （把 `spawn` 默认改回继承）**不会**让 (b) 变红，那由 (a) 负责。
+    c. **单测层（确定性）**：`tests/unit/test_foundation_proc.py`——`minimal_env` 的键与取值
+       **恰好等于**允许清单、**不含凭据类键**、`spawn` 默认**不继承**、`run(isolation="user")`
+       仍走最小环境；另有 `tests/unit/test_bench_runner.py::test_llama_server_spawn_passes_minimal_env`。
+  - **仍缺（残余）**：`run(isolation="root")` 的继承路径**无机器检查**（见上方残余风险 3）
+    ⇒ **这才是本条保持「部分缓解」、未升为「已缓解并验证」的依据**：本条缓解集合的
+    **覆盖面不全**（`spawn` 已闭环，`run(isolation="root")` 未闭环）。
+    （**界定**：若把"本条"狭义理解为"`spawn` 的凭据继承"，则它已闭环；但 `T-08` 的威胁是
+    "**基准数据分支的凭据暴露**"，`run(isolation="root")` 是同一条威胁下的**另一条**继承路径，
+    故按全条判定为「部分缓解」。）
+  - 落地位置：`tests/security/`（(c) 在 `tests/unit/`——**实现者域**，此处仅登记）。
   - **进一步硬化方向**（`ADR-0014 §2.8` 已列，**未做**）：把"执行"与"发布"拆成两条流水线
     ——执行侧 `sandbox: true`、**无令牌**；代价是编排复杂，留待需要时评估。
 - **相关**：`ADR-0014 §2.1`/§2.8/§2.9、`REQ-PERF-08`、`SECURITY.md` §3 `S-3`/`S-4`/`S-5`、

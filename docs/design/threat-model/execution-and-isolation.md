@@ -30,7 +30,7 @@
   | 不经 shell、参数为列表 | `foundation/proc.py:147-158`、`:191-198`、`:229-236` | 三处调用点；全仓无 `shell=True` 由机器检查强制 |
   | 非特权 uid/gid | `foundation/proc.py:33-34`、`:156-157` | `65534:65534`（nobody） |
   | 资源上限 | `foundation/proc.py:113-118` | `RLIMIT_CPU`/`AS`/`FSIZE`/`NOFILE`，**只有 setrlimit 可靠**（cgroup 静默失效，见 `T-13`） |
-  | 最小环境变量 | `foundation/proc.py:97-110`、`:142` | `_isolated_env()` **不继承** `os.environ` |
+  | 最小环境变量 | `foundation/proc.py:97-111`、`:148`、`:235` | `minimal_env()` **不继承** `os.environ`（`run` 与 `spawn` **共用**；`:116` 暂留旧名别名） |
   | 可执行文件绝对路径 | `foundation/proc.py:84-94` | `resolve_binary()`（避免 PATH 污染与 `B607`） |
   | 隔离失败**不回退** | `foundation/proc.py:159-161`、`errors.py:30-34` | `PermissionError` → `IsolationError`（fail-secure） |
   | 超时 | `foundation/proc.py:162-164` | 超时即失败，**不重试**（重试会掩盖问题） |
@@ -52,21 +52,25 @@
      但**没有任何机制保证**下一个调用方会去校验。
   4. **`isolation="root"` 无机器检查**：`proc.py:135` 写"在 CI 中不得使用"，但没有任何检查阻止；
      且该模式下 `env=dict(os.environ)`（`proc.py:142`）会**继承凭据**（关联 `T-08`）。
-  5. **`preexec_fn` 与 `user=`/`group=` 的施加上下文未验证** 【待验证】：
-     若 rlimit 在**降权之后**施加，非特权进程只能**下调**限额——本项目正是下调，预期仍生效，
-     但**未实测**。这是"探针覆盖不足就会误判"的同一族风险（`ADR-0007 §3.1` 的教训）。
+  5. ~~**`preexec_fn` 与 `user=`/`group=` 的施加上下文未验证** 【待验证】~~ ⇒
+     **已实测（2026-09-18，`5fddcfa`）**：`tests/security/test_rlimit_isolation.py` 证明
+     `run(isolation="user")` 下 `RLIMIT_AS`（2 GiB）**确实生效**（子进程 `mmap` 3 GiB 失败），
+     且变异探针证明该结论**依赖 `_apply_limits`**。⇒ 原文"预期仍生效、但未实测"**已被实测取代**。
+     **仍未实测**的是 **CPU / FSIZE / NOFILE** 三项（本用例只覆盖 `RLIMIT_AS`）。
 
 - **验证方式**：
   - **已有**（**结构性**，非行为）：`tests/unit/test_bench_encapsulation.py:52-89`、
     `tests/unit/test_architecture_layers.py:244-274`。
-  - **应有**（行为，**缺验证**）——两条用例规格，可直接照写：
-    `a. test_child_process_hits_rlimit_instead_of_host`：经 `proc.run` 执行子进程并分配超过
-    `ADDRESS_SPACE_LIMIT_B`（`proc.py:39` 的 2 GiB）→ 断言子进程内 `MemoryError`、宿主不受影响
-    （`_apply_limits` 见 `proc.py:113-118`；此路可行已由验证者 `verifier-security` 2026-09-18 独立核实）；
-    `b. test_isolation_failure_does_not_fall_back`：**确定性写法**——monkeypatch 使
-    `subprocess.run` 抛 `PermissionError` → 断言抛 `IsolationError` 且 `run()` **不回退**为普通执行
-    （`proc.py:159-161`）。**环境依赖写法**（以非 root 身份调用 `user=65534`）在本环境不可用
-    （当前以 root 运行）⇒ **不得**作为唯一判据。
+  - **已有（行为，2026-09-18，`5fddcfa`）**：`a` 已落地为 `tests/security/test_rlimit_isolation.py`：
+    `test_isolated_child_cannot_overallocate_address_space`（子进程 `mmap` 3 GiB > 2 GiB 的
+    `RLIMIT_AS` → 断言**未**成功映射），并带**变异探针**
+    `test_rlimit_guard_depends_on_apply_limits`（monkeypatch `_apply_limits` 为 no-op ⇒ 攻击得手）
+    ⇒ 该行为断言**依赖真实保护**，非恒过；并据此**结清**残余风险 5 的【待验证】项。
+  - **仍缺（行为）**：`b. test_isolation_failure_does_not_fall_back`——**尚未落地**。
+    写法（沿用原规格）：monkeypatch 使 `subprocess.run` 抛 `PermissionError` → 断言抛
+    `IsolationError` 且 `run()` **不回退**为普通执行（`proc.py:159-161`）。
+    **环境依赖写法**（以非 root 身份调用 `user=65534`）在本环境不可用（当前以 root 运行，
+    `id -u`=0）⇒ **不得**作为唯一判据。
   - **⛔ 一条必须排除的"假断言"**（2026-09-18：**验证者 `verifier-security` 独立核实后修正本条目**，
     团队领导另行逐行核实；取证见 `README.md` §7「归属取证」）：
     **不得**对 `proc.run` 写"子进程写到白名单外路径 → 文件不存在"这一类断言。
