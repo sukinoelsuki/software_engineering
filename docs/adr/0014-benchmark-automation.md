@@ -132,7 +132,7 @@ bench/daily/<日期>/
 
 | 豁免 | 位置 | 理由 | 影响面 |
 | --- | --- | --- | --- |
-| `import subprocess`（ruff S404 / bandit B404） | `src/agent_sec_perf/bench/proc.py` | 承载项目的子进程需求 | 仅该模块 |
+| `import subprocess`（ruff S404 / bandit B404） | `src/agent_sec_perf/foundation/proc.py`（**2026-09-18 更正**；原 `bench/proc.py`，见文末「修订记录」） | 承载项目的子进程需求 | 仅该模块 |
 | `subprocess.run/Popen`（ruff S603 / bandit B603） | 同上，共 3 处 | 不经 shell、参数以列表传入、执行前施加隔离与资源上限 | 3 个调用点 |
 | 数据提交不运行代码钩子（`core.hooksPath` 指向空目录） | `scripts/bench/publish.sh` | 提交内容是**机器产出**，`ruff` 会格式化其中的代码块从而改写证据；代码侧门禁已在 `bench/nightly` 推送时执行 | 仅数据分支的提交 |
 | 签名不可用时降级为未签名提交 | 同上 | 平台签名助手依赖会话上下文，在流水线中可能不可用；降级会**显式打进日志**，不静默 | 数据分支的提交 |
@@ -172,3 +172,41 @@ bench/daily/<日期>/
 - 发布链路以 `DRY_RUN=1 BENCH_ALLOW_LOCAL=1` 演练（校验 → 提交，不推送）；
 - 首夜的真实性验证清单见
   [`engineering/benchmark-automation.md`](../engineering/benchmark-automation.md) §6。
+
+---
+
+## 修订记录
+
+> 本 ADR 接受后**正文结论与决策不再原地修改**（ADR 只增不改）。
+> 按 [`README.md`](README.md) 的约定，**只有状态栏与"指针"一类内容**
+> （登记位置、文件路径等）可被后续更正，且必须在此逐条留痕
+> （**照录原句 + 更正依据 + 日期**）。本节**不承载任何决策变更**。
+
+- **2026-09-18**：**更正 §2.9 豁免登记表的登记位置——属"指针"类更正，不是结论变更。**
+  原句（照录）：
+
+  > `import subprocess`（ruff S404 / bandit B404） | `src/agent_sec_perf/bench/proc.py` | 承载项目的子进程需求 | 仅该模块
+
+  更正为 `src/agent_sec_perf/foundation/proc.py`；第二行"同上，共 3 处"随第一行同步指向新路径。
+
+  **依据**：`bench/{proc,paths,errors}.py` 已按
+  [ADR-0015](0015-layering-and-reuse-boundary.md) §5.4.1 / D9 经 `git mv` **提升**为
+  `foundation/`（提交 `617f564`，2026-09-18）。豁免注释**随文件一起移动**、内容未变：
+  `# nosec B404`（import 行）、`# noqa: S603` + `# nosec B603`（3 个调用点：
+  `run` / `run_inherit_env` / `spawn`）。安全基线要求"豁免实际位置"与"登记位置"一致，
+  故此处必须同步——**豁免的范围、理由与影响面一律不变**（3 个调用点、仅该模块）。
+  验证方式：`make check` 全绿（豁免在该位置被 ruff 与 bandit 实际接受）。
+
+  **同日反向搜索（确认无残留活引用）**：以 `bench/proc.py` / `bench/paths.py` /
+  `bench/errors.py` / `bench.proc` / `bench.paths` / `bench.errors` 在全仓搜索，命中仅 3 类，
+  均**不是**豁免登记：
+  ① `docs/engineering/doc-consistency-report.md`（记录员域的**当时快照**报告）；
+  ② `docs/devlog/0013-…md`（开发日志，**按时间演进、禁止回溯修改**）；
+  ③ `src/agent_sec_perf/foundation/errors.py` 的 docstring（"由 `bench/errors.py` 提升而来"
+  ——**准确的来源标注**，非失效引用）。
+  ①②的正确处置是"在**新一篇**里说明变更"，由各自域负责，本文不改。
+
+  **同日的相关事实（仅登记，不改 §2.9 末段原文）**：§2.9 末段提到的机器检查
+  `tests/unit/test_bench_encapsulation.py` 仍然有效；此外已新增
+  `tests/unit/test_architecture_layers.py`（ADR-0015 §7.1 的 V1~V6），
+  并把封装层判定由"文件名 `proc.py`"升级为"位于 `foundation/` 下的 `proc.py`"。
