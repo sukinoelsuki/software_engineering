@@ -35,6 +35,7 @@ provider:
 | `docs/research/` | 前沿调研与实验结论 |
 | `docs/devlog/` | **开发日志**（按阶段分篇，见下） |
 | `.cnb/` | CNB 平台协作配置 |
+| `.codebuddy/skills/` | 按需触发的流程型 Skill（[ADR-0017](../../../docs/adr/0017-project-level-agent-skills.md)：只写顺序、不复述规范、一律指针指向权威源） |
 
 **新目录的建立必须先在 ADR 中说明理由。**
 
@@ -84,6 +85,7 @@ provider:
 - 只使用标准库与 `pyproject.toml` 中已声明的依赖。
 - **新增依赖前必须**：说明用途 → 对比至少一个替代方案 → 说明体积/许可证/安全影响 → 获得确认。
 - 依赖必须锁定版本，并记录在锁文件中。
+- **镜像内新增第三方代码（CLI / Skill）必须登记来源、精确版本与 commit/摘要；Skill 文本进入指令面。**
 
 ## 技术栈现状
 
