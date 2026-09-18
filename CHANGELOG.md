@@ -83,9 +83,18 @@
   钩子类型正确），并已成为 `make check` 的第一步。
 - 新增 `make security-secrets`：复用 pre-commit 的 `detect-private-key` 做密钥扫描
   （纳入 `security` 聚合，本地与 CI 同一实现，不另写一套）。
+- 新增 `tests/unit/test_commit_message_contract.py`：把"提交 `type` 集"的**文档 ↔ 门禁**
+  一致性做成机器检查——5 处文档的类型集必须一致、文档列出的每个 `type` 必须被 `cz check`
+  实测接受、`security` 必须被实测拒绝、门禁接受的完整类型集被钉住（关联一致性报告 A-16）。
 
 ### Changed
 
+- **`security` 不再是提交 `type`**（一致性报告 A-16，所有者裁决"文档对齐门禁"）：
+  `type` 的合法集合**由门禁实际接受者决定**，而 commitizen 插件的类型集是硬编码的、
+  不含 `security` 且无法通过配置扩展。5 处文档（`CONTRIBUTING.md` / `CODEBUDDY.md` /
+  `AGENTS.md` / `git-workflow.md` §3 / `.codebuddy/rules/` 摘要）已同步为 10 个 `type`；
+  安全类改动改用 **`fix(security): …` / `feat(security): …`**（`security` 放在 **scope** 上），
+  分支名 `security/<issue>-<slug>` 与 CHANGELOG `### Security` 段落**不变**。
 - **本地钩子安装改为显式开关 `LOCAL_HOOKS`**（默认 `1` = 安装并**断言**；`0` = 不安装、不断言，
   仅 CI 流水线使用）：原实现按 `$CI` 环境变量的**存在性**推断，而"云开发工作区"与"CI 流水线"
   在该变量上可能同值、语义却相反，导致本地钩子被静默跳过。`.cnb.yml` 的 `make setup` /

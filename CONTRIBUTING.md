@@ -52,7 +52,11 @@ CHANGELOG 更新 + 版本标签
 <footer>
 ```
 
-- **type**：`feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `revert` `security`
+- **type**：`feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `revert`
+  （**`security` 不是 type**：安全类改动用 `fix(security): …` / `feat(security): …`，
+  `security` 放在 **scope** 上；分支名仍为 `security/<issue>-<slug>`。理由与依据见
+  [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §3 的表注——
+  type 的合法集合**由门禁实际接受者决定**，而那是 commitizen 插件里硬编码的）
 - **scope**：模块名，如 `kernel` `sandbox` `policy` `bench` `ci` `docs`
 - **subject**：祈使句、小写开头、结尾不加句号、≤ 72 字符
 - **破坏性变更**：`feat!:` 或在 footer 写 `BREAKING CHANGE: ...`

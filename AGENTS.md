@@ -87,7 +87,13 @@ Issue → 分支(feat|fix|perf|security|docs|exp/<issue>-<slug>)
 Refs: #<issue>
 ```
 
-`type` ∈ `feat fix docs refactor perf test build ci chore revert security`。
+`type` ∈ `feat fix docs refactor perf test build ci chore revert`。
+**`security` 不是 type**（commitizen 门禁的实际集合里没有它，且无法配置扩展）——
+安全类改动写成 **`fix(security): …` / `feat(security): …`**，分支名仍用 `security/<issue>-<slug>`。
+
+> **为什么这里只列 10 个**：`type` 的合法集合**由门禁实际接受者决定**，不是由文档列举决定。
+> 原先两处口径不一致（文档列了 `security`、门禁不接受）已由 A-16 更正，
+> 并由 `tests/unit/test_commit_message_contract.py` 逐一实测钉住。
 
 ---
 

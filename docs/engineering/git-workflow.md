@@ -140,11 +140,29 @@
 
 | 字段 | 规则 |
 | --- | --- |
-| `type` | `feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `revert` `security` |
+| `type` | `feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `revert`（**`security` 不是 type**，见下表注） |
 | `scope` | 模块名（英文小写），如 `kernel` `sandbox` `policy` `bench` `ci` `docs`；可选但推荐 |
 | `subject` | 祈使句、小写开头、结尾不加句号、≤ 72 字符 |
 | `body` | 说明**动机与影响**，而非复述 diff；每行 ≤ 100 字符 |
 | `footer` | `Refs: #12` / `Closes: #12` / `BREAKING CHANGE: <说明>` |
+
+> **表注（`security` 为什么不在 `type` 里 · 2026-09-18 更正，依据 devlog 0014 §5 的 A-16）**：
+> `type` 的**合法集合不由此表决定**，而是由**门禁实际接受的集合**决定——
+> `.pre-commit-config.yaml` 的 `commitizen` 钩子（`cz check`）用的是 `cz_conventional_commits`
+> 插件，其类型集**硬编码**在 `commitizen/cz/conventional_commits/conventional_commits.py`
+> 的 `schema_pattern()` 里，**不含 `security`**，且**无法通过 `pyproject.toml` 配置扩展**。
+> 本表原先列出 `security` ⇒ 按本表写 `security(ci): …` 会被门禁直接拒绝（实测 `exit code 14`）。
+>
+> **安全类改动怎么写**（语义一点不丢，三处承载）：
+>
+> | 承载位置 | 写法 |
+> | --- | --- |
+> | 提交 `type` + `scope` | **`fix(security): …`**（缺陷类加固）或 **`feat(security): …`**（新增安全能力） |
+> | 分支名 | `security/<issue>-<slug>`（**不变**） |
+> | CHANGELOG | `### Security` 段落（人工维护，`CHANGELOG.md` 头部已说明 `[Unreleased]` 可人工补充） |
+>
+> 门禁实际接受的 type 集由 `tests/unit/test_commit_message_contract.py` **逐一实测钉住**
+> （文档列出的每个 type 都必须被门禁接受；`security` 必须被拒绝）——本表与门禁**不得再各写一份**。
 
 **破坏性变更**：`type!:` 或在 footer 写 `BREAKING CHANGE:`。触发次版本 → 主版本提升。
 

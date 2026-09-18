@@ -113,6 +113,14 @@
 4. 修复发布后，在 `CHANGELOG.md` 的 `### Security` 小节中公开披露（可在披露前附加缓冲期）。
 5. 严重漏洞的修复需同步更新威胁模型与安全测试用例，防止回归。
 
+> **提交信息里怎么标"这是安全改动"（2026-09-18，A-16 更正）**：`security` **不是**合法 `type`
+> ——门禁（`.pre-commit-config.yaml` 的 `cz check`）用的 commitizen 插件，其类型集是**硬编码**的，
+> 既不包含 `security`、也无法通过 `pyproject.toml` 扩展。因此安全改动写成
+> **`fix(security): …`**（加固既有实现）或 **`feat(security): …`**（新增安全能力），
+> 即把 `security` 放在 **scope** 上；**分支名仍为 `security/<issue>-<slug>`**（不受影响），
+> 披露仍写 `CHANGELOG.md` 的 `### Security` 段落。
+> 依据与门禁实测见 [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §3 表注。
+
 ---
 
 ## 6. 安全测试要求
