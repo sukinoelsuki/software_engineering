@@ -42,6 +42,8 @@
 
 7. **供应链可信（Supply Chain Integrity）**
    依赖、模型权重、二进制产物需固定版本/摘要，来源可追溯。
+   **镜像内新增第三方代码（CLI / Skill）必须记录来源、精确版本与 commit/摘要**；
+   **Skill 文本进入指令面**（`description` 常驻上下文、`SKILL.md` 触发时加载），必须**固定 commit**。
 
 ---
 
@@ -57,6 +59,14 @@
 | S-6 | 安全相关检查不得被静默绕过 | 绕过必须附 ADR 说明 |
 | S-7 | 豁免标记（`# nosec` / `# noqa`）**标记行只写规则号**（标记行上不写理由）；理由写在**紧邻其上的独立注释行**，且**理由中不得出现其它规则号** | `make check` 的 `bandit` 段无 `Test in comment` 告警；`tests/unit/test_bench_encapsulation.py` 的 E4 断言（`# nosec` 后的 id 集合**恰等于**预期） |
 | S-8 | **声称已生效的缓解措施必须能被实测**：钩子 / CI stage / 探针必须可验证"确实在运行"；**只有文档描述不算缓解措施** | `make hooks-check`（本地钩子层存在性断言，含"是 pre-commit 生成的、指向本仓库配置、钩子类型正确"）+ `tests/unit/test_local_gates.py`（用临时 git 仓库证明该检查**非恒过**）+ CI 具名 `secret-scan` stage + `tests/unit/test_cnb_config.py`（计数断言：门禁流水线数 == 具名密钥扫描阶段数） |
+| S-9 | **不可回退的操作必须事先拦截**：凭据类改动 / 改写已推送历史 / 强推 / 删远端分支 / 直接写 `main` / 人手写 `bench/data` | 授权分级表见 [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §4（C/D/B/E 类保持事先批准或禁止）；对应拦截点：`.pre-commit-config.yaml` 的 `no-commit-to-branch --branch=main`、数据分支只由 CI 写（`bench/data` 白名单）；分级集合在 5 处口径一致性自查（见该节） |
+
+> **S-9 与 S-1 的关系**（两者的把关位置不同，**不得互相替代**）：
+> `S-1` 管"**凭据不许入库**"（结果性禁令，检查在提交/推送前）；
+> `S-9` 管"**不得把不可回退操作的把关降级为事后**"（程序性禁令）——
+> 凭据入库只是它的一个子项，它还覆盖改写已推送历史 / 强推 / 删远端分支 / 直接写 `main` /
+> 人手写 `bench/data`。**仅有 `S-1` 不足以覆盖 S-9 的其余子项**，反之亦然。
+> 依据与分级判据见 [`docs/adr/0016-cnb-platform-integration-and-remote-write-authorization.md`](docs/adr/0016-cnb-platform-integration-and-remote-write-authorization.md) §5.1/§5.2。
 
 > **为什么 S-8 是硬性要求**（2026-09-18 实测，一致性报告 A-11 / 新增 A-15，见
 > [`devlog 0014`](docs/devlog/0014-2026-09-18-威胁模型与安全修复.md) §3/§6）：
