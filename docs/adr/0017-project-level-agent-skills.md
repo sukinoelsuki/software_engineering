@@ -578,3 +578,10 @@ flowchart TD
   ① `ADR-0016` §10 的 `U12` 行仍写"项目内 `cnb-pipeline`"；
   ② `docs/engineering/post-build-checklist.md` 中的 `cnb-pipeline` 名称口径注
   （该文已自标"名称口径待核验"）。
+- **2026-09-18**：**上一条两处残留的闭环登记**。① `ADR-0016` §10 的 `U12` 已由该 ADR 的域主
+  在 `9998520` 的 §11「编排性修订」中登记**读法**（"项目内 `cnb-pipeline` 应读作
+  `repo-ci-conventions`"；`U12` 正文与未验证状态**保持不动**——同时满足"`U7`~`U12` 保持原状"
+  的派令与 ADR「只增不改」）⇒ 该处**已闭环**，与 §5.3.2 的分工注不再有两处口径。
+  ② `docs/engineering/post-build-checklist.md` 的名称口径注**仍待指派写者回填**：
+  本次两个成员的产出白名单**均未覆盖该文件**（一个被限定只写 `git-workflow.md`，
+  另一个的白名单不含 `docs/engineering/`），已在双方回报块与团队领导处登记待指派。
