@@ -6,6 +6,22 @@
 #      全面对齐，届时通过 ADR 记录变更。
 # ============================================================================
 
+[build-system]
+# D7 已决（2026-09-19，所有者批准）：采用 `hatchling`。
+# 依据：ADR-0015 §8.2.1 的 `V-a` —— **MIT**、**纯 Python**（`py3-none-any`）、
+#      运行期依赖均为成熟纯 Python 包（packaging / pathspec / pluggy / tomlkit / trove-classifiers）。
+# 否决另两个候选的理由（ADR-0015 §8.1 的 D7 原候选）：`setuptools` 需更多显式配置、
+#      历史上更易出现"文件包含/排除"歧义；`uv_build` 绑定 uv 单一构建器，
+#      与其他 PEP 517 工具链的互操作性未核验（**未核验 ⇒ 不采用**）。
+# 影响：项目自本次起**可被打包安装**（`uv build`），解除 `REQ-UX-03`（一条命令安装）
+#      与 `REQ-OPS-04`（可复现构建）的阻塞。
+requires = ["hatchling>=1.32"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# 显式声明包位置（仓库为 src 布局），避免依赖 hatchling 的名称推断。
+packages = ["src/agent_sec_perf"]
+
 [project]
 name = "agent-sec-perf"
 version = "0.1.0"
