@@ -551,6 +551,137 @@ force-terminated. You can proceed with team_delete or continue with the remainin
 （与 §6「变异探针不得留在共享工作区」记录的伤害同类）。⇒ 补一条纪律：
 **"尽早提交"的最小版本也必须先过 `make check`**；红了宁可先修再提交。
 
+### 8.11 本轮协作实测数据（2026-09-18 · 团队 `security-foundation`）
+
+> **证据来源（唯一权威，只读）**：`.codebuddy/teams/91d88cfba1664e7a882ffac8e1ef5ee6/security-foundation/`
+> —— `config.json` + 11 个成员信箱 `<name>.json`。本节每条统计都可由该目录**逐条复算**
+> （字段：`from` / `to` / `type` / `timestamp` / `read`）。
+> **该目录将在本次摘录完成后随 `team_delete` 一并删除**（§8.3 机制 3）⇒ **删除之后只有本节留存**；
+> 需要原始取证者必须在删除前动手。
+> 团队创建时间（`config.json: createdAt`）= `2026-09-18T01:50:22.769Z`；本节时间戳沿用原文件口径（**UTC**，后缀 `Z`）。
+>
+> **与 §8.1 的关系**：§8.1 是**前一次协作**（`protocol-and-records`）的数据，本节是**本次协作**的数据；
+> 两者**口径相同、样本不同** ⇒ **禁止相加**，也**禁止合并成一个"到达率"**。
+
+#### 8.11.1 名单与"登记表重置"的直接证据
+
+`config.json` 有两个成员数组，**其差异就是重置的直接证据**：
+
+| 数组 | 成员（`name`） | 条数 |
+| --- | --- | --- |
+| `validMembers` | `architect-status-refresh` · `implementer-t08` · `verifier-independent` · `implementer-alias` | 4 |
+| `members`（活动名单） | `implementer-alias` · `architect-mechanisms` · `scribe-round2` | 3 |
+
+可复现事实：
+
+- **只在 `validMembers`**：`architect-status-refresh`、`implementer-t08`、`verifier-independent`；
+  **只在 `members`**：`architect-mechanisms`、`scribe-round2`
+  ⇒ 活动名单**只剩新拉起的成员**（与 §8.9 的"登记表重置"一致）。
+- **`implementer-alias` 同时出现在两个数组，但 `sessionId` 不同**
+  （`validMembers`: `d7dc50ab377c421db1fa72637b2b2eff`；`members`: `9333b46d23334eccb740ab31970ab7be`）。
+  两次取值不同是**可复现事实**；**其含义未验证**（见 §8.11.6）。
+- **两个数组都未覆盖的成员（4 名）**：`architect-threat-model`、`verifier-guards`、`verifier-security`、
+  `verifier-t08-review` —— 它们**有信箱文件**（确实参与过），却**不在任一数组内**
+  ⇒ **仅凭这两个数组无法还原完整参与名单**；完整名单必须由**信箱文件的存在**得出。
+- **本次有信箱记录的成员共 10 名**（`team-lead` 另计、为主会话）：
+  `architect-mechanisms`、`architect-status-refresh`、`architect-threat-model`、`implementer-alias`、
+  `implementer-t08`、`scribe-round2`、`verifier-guards`、`verifier-independent`、`verifier-security`、
+  `verifier-t08-review`。
+
+#### 8.11.2 逐成员消息统计
+
+**口径（必须写清，否则会得出相反结论）**：
+
+- 全目录共 **87 条**消息（按"出现在**收件人信箱**"计一次，无重复）；
+  `type` 分布：`message` **76** / `shutdown_request` **7** / `shutdown_response` **4**。
+- **"消息条数" ≠ "派活次数"** ⇒ 下表**只报消息条数**，**不折算任何到达率**。
+- **出站**含**系统注入**消息（正文以 `<system_reminder>` 开头，或含 `[System]`，例如"手工停止任务"、
+  "Shutdown timeout"）——**它不是成员主动撰写的报告** ⇒ 拆成"出站(总)"与"出站(自撰)"两列，
+  **避免把系统消息误当成员回报**。
+- **87 条消息的 `read` 全为 `true`（0 条未读）** ⇒ "已读"在本轮**是恒真条件**，
+  **不能**作为"已被处理"的判据。
+
+| 成员 | 入站 | 出站(总) | 出站(系统) | 出站(自撰) | 入站 read:true | 最后入站(UTC) | 最后自撰出站(UTC) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `team-lead`（主会话） | 37 | 42 | 0 | 42 | 37 | 04:19:46.321 | 04:19:49.971 |
+| `architect-mechanisms` | 2 | 3 | 0 | 3 | 2 | 04:19:49.971 | 04:12:59.310 |
+| `architect-status-refresh` | 14 | 12 | 0 | 12 | 14 | 03:05:54.217 | 03:05:27.815 |
+| `architect-threat-model` | 4 | 5 | 2 | 3 | 4 | 02:38:56.165 | 02:05:53.396 |
+| `implementer-alias` | 1 | 2 | 0 | 2 | 1 | 03:39:22.989 | 03:39:23.004 |
+| `implementer-t08` | 8 | 9 | 0 | 9 | 8 | 03:02:34.632 | 03:02:35.731 |
+| `scribe-round2` | 1 | 2 | 0 | 2 | 1 | 04:19:46.181 | 04:19:46.321 |
+| `verifier-guards` | 11 | 2 | **2** | **0** | 11 | 03:03:05.569 | （无） |
+| `verifier-independent` | **0** | **0** | 0 | **0** | 0 | （无） | （无） |
+| `verifier-security` | 3 | 6 | 2 | 4 | 3 | 02:38:53.656 | 02:38:14.622 |
+| `verifier-t08-review` | 6 | 4 | 1 | 3 | 6 | 04:07:42.731 | 04:07:43.368 |
+
+> 上表"入站"列恒等于"入站 `read:true`"列（`verifier-independent` 为空）⇒ 即**收到的全部已读**。
+
+**"零出站报告"必须按口径说清**：
+
+- `verifier-independent`：**入站 0 / 出站 0**（信箱文件是**空数组** `[]`，2 字节）⇒ **任何口径下都是零出站**。
+- `verifier-guards`：**出站总数为 2，但两条都是系统注入**（"手工停止任务" + "Shutdown timeout"）；
+  **自撰出站 = 0** ⇒ 按"成员自主报告"口径为**零**，按"出站条数"口径为 **2**。
+  ⇒ **只看总条数会误判"它有 2 条回报"**——这正是本节拆分口径的原因。
+
+#### 8.11.3 强制终止（`shutdown` 超时）
+
+`shutdown_request` **7** 条、`shutdown_response` **4** 条 ⇒ **3 名无应答、被 60 秒超时强制终止**：
+
+| 成员 | `shutdown_request` | 应答 | 超时/强制终止通知 | `request_id` |
+| --- | --- | --- | --- | --- |
+| `verifier-security` | 02:38:23.654 | **无** | 02:39:23.658 | `shutdown-1789699103654` |
+| `architect-threat-model` | 02:38:26.163 | **无** | 02:39:26.167 | `shutdown-1789699106163` |
+| `verifier-guards` | 03:02:35.565 | **无** | 03:03:35.573 | `shutdown-1789700555565` |
+
+应答（`approve: true`）的 4 名：
+
+| 成员 | `shutdown_request` | 应答 | `request_id` |
+| --- | --- | --- | --- |
+| `implementer-t08` | 03:02:34.632 | 03:02:35.731 | `shutdown-1789700554632` |
+| `implementer-alias` | 03:39:22.989 | 03:39:23.004 | `shutdown-1789702762988` |
+| `verifier-t08-review` | 04:07:12.728 | 04:07:43.368 | `shutdown-1789704432728` |
+| `scribe-round2` | 04:19:46.181 | 04:19:46.321 | `shutdown-1789705186181` |
+
+> **可复现的伴随现象**：3 名被终止者各有 1 条"手工停止任务"`<system_reminder>`，与超时通知**同秒**出现
+> （`02:39:23.656` / `02:39:26.165` / `03:03:35.570`）——这也是 §8.11.2 必须把系统消息单列的直接理由。
+
+#### 8.11.4 "已读（`read: true`）但未观察到新回合"
+
+在"全部已读"（§8.11.2）的前提下，判据取 **"最后一条入站晚于其最后一条自撰出站"**；
+本轮 **2 例**（均为**观察**，不是归因）：
+
+- `architect-status-refresh`：入站 14 条**全部已读**；最后入站 `03:05:54.217`（`team-lead` → 它）
+  **晚于**其最后自撰出站 `03:05:27.815` ⇒ **读到了新消息，但此后未观察到它的新出站**。
+- `verifier-guards`：入站 11 条**全部已读**；最后入站 `03:03:05.569`；**自撰出站 0 条**
+  ⇒ 同样**未观察到自撰出站**（其后的 2 条出站均为系统注入）。
+
+**只写"未观察到"**；"它为何未再出站"属**未验证**（见 §8.11.6）。
+
+#### 8.11.5 孤儿产出与代提交实例（本轮最有价值的实测）
+
+| # | 成员 | 提交哈希 | 内容 | 触发原因（可复现） |
+| --- | --- | --- | --- | --- |
+| 1 | `verifier-security` | **`f436b0b`** | 3 文件 / +185：`test_path_traversal_rejected.py`、`test_path_validation_seam.py`、`corpus/traversal_payloads.txt`；用该成员自写的 `sec_commit_msg.txt`（含其完整 `回报：` 块），提交后清理该临时文件 | 该成员自报 `git` 命令被环境**持续阻断**（02:32:53 / 02:33:30 两条；非用户拒绝） |
+| 2 | `architect-threat-model` →（同域接管）`architect-status-refresh` | **`8739531`**（归属更正 `c4de6fb`） | 威胁模型 T-01 / T-08 **在飞改动**（`execution-and-isolation.md`、`supply-chain-and-process.md`） | 原成员 `shutdown` **60 秒超时被强制终止**、改动**从未提交**（超时通知 02:39:26.167） |
+| 3 | `verifier-guards` | **`5fddcfa`** | 4 个安全守卫用例（`test_spawn_credentials_canary` / `test_spawn_env_explicit` / `test_rlimit_isolation` / `test_no_dynamic_code_in_src`；**原样、注明作者**） | 成员收到"立即入库"指令后**无自撰回报**；产出完整可运行；未跟踪文件会阻塞修复者（`xfail(strict=True)` 将 XPASS 变红） |
+| 4 | `architect-status-refresh` | **`804b251`** | 威胁模型 **5 行**（`README.md` +1、`supply-chain-and-process.md` +4） | 该成员被移出活动名单、消息通道**不可达**（§8.9；登记表重置） |
+| 5（还原，无提交） | `verifier-guards` | —（由领导 `git restore` 还原） | `src/agent_sec_perf/foundation/proc.py` 的 `RLIMIT_AS` 施加行被注释成 `# MUT:` 留在**共享工作区** | 变异探针未按"改-测-还原同一条命令"（§6「变异探针不得留在共享工作区」）；**证据（含变异复现输出）记在 `5fddcfa` 的提交信息里** |
+
+> **本节相对领导派活清单的增量**：#1（`f436b0b`）与 #2（`8739531` / `c4de6fb`）是**派活清单之外**、
+> 由本次逐条扫描信箱**检出**的实例；#3 / #4 / #5 与清单一致。
+> **口径提醒**：#2 是**同域成员接管**（非领导自为），#1 / #3 / #4 是**领导代提交**——
+> 都属"成员未落盘 ⇒ 由他人补完"，但**补完者身份不同**，复盘时不得混为一谈。
+
+#### 8.11.6 未验证项（不得当结论引用）
+
+| 事项 | 可复现事实 | 未验证部分 |
+| --- | --- | --- |
+| `implementer-alias` 出现在两个数组 | 两处 `sessionId` 取值不同（`d7dc50ab…` / `9333b46d…`） | 是否代表"同一逻辑成员被重新拉起" |
+| "零产出实例被回收后**重建**" | `verifier-independent` 信箱为空数组、0 条消息；另有成员 `verifier-t08-review` 承担独立复核并产出 `8da9ad4` / `c83bf96` | **接替关系（谁重建为谁）在证据目录内无直接记录** ⇒ 不得断言重建者身份 |
+| `architect-status-refresh` 读后未再出站的原因 | 见 §8.11.4 | **原因未验证**（不得写成"它已失效 / 未干活"） |
+| `f436b0b` 的作者归属 | 依据为**关键词在成员历史中的分布**（`verifier-security.json` 含 `path_traversal`×2 等；`verifier-guards.json` 对同组关键词全为 0） | 该归属是**领导判定**；本节未独立做内容比对 |
+
 ---
 
 ## 修订记录
@@ -568,3 +699,4 @@ force-terminated. You can proceed with team_delete or continue with the remainin
 | 2026-09-18 | **§6 新增「变异探针不得留在共享工作区」**：现象（`# MUT:` 未还原 ⇒ 全队门禁变红且**无法从仓库判断改坏者**、不带 `-o` 的提交会带入被停用的安全控制）+ 纪律（用 `monkeypatch` 或"改-测-还原"同一条命令；跑完 `git diff` 复核）+ 机制事实（`git commit -o -- <未跟踪路径>` pathspec 报错，新文件须先 `git add`） | 本轮实证：`proc.py` 的 `RLIMIT_AS` 被注释成 `# MUT:` 未还原 ⇒ 门禁红、领导一度怀疑到修复者，靠 `git diff` 才定位；且我一度据此**误判为真实安全发现**，复核后撤回 |
 | 2026-09-18 | **新增 §8.9「成员登记表是易失的」与 §8.10「"最后一笔大提交"是反模式」**：§8.9 记录登记表重置 ⇒ **通道彻底不可达**（`Recipient not found`）及领导侧正确处置（**能落盘就落盘、能接手就接手**；不据"不可达"重派），并写明**对照事实**——已提交产出全部完好；§8.10 记录"提交放到最后"⇒ **孤儿窗口 = 整个任务时长**，纪律为**尽早提交最小可用版本再迭代**，并给出与 §6 规则 3 / §8.3 机制 1 的分工（顺序 vs 频率）与"首笔也必须过 `make check`" | 本轮实证：运行时发生成员登记表重置（`config.json` 的 `members` 仅剩新拉起成员），一名成员 **5 行在飞改动**由领导核实后原样入库 `804b251`、一名成员**零产出**被回收后重建；同一轮另有三例"内容已好、未落盘"（未跟踪 / 全绿未提交 / 工作区改动） |
 | 2026-09-18 | **§6 新增「两道防线可能同时为空」**：红提交 `8da9ad4` 曾成为**仓库基线**、由 `c83bf96` 修掉；归因=**纪律缺口**（只跑单文件 `pytest`、未跑全量 `make check`）+ **环境缺口**（`CI=true` 下 `make setup` **故意跳过**钩子安装 ⇒ 本地钩子从未存在，`pre-commit-config.yaml` 声明的 `detect-private-key` 与 commit-msg 校验**从未运行**）；教训=**每道防线各自可检查**、不得靠"某处会查"免核对；附"观察正确 / 归因错误"实例与可检查性两条 | 本轮实证：`make check` 因他人提交的 `F401` 变红（本域无关），追根发现**两道防线同时为空且彼此不知情**；根因处置（Makefile 判据 / CI 密钥扫描）**待所有者裁决**，未写作"已修复" |
+| 2026-09-18 | **新增 §8.11「本轮协作实测数据」（机制 3 的摘录入库）**：团队 `security-foundation` 的 `config.json` + 11 个成员信箱逐条统计（**87 条**消息 / `read` **全真** / `shutdown_request` 7、应答 4、**超时强杀 3**）；`validMembers`(4) 与 `members`(3) 的差异、`implementer-alias` 双 `sessionId`；逐成员"入站 / 出站(总) / 出站(系统) / 出站(自撰) / 时间戳"表；**孤儿产出与代提交 5 例**（`f436b0b`、`8739531`/`c4de6fb`、`5fddcfa`、`804b251`、`# MUT:` 还原）；未验证项单列 | 按 §8.3 机制 3 的硬截止：**团队目录即将随 `team_delete` 删除，原始信箱不承诺长期保存** ⇒ 必须在删前摘录入库；本次由逐条扫描信箱**额外检出 2 例**领导派活清单之外的代提交/接管（`f436b0b`、`8739531`） |
