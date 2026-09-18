@@ -71,26 +71,41 @@ Phase 4  验证与交付
 > **各自的判据都不存在** ⇒ "还差多少"**不可判定**（不是"差得多"，是"无法判定"）。
 > 本节把它写成可核对的清单，此后进度可算。方案出处：devlog 0015 §3.2 / §7。
 
+> **状态（2026-09-19）**：`G1`~`G9` **全部达成** ⇒ **M0 出口已满足：框架就绪 = Harness 可开工**。
+> ⚠️ **两点不得放大**：① **"框架就绪" ≠ "框架完整"**——本节只回答"能不能开始写内核"，
+> 其余 18 件模块随主线迭代；② **`M0` 达成 ≠ "安全已到位"**——`ADR-0015` §7.2 的
+> `S1`（未授权工具调用被拒且审计可回放）与 `S3`（领域包代码不得被导入）**仍未落地**，
+> 见 `docs/devlog/0016` §5。
+
 **判据分两级，两级全满足才算 M0 完成。**
 
 **第一级：组件落装（不可跳过）**
 
 | # | 判据 | 核对方式 | 现状（2026-09-19） |
 | --- | --- | --- | --- |
-| G1 | `ADR-0015` §8.2 的核验项全部有结论（含出处） | 读 **§8.2.1（结果表）**：14 项均有结论；§8.2 表内 `【待核验】` 是**提问时的原文**，**判定以 §8.2.1 为准**（**例外**：V-e 已随 D3 关闭；Termux 按"目标设备阶段验证"） | ✅ **14 项已核验**（2026-09-19；证据见 `docs/research/2026-09-19-dependency-verification.md`）；**D7（构建后端）待所有者拍板** |
+| G1 | `ADR-0015` §8.2 的核验项全部有结论（含出处） | 读 **§8.2.1（结果表）**：14 项均有结论；§8.2 表内 `【待核验】` 是**提问时的原文**，**判定以 §8.2.1 为准**（**例外**：V-e 已随 D3 关闭；Termux 按"目标设备阶段验证"） | ✅ **14 项已核验**（2026-09-19；证据见 `docs/research/2026-09-19-dependency-verification.md`）；**`D7` 已于同日获批并落装**（`46aeda9`：`[build-system]` = `hatchling`，`uv build` 实测通过） |
 | G2 | 选定组件的可安装性与类型兼容通过（ADR-0015 §7.4 的 V7~V9） | 逐个组件的 `uv tree` 输出、最小样例的 `mypy --strict`、aarch64/win_amd64 wheel 存在性，均记录在案 | ✅ **已完成**（2026-09-19）：wheel 矩阵 + `mypy --strict` 在隔离 venv 通过；写入项目后 `uv tree` 已记录（解析 76 个包） |
-| G3 | `pyproject.toml` 的 `dependencies` 已填装并锁定 | `dependencies` 非空；`uv.lock` 已更新；`make check` 全绿 | ✅ **已完成**（2026-09-19）：已填装 **8 个**运行期组件，精确版本由 `uv.lock` 锁定；`make check` 全绿（149 passed、`pip-audit` 无已知漏洞） |
+| G3 | `pyproject.toml` 的 `dependencies` 已填装并锁定 | `dependencies` 非空；`uv.lock` 已更新；`make check` 全绿 | ✅ **已完成**（2026-09-19）：已填装 **8 个**运行期组件，精确版本由 `uv.lock` 锁定；`make check` 全绿（**当时 149 passed；`G4`~`G8` 落地后为 397 passed**，`pip-audit` 无已知漏洞） |
 
 **第二级：最小可开工骨架（= Harness 的前置依赖链）**
 
 | # | 判据 | 为什么它是 Harness 的前置 | 现状 |
 | --- | --- | --- | --- |
-| G4 | `foundation/config.py`、`foundation/logging.py` 可用 | 配置与结构化日志是**每一层**的装配件；会话与审计都依赖它 | ❌ 未实现 |
-| G5 | `security/{capabilities,policy}.py` 可用（default-deny + `PolicyEngine.decide()`） | Harness **每个特权操作点**都要向它求权限（`ADR-0015` §5.1 的横切设计）；没有它，Harness 只能绕过安全层 | ❌ 未实现 |
-| G6 | `observability/audit.py` 可用（`AuditSink.emit()` + `flush()`） | `REQ-SEC-06` 的"可回放"验收对象；审计失败必须冒泡 | ❌ 未实现 |
-| G7 | `model/client.py` 可用（`LocalLlamaClient` 经 `foundation.proc` 起 `llama-server`） | Harness 循环要有模型可调；也是 `REQ-MODEL-03` 统一抽象的落点 | ❌ 未实现 |
-| G8 | `tools/{registry,files,shell}.py` 可用（工具经 `security` 求权限、经 `observability` 记审计） | Harness 的"工具裁剪"要有工具可裁；工具是信任边界的执行侧 | ❌ 未实现 |
-| G9 | `tests/unit/test_architecture_layers.py` 的 R1~R5 全绿 | 新增实现不得破坏依赖方向（可机器检查） | ✅ 当前全绿（149 passed） |
+| G4 | `foundation/config.py`、`foundation/logging.py` 可用 | 配置与结构化日志是**每一层**的装配件；会话与审计都依赖它 | ✅ **已达成**（`33a0b87`；2026-09-19） |
+| G5 | `security/{capabilities,policy}.py` 可用（default-deny + `PolicyEngine.decide()`） | Harness **每个特权操作点**都要向它求权限（`ADR-0015` §5.1 的横切设计）；没有它，Harness 只能绕过安全层 | ✅ **已达成**（`f7f7628`；含堵住 default-deny 绕过的回归用例） |
+| G6 | `observability/audit.py` 可用（`AuditSink.emit()` + `flush()`） | `REQ-SEC-06` 的"可回放"验收对象；审计失败必须冒泡 | ✅ **已达成**（`e78c221`；含落点白名单 `P1~P7`） |
+| G7 | `model/client.py` 可用（`LocalLlamaClient` 经 `foundation.proc` 起 `llama-server`） | Harness 循环要有模型可调；也是 `REQ-MODEL-03` 统一抽象的落点 | ✅ **已达成**（`e38e512`；云端客户端按计划后置） |
+| G8 | `tools/{registry,files,shell}.py` 可用（工具经 `security` 求权限、经 `observability` 记审计） | Harness 的"工具裁剪"要有工具可裁；工具是信任边界的执行侧 | ✅ **已达成**（`f90e051`；**判据措辞的一处澄清见下表注**） |
+| G9 | `tests/unit/test_architecture_layers.py` 的 R1~R5 全绿 | 新增实现不得破坏依赖方向（可机器检查） | ✅ **已达成**（`make check` 全绿；2026-09-19 起随 `G4`~`G8` 持续全绿） |
+
+> **表注（`G8` 的判据措辞）**：判据写作"工具经 `security` 求权限"，
+> 而 `docs/design/interfaces/tools.md` §1 的契约规定权限判定发生在 **HARNESS 侧**
+> （`ToolSpec.parameters_schema` 校验 → `PolicyEngine.decide()` → `Tool.invoke()`）。
+> 工具的职责是**声明** `capabilities` 并在特权操作点经 `observability` 记审计，
+> **不自行 `decide()`**（否则同一请求会被判两次，且策略点被分散到每个工具里）。
+> ⇒ "经 `security`"由**契约与分层白名单**保证（`tools/` 允许依赖 `security/`），
+> **真正的调用点在 `Harness`（未开工）**——这是 `M0` 之后的集成动作，**不是** `G8` 的缺口；
+> 但为避免后人据字面理解成"工具内部调策略"，在此写明。
 
 **明确「不属于」M0 出口（随主线迭代，不得用来阻塞开工）**：`security/sandbox/`、`security/refusal.py`、
 `model/{router,probe,assets}.py`、`tools/search.py`、`observability/tracing.py`、`cli/` 的 3 件、

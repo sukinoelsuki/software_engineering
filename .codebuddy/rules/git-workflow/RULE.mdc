@@ -69,12 +69,19 @@ Refs: #<issue>
 
 合并后**立即删除**已合并的源分支。
 
-## 发布流程
+## 版本与发布
 
-1. 从 `develop` 切出 `release/<version>`，只做版本号、CHANGELOG、文档的收敛。
-2. 通过 PR 合入 `main`（Merge commit）。
-3. 在 `main` 上打**带注释的标签** `v<version>`（SemVer）。
-4. 将 `main` 回合至 `develop`，删除 `release/*`。
+- **版本号只表达"到达了哪个里程碑"，不由提交历史推导**：只能取 `pyproject.toml` 的
+  `[tool.lowspec.releases]` 台账里列出的值，由 **`make release VERSION=x.y.z`** 落定。
+  **`make bump` 已废除**（会拒绝执行）——用提交历史推导会绕过里程碑判据。
+  版本号另有 3 处副本（`[tool.commitizen]` / 包内 `__version__` / `uv.lock`），
+  一致性由 `tests/unit/test_release_policy.py` 检查。
+- 流程：`make release` → PR `develop`→`main`（Merge commit）→ CI 全绿后合并 →
+  在 `main` 上打**带注释标签** `v<version>` → 把 `main` 回合 `develop`。
+- **合并到 `main` 恒为所有者动作**（B 类）；**开 PR、打标签、回合 `develop` 可由代理代执行**
+  （`ADR-0019` §5.7）；⚠️ 放开的只是"谁执行已获准的发布动作"，**不是**"代理可自行决定发布"。
+- `release/<version>` 分支**不再强制**（单人项目里只多一次往返；确需冻结发布候选时仍可用）。
+- 理由见 [ADR-0019](../../../docs/adr/0019-release-and-version-policy.md)。
 
 ## Agent 硬性限制
 

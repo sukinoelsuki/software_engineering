@@ -33,7 +33,8 @@ PYTEST_XDIST ?= -n auto
 LOCAL_HOOKS ?= 1
 
 .PHONY: help setup hooks-check lint format format-check typecheck test test-cov test-security \
-        security security-bandit security-secrets security-audit commit-check changelog bump \
+        security security-bandit security-secrets security-audit commit-check changelog \
+        release bump \
         check branch-status clean distclean \
         bench-round bench-publish bench-verify-assets
 
@@ -127,8 +128,16 @@ commit-check: ## 校验最近一条提交信息是否符合 Conventional Commits
 changelog: ## 根据提交历史生成 CHANGELOG（写入文件）
 	$(UV) run cz changelog --incremental
 
-bump: ## 按提交历史自动提升版本号并打标签（需人工确认）
-	$(UV) run cz bump
+bump: ## 【已废除】版本号不再由提交历史推导 —— 见 git-workflow.md §5
+	@echo ">> 拒绝执行：版本号只表达「到达了哪个里程碑」，只能取 pyproject.toml 的"
+	@echo ">> [tool.lowspec.releases] 台账中列出的值，由 \`make release VERSION=x.y.z\` 落定。"
+	@echo ">> 用提交历史推导会绕过里程碑判据（一致性报告 A-17 / ADR-0019）。"
+	@echo ">> 只想看推导结果、不写入：uv run cz bump --dry-run"
+	@exit 1
+
+release: ## 落定版本号到里程碑（VERSION=x.y.z；含门禁，失败即回滚）
+	@test -n "$(VERSION)" || { echo "用法：make release VERSION=x.y.z（例如 0.0.1）"; exit 1; }
+	@bash scripts/release.sh $(VERSION)
 
 # ---------------------------------------------------------------------------
 # 聚合

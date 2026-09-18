@@ -304,35 +304,98 @@ Refs: #58
 
 ## 5. 版本与发布
 
-### 版本号（SemVer 2.0.0）
+> 口径与理由见 [ADR-0019](../adr/0019-release-and-version-policy.md)；
+> 本节是**人读口径**，机器真源是 `pyproject.toml` 的 `[tool.lowspec.releases]` 台账。
 
-- `MAJOR`：不兼容的接口/行为变更
-- `MINOR`：向后兼容的新功能
-- `PATCH`：向后兼容的缺陷修复
-- 安全修复同样走 `PATCH`（除非同时含不兼容变更）
+### 5.1 版本号表达什么
 
-**Phase 0 ~ 首个稳定版之前**统一使用 `0.x.y`，此阶段 `MINOR` 可以包含不兼容变更，
-但必须在 `CHANGELOG.md` 中显著标注。
+**版本号不表达"改了多少提交"，只表达"到达了哪个里程碑"。**
 
-### 发布流程
+| 概念 | 含义 |
+| --- | --- |
+| **版本号** | 当前所处的里程碑（判据见 §5.2） |
+| **标签 `v<version>`** | 某次**发布事实**（在 `main` 上、带注释） |
+| **提交历史** | 只解释"做了什么"，**不决定**版本号 |
 
-```bash
-# 1. 从 develop 切出发布分支
-git switch -c release/0.2.0 develop
+**为什么**：若版本号由提交类型自动推导，`0.1.0` 的含义就退化成"曾经有过一次 `feat`"；
+而它**本应**表示"能跑起来、能交互"——使用者据此判断"能不能用"的数字，
+不能由提交消息的措辞决定。
 
-# 2. 收敛版本号与变更日志（只做这些，不夹带功能）
-make bump          # commitizen 生成版本号、CHANGELOG 与标签
-# 或人工确认后：
-#   uv run cz bump --dry-run
+**Phase 0 内一律 `0.x.y`**（与 [ADR-0019](0019-release-and-version-policy.md) §5.2 的机器检查一致），
+此阶段 `MINOR` 可以包含不兼容变更，但必须在 `CHANGELOG.md` 中显著标注。
 
-# 3. PR 合入 main（merge commit）
-# 4. 在 main 上创建带注释标签
-git tag -a v0.2.0 -m "Release v0.2.0"
+### 5.2 里程碑台账（唯一机器真源）
 
-# 5. 回合 main 到 develop，删除 release 分支
+`pyproject.toml` 中，每条**必须**写出可核对的判据：
+
+```text
+[[tool.lowspec.releases.milestones]]
+version  = "0.0.1"
+name     = "框架搭完"
+criteria = "M0 出口准则全部达成（docs/engineering/sdlc.md §3.1 的 G1~G9）"
 ```
 
-### 分支保护（平台侧设置）
+当前台账：
+
+| 版本 | 名称 | 判据 |
+| --- | --- | --- |
+| `0.0.0` | 工程基线（未发布） | 工程骨架与流程规范就位；**不产生标签** |
+| `0.0.1` | 框架搭完 | `M0` 出口准则 `G1`~`G9` 全部达成 |
+| `0.1.0` | 首个可用版本 | 端到端可跑：能完成一次完整 agent 会话（CLI 交互 + 调用工具 + 审计可回放） |
+
+> 上表是**引用**（便于阅读）；两处不一致时**以台账为准**，并由
+> `tests/unit/test_release_policy.py` 的断言拦下。
+
+规则：
+
+- 当前版本**只能**取台账里列出的值，且**严格递增**；
+- **新增 / 修改里程碑 = 一次显式决策**：必须给出可核对判据，并在 PR（必要时 ADR）中说明来源；
+- **Phase 0 内不出现 `1.x`**：进入 `1.0.0`（首个稳定版）必须先改机器检查本身——
+  改检查是一次显式决策，而不是顺手在台账里加一行。
+
+### 5.3 发布流程（`make release`）
+
+```text
+1. 人工逐条核对目标里程碑的 criteria     ← 机器不判定判据是否为真（见 §5.4）
+2. make release VERSION=x.y.z           ← 校验台账 → 改 4 处副本 → uv lock
+                                           → make check（红则回滚）→ 本地提交
+3. 开 PR：develop → main                 ← Merge commit（保留发布节点）
+4. CI 全绿后合并到 main
+5. 在 main 上打带注释标签：git tag -a v<x.y.z> -m "Release v<x.y.z>"
+6. 将 main 回合 develop
+```
+
+- **合并到 `main` 恒为所有者动作**（`main` 写入按 §4 是 **B 类**）；
+  **开 PR、打标签、回合 `develop` 可由代理代执行**（[ADR-0019](../adr/0019-release-and-version-policy.md)
+  §5.7，所有者 2026-09-19 指令）——放开的只是"谁执行已获准的发布动作"，
+  **不是**"代理可自行决定发布"；
+  `make release` **只做本地提交**，不推送、不打标签；
+- **发布不再强制走 `release/<version>` 分支**（单人项目里它只多一次往返）；
+  若确需冻结发布候选，§2 的 `release/*` 仍可用；
+- **失败即回滚**：门禁红时脚本还原工作树，版本号不变——绝不提交未经门禁的发布；
+- **`make bump` 已被废除**（会按提交历史推导版本、绕过里程碑判据）；
+  另设 `major_version_zero = true` 作安全网：即使有人直接跑 `cz bump`，也越不过 `0.x`。
+
+### 5.4 机器检查与它的边界
+
+版本号在仓库里有 **4 处副本**，改一处忘其余曾**不会报错**（一致性报告 `A-17` 的同族形态）：
+
+| 副本 | 谁同步 |
+| --- | --- |
+| `pyproject.toml` 的 `[project].version` | `make release` |
+| `pyproject.toml` 的 `[tool.commitizen].version` | `make release`（`version_files` 声明） |
+| `src/agent_sec_perf/__init__.py` 的 `__version__` | `make release`（`version_files` 声明） |
+| `uv.lock` 的本项目条目 | `uv lock`（`make release` 会跑） |
+
+一致性、台账良构、`major_version_zero` 安全网、CHANGELOG 段落合法性共五组断言见
+`tests/unit/test_release_policy.py`。
+
+> ⚠️ **边界（不得表述为机制）**：这套检查**不判定里程碑判据是否为真**。
+> 它只保证"版本号取值合法 + 门禁全绿 + 是一次显式动作"；
+> "`M0` 的 `G1`~`G9` 是否真的达成"仍由人逐条核对与 PR 审查承担。
+> 按威胁模型口径（`../design/threat-model/README.md` §4.1）这属**部分缓解**。
+
+### 5.5 分支保护（平台侧设置）
 
 在 CNB 仓库设置中**只对 `main` 启用**（`develop` 已改为工作主干、允许直推，
 见 [ADR-0013](../adr/0013-branch-model-for-solo-dev.md)）：
