@@ -132,6 +132,14 @@
   ⇒ 至少重复 3 次并报极差，且优先看**与存储/调度无关**的指标（常驻内存）。
 - 明确 `settings.json` 的**实际生效文件也会被平台后置改写**部分键
   （`workbench.colorTheme`、`extensions.autoUpdate`）：**"改了文件" ≠ "设置生效"**，须逐项核对。
+- **项目定位表述更新**（所有者 2026-09-19 指令）：定性由"软件工程综合实验"改为**单纯的工程实践项目**；
+  **核心语义明确为「端侧模型能力探索 + 综合治理」**——能力探索回答"它能做什么"（能力边界探测与按边界适配），
+  综合治理回答"如何安全地做"（策略、审批、沙箱、审计、资源约束）；**系统安全**与
+  **模型/系统加速与优化**改为承载这两条核心问题的**技术主线**。
+  同步位置：`README.md`（标题、项目简介、研究方向）、`CODEBUDDY.md` / `AGENTS.md` §1、
+  `.codebuddy/rules/project-conventions/RULE.mdc`；并已按"反向搜索"清理 `docs/engineering/sdlc.md`
+  与 `docs/requirements/srs.md` 的风险表里"课程"式表述。
+  **不改**：`docs/devlog/`、`docs/research/`、`docs/proposals/` 与已接受 ADR 的**历史快照**（项目规则明列为例外）。
 
 ### Security
 
