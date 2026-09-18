@@ -1,11 +1,13 @@
 # 0015. 分层模型、复用组件清单与自研边界
 
-- **状态**：**提议中**（2026-09-18）
-  —— 本 ADR 选定具体开源组件，按项目规则"**引入依赖需事先确认**"，
-  **必须由项目所有者逐条确认后方可转为「已接受」**；未确认前不得据此修改
-  `pyproject.toml` 的 `dependencies`。需确认清单见 §8。
+- **状态**：**已接受（2026-09-18）**
+  —— 项目所有者 `Le0n3rd` 于 2026-09-18 审阅 AI 给出的 D1~D10 建议后**批准**；
+  其中 **D2 附加用途限定**（pydantic **仅用于两处**：信任边界校验 + 工具参数 JSON Schema 生成）、
+  **D3 由 `httpx` 改选 `urllib3` 2.x**。逐条批准明细见 §8.1。
+  按项目规则"**引入依赖需事先确认**"，各组件仍须**通过 §7.4 的可安装性与类型兼容验证后**
+  方可写入 `pyproject.toml` 的 `dependencies`；**D7（构建后端）暂缓**，待 V-a 核验。
 - **日期**：2026-09-18
-- **决策者**：Le0n3rd（待确认）／AI 代理（整理与论证）
+- **决策者**：`Le0n3rd`（2026-09-18 批准）／AI 代理（整理与论证）
 - **相关**：[ADR-0003 §5.1](0003-select-base-project.md)（5 个自研模块，本 ADR 落到具体层）、
   [ADR-0004](0004-python-toolchain-baseline.md)（工具链）、
   [ADR-0005](0005-single-primary-language.md)（Python 单一主语言）、
@@ -244,7 +246,8 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 > **核验纪律**：下表"核验状态"列中，标 **✅ 已核验** 的条目于 2026-09-18 逐个访问了
 > 对应 PyPI 项目页（或项目官方许可证页）并抄录版本、许可证与依赖字段；
 > 未核验的一律标 **【待核验】** 并给出验证方式，**不写印象中的数字**。
-> 逐行都需所有者拍板；未获确认前**不得**写入 `pyproject.toml`。
+> 逐行均已由所有者于 2026-09-18 拍板（§8.1）；但**依赖仍需通过 §7.4 验证后**方可写入
+> `pyproject.toml`——**已批准 ≠ 已可安装**，未核验的许可证与体积不得写进结论性表述。
 
 #### 5.2.1 CLI 框架与终端渲染
 
@@ -258,11 +261,16 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 
 | # | 拟选 | 用途 | 备选方案 | 选择理由 | 许可证 | 体积 / 传递依赖 | 维护活跃度 | 核验状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B1 | **pydantic** `2.13.5`（**本清单中最有争议的一项，单列待拍板**） | 跨信任边界的结构化校验：① 工具参数按 JSON Schema 校验 ② 模型输出（tool call 参数）解析后的严格校验 ③ 配置文件校验 | ① `dataclasses` + 手写校验（**现状**：`bench/store.py` 的 `validate_round` 即此模式，已跑通） ② `attrs` | 安全主线（D-4）的核心是"不可信输入必须校验"；pydantic 的严格模式 + 完备类型标注 + 自带 **JSON Schema**（可直接作为 `ToolSpec.parameters_schema` 暴露给 tool calling）能显著减少自研校验代码与出错面 | MIT | 传递依赖包含 **`pydantic-core`（Rust 编译扩展）**，平台 wheel；**精确依赖集合未在 PyPI 页面显示 ⇒ 【待核验】** | 2.13.5 发布于 2026-08-28；有 `2.14.0b2` 预发布 | 版本与许可证 ✅ 已核验（[PyPI pydantic](https://pypi.org/project/pydantic/)）；依赖集合与 arm64/Termux 可安装性【待核验】 |
+| B1 | **pydantic** `2.13.5`（**D2 已通过，但限定用途**） | **仅两处用途（D2 限定）**：① **信任边界校验**——工具参数（按 `ToolSpec.parameters_schema`）与模型输出（tool call 参数）解析后的严格校验；② **工具参数 JSON Schema 生成**（`parameters_schema` 由模型类生成）。**配置解析不用它**（仍用 `tomllib`，§5.2.3）；**内部数据结构不用它**（仍用 `dataclasses`） | ① `dataclasses` + 手写校验（**回退路径，D2 明确保留**；**现状**：`bench/store.py` 的 `validate_round` 即此模式，已跑通） ② `attrs` | 安全主线（D-4）的核心是"不可信输入必须校验"；pydantic 的严格模式 + 完备类型标注 + 自带 **JSON Schema**（可直接作为 `ToolSpec.parameters_schema` 暴露给 tool calling）能显著减少自研校验代码与出错面。**用途限定后其影响面收敛在两个明确的信任边界点上** | MIT | 传递依赖包含 **`pydantic-core`（Rust 编译扩展）**，平台 wheel；**精确依赖集合未在 PyPI 页面显示 ⇒ 【待核验】**（V-b） | 2.13.5 发布于 2026-08-28；有 `2.14.0b2` 预发布 | 版本与许可证 ✅ 已核验（[PyPI pydantic](https://pypi.org/project/pydantic/)）；依赖集合与 arm64/Termux 可安装性【待核验】（V-b、V-j） |
 
+> **D2 的用途限定（2026-09-18 所有者批准）**：pydantic **只用于两处**——
+> **信任边界校验**与**工具参数 JSON Schema 生成**；**配置解析仍用 `tomllib`**、
+> **内部数据结构仍用 `dataclasses`**。采纳后 **V-b（精确依赖/体积）与 V-j（aarch64/Termux 可安装性）
+> 作为验证项保留**（§8.2），**回退路径（手写校验）保留不变**。
+>
 > **B1 的负面后果（必须承认）**：`pydantic-core` 是**编译扩展**，
 > 会给"低资源 + 可移植 + 未来移动端"（D-6）带来三处成本：安装体积增大、
-> 平台矩阵变宽、Termux/Android 上可能没有预编译 wheel（需源码构建）。
+> 平台矩阵变宽、Termux/Android 上**已知没有官方预编译 wheel**（实查依据见 §8.2 V-j）。
 > 缓解：移动端本期**不是交付项**（SRS §6.3、Q-2），风险后置；
 > 若届时不可安装，回退路径是**手写校验**（`bench/store.py` 已验证该模式可行），
 > 并新增 ADR 记录降级。
@@ -278,8 +286,9 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 
 | # | 拟选 | 用途 | 备选方案 | 选择理由 | 许可证 | 体积 / 传递依赖 | 维护活跃度 | 核验状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| D1 | **httpx** `0.28.1` | 云端模型（OpenAI 兼容端点）的同步请求；统一超时、连接池、响应体上限。本地 `llama-server` 走回环 HTTP，可与云端共用同一薄客户端（实现 `REQ-MODEL-03` 统一抽象） | ① 标准库 `http.client`（`bench/runner.py` 现状，仅回环、无 TLS/重定向/流式便利） ② `requests`（同步单一，无类型标注） | 同步 + 异步同一 API；超时/重定向/流式可控、类型标注完备；**安全基线要求的"出站超时 + 限制响应体大小"有原生支持** | BSD-3-Clause | `httpcore`、`h11`、`certifi`、`idna`、`sniffio` | ⚠️ **最新稳定版 0.28.1 发布于 2024-12-06**，而 2026-08 仍有 `1.0.devN` 预发布 ⇒ **"长期无稳定版"是真实风险，活跃度【待核验】**（需确认是否已进入维护模式） | 版本与许可证 ✅ 已核验（[PyPI httpx](https://pypi.org/project/httpx/)）；维护状态【待核验】 |
-| D2 | ~~`openai` SDK~~ `3.14.1` | 云端模型客户端 | — | **本期不引入**：本地 `llama-server` 已是 OpenAI 兼容端点，自研薄客户端可同时覆盖本地与云端，避免为云端引入重量级 SDK 与版本耦合（详见 §5.2.6） | Apache-2.0 | 文档提到 `pydantic`、`websockets`，以及一个名为 `httpx2` 的默认 HTTP 客户端；**精确依赖集合未核验 ⇒ 【待核验】** | 3.14.1 发布于 2026-09-15 | 版本与许可证 ✅ 已核验（[PyPI openai](https://pypi.org/project/openai/)）；依赖集合【待核验】 |
+| D1 | **`urllib3` 2.x**（**D3 已选**；**精确版本【待核验】**） | 云端模型（OpenAI 兼容端点）的同步请求；统一超时、连接池、响应体上限。本地 `llama-server` 走回环 HTTP，可与云端共用同一薄客户端（实现 `REQ-MODEL-03` 统一抽象） | ① 标准库 `http.client`（`bench/runner.py` 现状，仅回环、无 TLS/重定向/流式便利） ② **`httpx`（本轮由拟选改为备选，理由见 D2 行）** ③ `requests`（同步单一，无类型标注；**其稳定线"同样停滞"【待核验】**） | 2.x 线**活跃**（`2.7.0` 变更日志，页面标注 2026-05-07）；**纯 Python、无编译扩展**——相对 `httpx`/`pydantic-core` 的**可移植性优势**（D-6）；**代理默认值更保守**：urllib3 的代理是**显式**的（需自己构造 `ProxyManager`），而 `httpx`/`requests` **默认读取 `HTTP(S)_PROXY` 环境变量**（需显式 `trust_env=False` 关闭）——对"出站默认拒绝 + 白名单放行"（D-4）的默认值取向更合适【此条待核验，见 V-n】 | 【待核验】（V-m：访问 PyPI `urllib3` 项目页抄录 `License`） | **纯 Python、无编译扩展**已确认；**精确运行期依赖集合【待核验】**（V-m：读 wheel `METADATA` 的 `Requires-Dist`） | `2.7.0` 变更日志页面标注 2026-05-07；另有 **`urllib3-lts`**（legacy 线的长期安全回溯，PyPI 页面标注 2026-02-22）。**两处日期来源单一，需以 PyPI 官方页二次确认 ⇒ 【待核验】**（V-m） | 【待核验】（[urllib3 changelog](https://urllib3.readthedocs.io/en/stable/changelog.html)、[PyPI urllib3](https://pypi.org/project/urllib3/)） |
+| D2 | ~~`httpx`~~ `0.28.1` | 云端模型客户端（**本轮改为备选、不选**） | ① `urllib3` 2.x（**已选**，见 D1 行） ② 标准库 `http.client` | **D3 改选 `urllib3`，理由**：① 最新稳定版 `0.28.1` 发布于 **2024-12-06**，稳定线已约 **21 个月**未更新；② **1.0 破坏性变更在即**（`0.28.0` 已移除 `proxies`/`app`、弃用 `verify` 字符串与 `cert`）；③ **默认读取 `HTTP(S)_PROXY` 环境变量**（需 `trust_env=False` 关闭），与"出站默认拒绝 + 白名单放行"不符 | BSD-3-Clause | `httpcore`、`h11`、`certifi`、`idna`、`sniffio` | ⚠️ 稳定线停滞（`0.28.1`，2024-12-06）；`1.0.dev1`（2025-07-02）→ `1.0.dev6`（2026-08-31），中间静默约 11 个月。**该预发布线仅出自 `packagetrack.dev` 单一来源，且抓取 GitHub Releases 页时未见 1.0 预发布（动态加载部分失败、仅第 1 页）⇒ 需以 PyPI 官方页二次确认** | 版本与许可证 ✅ 已核验（[PyPI httpx](https://pypi.org/project/httpx/)）；1.0 预发布线与维护状态【待核验】（V-e：**随 D3 改选而关闭**，保留为改选依据） |
+| D3 | ~~`openai` SDK~~ `3.14.1` | 云端模型客户端 | — | **本期不引入**：本地 `llama-server` 已是 OpenAI 兼容端点，自研薄客户端可同时覆盖本地与云端，避免为云端引入重量级 SDK 与版本耦合（详见 §5.2.6） | Apache-2.0 | 文档提到 `pydantic`、`websockets`，以及一个名为 `httpx2` 的默认 HTTP 客户端；**精确依赖集合未核验 ⇒ 【待核验】** | 3.14.1 发布于 2026-09-15 | 版本与许可证 ✅ 已核验（[PyPI openai](https://pypi.org/project/openai/)）；依赖集合【待核验】 |
 
 #### 5.2.5 结构化日志、代码检索、测试、打包
 
@@ -296,7 +305,8 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 
 | 组件 | 为什么不引入 | 何时重新评估 |
 | --- | --- | --- |
-| `openai` SDK | 本地与云端都走 **OpenAI 兼容协议**；自研薄客户端（基于 httpx）可一次覆盖两类，避免云端与本地两条路径的语义分叉（`REQ-MODEL-03` 的验收标准就是"同一上层代码可无差别调用"）。SDK 会带来自己的 `pydantic` / `websockets` 依赖与版本锁定 | 当出现"多家 provider 差异显著、重试与流式语义复杂"的实证时 |
+| `openai` SDK | 本地与云端都走 **OpenAI 兼容协议**；自研薄客户端（基于 `urllib3` 2.x）可一次覆盖两类，避免云端与本地两条路径的语义分叉（`REQ-MODEL-03` 的验收标准就是"同一上层代码可无差别调用"）。SDK 会带来自己的 `pydantic` / `websockets` 依赖与版本锁定 | 当出现"多家 provider 差异显著、重试与流式语义复杂"的实证时 |
+| `httpx` | **本轮由拟选改为不选（D3）**：① 最新稳定版 `0.28.1` 停留在 **2024-12-06**（稳定线约 21 个月未更新）；② **1.0 破坏性变更在即**（`0.28.0` 已移除 `proxies`/`app`、弃用 `verify` 字符串与 `cert`）；③ **默认读取 `HTTP(S)_PROXY` 环境变量**（需显式 `trust_env=False` 关闭），与"出站默认拒绝 + 白名单放行"（D-4）的默认值取向不符。统一 HTTP 客户端改用 `urllib3` 2.x（§5.2.4 D1） | 当 `urllib3` 无法满足需求（如必须异步 HTTP、或需要 `httpx` 的特定特性）时，或 `httpx` 1.0 正式稳定后 |
 | `llama-cpp-python` | 以**源码编译（CMake）**为主，会把推理内核绑进 Python 进程；与 ADR-0014 的测量纪律（固定 `llama-server` 版本、进程级隔离、每次重复重启）冲突（SRS 的 `V-6` 未决项正与此相关） | 若出现"必须进程内推理"的硬需求（本期无） |
 | `Textual`（TUI） | `REQ-UX-05` 是 **Should**；CLI 未稳定前做 TUI 会重复返工 | CLI 稳定且 Should 项开始排期时 |
 | `MCP Python SDK` | `REQ-TOOL-02` 是 **Should**；MCP 引入**外部工具来源**，属新的信任边界，必须先有策略引擎与审计（即"安全层先于工具扩张"） | 安全层骨架落地且有对抗性测试之后 |
@@ -317,7 +327,7 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求。映射关系�
 
 | # | 模块（ADR-0003 §5.1） | 落在哪层 | 我们写什么 | 我们**不**写什么 | 与复用组件的接缝 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 本地 + 云端统一模型层与能力探测 | L2 能力层 `model/` | `ModelClient` Protocol 的两个实现（`LocalLlamaClient` / `CloudOpenAICompatClient`）；路由与降级；能力探针任务集与档位判定；GGUF 发现、sha256 校验、按内存预算推荐量化档 | 推理内核与量化算法（llama.cpp）；模型下载协议与缓存（HF Hub HTTP / 用户手动放置）；分词器实现 | 本地：`foundation.proc.spawn` 启 `llama-server`（复用 `bench/runner.py` 的启动与 `chat()` 思路）；云端：`httpx` 直连 OpenAI 兼容端点 |
+| 1 | 本地 + 云端统一模型层与能力探测 | L2 能力层 `model/` | `ModelClient` Protocol 的两个实现（`LocalLlamaClient` / `CloudOpenAICompatClient`）；路由与降级；能力探针任务集与档位判定；GGUF 发现、sha256 校验、按内存预算推荐量化档 | 推理内核与量化算法（llama.cpp）；模型下载协议与缓存（HF Hub HTTP / 用户手动放置）；分词器实现 | 本地：`foundation.proc.spawn` 启 `llama-server`（复用 `bench/runner.py` 的启动与 `chat()` 思路）；云端：`urllib3` 2.x 直连 OpenAI 兼容端点（D3；`httpx` 已改为备选，见 §5.2.4 D2） |
 | 2 | **能力自适应 Harness**（核心论点） | L3 编排层 `harness/` | ReAct 循环；**工具裁剪**（按能力档位动态选择暴露的工具集）；**提示分级**（弱档位用更结构化的提示）；会话状态与检查点；错误分级（瞬时重试 / 回喂自恢复 / 上报）；领域包加载器 | 通用 agent 编排框架；提示词模板市场；LLM SDK 封装 | 经 `contracts.Tool` 取工具；经 `security.PolicyEngine` 求权限；经 `observability.AuditSink` 记审计；经 `model.ModelClient` 调模型 |
 | 3 | **能力边界感知的安全层**（安全主线） | 横切 `security/` + `observability/` | 能力/权限模型（default-deny）；策略求值；风险分级与审批门（本次 / 总是 / 拒绝）；沙箱后端抽象与**逐维度探针**（`isolation_matrix()`，依据 ADR-0007）；能力边界拒答判定；审计事件模型与可回放查询 | 沙箱内核（复用 `setrlimit` / 平台容器能力）；加密与 TLS（标准库）；认证与账号体系（SRS Won't）；通用策略引擎（casbin） | 执行**唯一**经 `foundation.proc`（现有 `bench/proc.py` 的隔离与 rlimit 语义）；路径**唯一**经 `foundation.paths`；拒答的策略来源是领域包的安全策略（声明式） |
 | 4 | 上下文效率引擎 | L3 编排层 `harness/context/` | repo map 构造；相关性检索；上下文压缩与观察屏蔽；工具描述懒加载；token 预算管理 | 向量库 / embedding 模型（本期不做）；通用检索框架；分词器 | `tree-sitter` 提供语法树（解析），**索引与检索策略是我们写的**；token 计数用近似估算 + 服务的 usage 回执 |
@@ -496,13 +506,13 @@ src/agent_sec_perf/
 
 | 负面 | 说明 |
 | --- | --- |
-| **本 ADR 是"提议中"，落地被阻塞在所有者确认上** | 未确认前不能写 `pyproject.toml`，因此 B 阶段（CLI + agent 循环骨架）**不能真正开工**——这是刻意的：规则要求新增依赖先确认 |
+| **依赖写入仍受 §7.4 验证阻塞** | D1~D10 已于 2026-09-18 批准，但组件仍须通过**可安装性与类型兼容验证**才能写入 `pyproject.toml`；且 **D7 暂缓**（待 V-a）⇒ `dependencies` 目前仍**部分未定**，B 阶段（CLI + agent 循环骨架）在首个组件验证通过前无法真正落依赖 |
 | **一次跨模块重构** | `bench/{proc,paths,errors}.py` → `foundation/` 会触及现有 8 处 import 与 1 个 AST 测试；虽然风险低，但属"改动既有文件"，须单独一个 `refactor` 提交 |
 | **`pydantic` 引入编译扩展** | 与"低资源 / 可移植 / 移动端"（D-6）存在张力；Termux 上可能需源码构建（见 §5.2.2 的缓解） |
-| **`httpx` 的稳定版长期停留在 2024-12** | 若该项目已进入维护模式，未来可能需要替换 HTTP 客户端；这是选型时**已知的**不确定项 |
+| **HTTP 客户端的选型依据仍含未核验项** | `httpx` 因稳定线约 21 个月未更新（`0.28.1`，2024-12-06）、1.0 破坏性变更在即而**未被选**（D3）；改选的 `urllib3` 2.x 的**许可证、精确版本、运行期依赖集合、代理与环境变量行为仍【待核验】**（§8.2 V-m/V-n）⇒ D3 的结论在核验完成前属**"证据不完整"状态**，不是"已证优" |
 | **横切层的纪律靠人维持** | R2（横切层不得反向依赖业务层）只有写成测试才可靠；在测试写好之前，架构会退化 |
 | **未引入 MCP / LLM Guard / 追踪** | 若干 Should / Could 条目（`REQ-TOOL-02`、`REQ-OBS-02`）本期无载体，需要在后续 ADR 中补 |
-| **组件清单里有 6 项【待核验】** | hint：§8 的"待核验事实"清单；未经核验的许可证与依赖体积不得写进 `pyproject.toml` 的注释与文档 |
+| **组件清单里仍有多项【待核验】** | 例如 `rich` 的传递依赖、`tree-sitter-python` 语法包、`hatchling`、`hypothesis`、`pytest-xdist`，以及 **D3 改选后的 `urllib3`（许可证 / 版本 / 依赖集合 / 代理与环境变量行为）**；hint：§8.2 的"待核验事实"清单。未经核验的许可证与依赖体积不得写进 `pyproject.toml` 的注释与文档 |
 
 ### 风险与缓解
 
@@ -570,25 +580,28 @@ src/agent_sec_perf/
 
 ---
 
-## 8. 需所有者确认的清单
+## 8. 所有者确认清单与核验状态
 
-> 按"**真决策**（要你拍板）"与"**待核验事实**（我去查证，不需要你判断）"分开列。
-> 未确认前，`pyproject.toml` 的 `dependencies` **保持为空**。
+> 按"**真决策**（需所有者拍板）"与"**待核验事实**（AI 去查证，不需要所有者判断）"分开列。
+> **§8.1 的 D1~D10 已由所有者于 2026-09-18 批准**（明细见下）。
+> 已批准**不等于**可直接写依赖：各组件仍须通过 §7.4 的可安装性与类型兼容验证后，
+> 才可写入 `pyproject.toml` 的 `dependencies`；**D7 暂缓**（待 V-a），因此
+> `dependencies` 目前仍为**部分未定**。
 
-### 8.1 真决策（需所有者逐条确认）
+### 8.1 真决策（已由所有者逐条确认，2026-09-18）
 
-| # | 决策 | 建议 | 若不批准的后果 |
+| # | 决策 | **决定（2026-09-18 所有者批准）** | 备注 |
 | --- | --- | --- | --- |
-| **D1** | **是否引入 Typer + Rich** 作为产品 CLI | **建议是**（`REQ-UX-01` Must；备选 argparse 会显著增加子命令与参数校验的代码量） | 回退到 `argparse`，CLI 代码量上升，但不阻塞 |
-| **D2** | **是否引入 pydantic v2**（本清单中争议最大的一项） | **建议是**，但这是**可逆的**：它带来编译扩展与平台矩阵成本；若考虑"低资源 / 未来移动端"优先，可选择**否**并沿用 `bench/store.py` 的手写校验模式 | 若选否：边界校验需自研（工作量上升、出错面上升），但依赖面更小、Termux 友好 |
-| **D3** | **是否引入 httpx** 作为统一 HTTP 客户端（云端模型 + 本地回环） | **建议是**（需要 TLS、超时、响应上限；备选 stdlib 能力不足），但**已知其稳定版停留在 2024-12**，需接受该风险 | 若选否：沿用 stdlib `http.client` + 自研薄层，云端能力受限（TLS/重定向/流式需自己处理） |
-| **D4** | **是否引入 structlog** 作为结构化日志与脱敏管线 | **建议是**（零依赖、typed、与现有 stdlib logging 共存） | 若选否：用 stdlib `logging` + 自研 JSON formatter（`REQ-SEC-07` 的脱敏需要自己保证） |
-| **D5** | **是否引入 tree-sitter**（+ Python 语法包）作为仓库索引的解析层 | **建议是**（SRS §9 已列为关键依赖；零依赖、预编译 wheel）；备选是标准库 `ast`（仅 Python） | 若选否：上下文引擎初期只支持 Python，符号索引能力受限 |
-| **D6** | **是否引入 platformdirs** | **建议是**（零依赖，消除手写 XDG/Windows 路径分支） | 若选否：手写路径规则，`REQ-PLAT-01`（多平台）出错风险上升 |
-| **D7** | **构建后端选哪个**（hatchling / setuptools / uv_build） | 待核验后给建议（见 V-a） | 阻塞 `REQ-UX-03`（一条命令安装）与 `REQ-OPS-04`（可复现构建） |
-| **D8** | **是否同意目录结构照 §5.4 落地**（新增 `contracts/ foundation/ security/ observability/ model/ tools/ harness/ cli/` 8 个目录） | **建议是**（每个目录的理由见 §5.4.1；新增目录按规则必须由 ADR 说明理由，本文即该 ADR） | 若不批准，需回到 §3 重新选分层方案 |
-| **D9** | **是否同意把 `bench/{proc,paths,errors}.py` 提升为 `foundation/`**（一次跨模块重构 + AST 测试白名单同步） | **建议是**，单独一个 `refactor` 提交，不改行为 | 若不同意：产品层将出现"第二份子进程封装"，**直接违反安全基线**（唯一封装层） |
-| **D10** | **是否同意 §5.2.6 的"本期不引入"清单**（含"不引入任何 agent 编排框架"） | **建议是**（框架化会稀释核心论点，并扩大范围） | 若引入框架，`REQ-HARNESS-03`/`04` 的实现方式将受框架抽象约束，论点难以成立 |
+| **D1** | 是否引入 Typer + Rich 作为产品 CLI | **通过**（Typer + Rich） | `REQ-UX-01` Must；备选 `argparse` 会显著增加子命令与参数校验代码量 |
+| **D2** | 是否引入 pydantic v2 | **通过，但限定用途**：**仅用于两处**——**信任边界校验**与**工具参数 JSON Schema 生成**；**配置解析仍用 `tomllib`**、**内部数据结构仍用 `dataclasses`** | 引入编译扩展（`pydantic-core`）与平台矩阵成本；**V-b（精确依赖/体积）与 V-j（aarch64/Termux 可安装性）作为验证项保留**；**回退路径（手写校验，`bench/store.py` 已验证）保留**（见 §5.2.2） |
+| **D3** | 统一 HTTP 客户端选型（云端模型 + 本地回环） | **改选 `urllib3` 2.x，不选 `httpx`** | `httpx` 移入"本期不引入/备选"并写明理由：稳定线约 21 个月未更新（`0.28.1`，2024-12-06）、1.0 破坏性变更在即、**默认读取 `HTTP(S)_PROXY` 环境变量**（见 §5.2.4、§5.2.6）。**`urllib3` 的许可证/依赖/代理行为仍【待核验】**（V-m/V-n） |
+| **D4** | 是否引入 structlog 作为结构化日志与脱敏管线 | **通过** | 零依赖、typed、与现有 stdlib `logging` 共存 |
+| **D5** | 是否引入 tree-sitter（+ Python 语法包）作为仓库索引的解析层 | **通过** | SRS §9 已列为关键依赖；备选标准库 `ast`（仅 Python） |
+| **D6** | 是否引入 platformdirs | **通过** | 零依赖，消除手写 XDG/Windows 路径分支；覆盖 `REQ-PLAT-01` |
+| **D7** | 构建后端选哪个（hatchling / setuptools / uv_build） | **暂缓**（待 V-a 核验 `hatchling` 的许可证与依赖后决定） | 阻塞 `REQ-UX-03`（一条命令安装）与 `REQ-OPS-04`（可复现构建）；核验完成前不写入 `pyproject.toml` |
+| **D8** | 是否同意目录结构照 §5.4 落地（新增 `contracts/ foundation/ security/ observability/ model/ tools/ harness/ cli/` 8 个目录） | **通过**（按 §5.4 落 8 个目录） | **已启动**（见 §9）；新增目录按规则须由 ADR 说明理由，本文即该 ADR |
+| **D9** | 是否同意把 `bench/{proc,paths,errors}.py` 提升为 `foundation/`（一次跨模块重构 + AST 测试白名单同步） | **通过** | **已启动**（见 §9）；单独一个 `refactor` 提交，不改行为；同步 import 与 AST 测试白名单 |
+| **D10** | 是否同意 §5.2.6 的"本期不引入"清单（含"不引入任何 agent 编排框架"） | **通过** | 含"**不引入任何 agent 编排框架**"（LangChain / LlamaIndex / LangGraph / Semantic Kernel）；框架化会稀释核心论点 |
 
 ### 8.2 待核验事实（我负责查证，给出出处后补入本文）
 
@@ -598,14 +611,17 @@ src/agent_sec_perf/
 | V-b | `pydantic` 的精确传递依赖集合（`pydantic-core` 版本、`typing-extensions`、`annotated-types`、`typing-inspection`）与 wheel 体积 | D2 的体积判断；Termux 可安装性 | 读 `pydantic-2.13.5-py3-none-any.whl` 的 `METADATA` 的 `Requires-Dist` |
 | V-c | `Rich` 的传递依赖（`pygments` / `markdown-it-py`）与体积 | A2 的体积评估 | 读 `rich-15.0.0-py3-none-any.whl` 的 `METADATA` |
 | V-d | `tree-sitter-python` 语法包的版本、许可证、是否有预编译 wheel | F1 的可用性 | 访问 PyPI `tree-sitter-python` 项目页 |
-| V-e | `httpx` 的维护状态（是否已进入维护模式；1.0 的路线） | D3 的长期风险 | 查 `encode/httpx` 仓库的 release / 最近提交时间 / issue 活跃度 |
+| V-e | `httpx` 的维护状态（是否已进入维护模式；1.0 的路线） | **随 D3 改选而关闭**——`httpx` 不再是拟选组件；其稳定线停滞（`0.28.1`，2024-12-06）与 1.0 破坏性变更已作为 D3 改选 `urllib3` 的**依据**记录于 §5.2.4 D2 行 | ——（保留为历史条目，不再需要核验） |
 | V-f | `pytest-xdist` 的许可证与版本 | G1 的许可证完备性 | 访问 PyPI `pytest-xdist` 项目页 |
 | V-g | `hypothesis` 的许可证（疑为 MPL-2.0，需确认是否与项目兼容） | G2 是否纳入备选 | 访问 PyPI `hypothesis` 项目页，抄录 `License` |
-| V-h | `openai` SDK 3.x 的传递依赖（文档提到 `httpx2`） | D2 备选路径的可行性 | 读 `openai-3.14.1` wheel 的 `METADATA` |
+| V-h | `openai` SDK 3.x 的传递依赖（文档提到 `httpx2`） | §5.2.4 D3（`openai` 行）路径的可行性 | 读 `openai-3.14.1` wheel 的 `METADATA` |
 | V-i | `Typer` 0.26.0 起内嵌 Click 源码后的许可证声明是否仍为 MIT、以及 vendored 代码的许可证归属 | A1 的许可证合规 | 读 `typer-0.27.2` sdist 内的 `LICENSE` 与 vendored 目录的许可证文件 |
-| V-j | 上述组件在 **linux aarch64** 与 **Termux/Android** 上的可安装性 | D-6 可移植性 | `pip download --only-binary=:all: --platform manylinux2014_aarch64`（Termux 无标准方法，标注为"目标设备阶段验证"） |
+| V-j | 上述组件在 **linux aarch64** 与 **Termux/Android** 上的可安装性 | D-6 可移植性 | **已知风险 + 缓解路径**（由"待核验"改写）：`pydantic-core` **无官方 Android/Termux wheel**——实查依据是社区在自行维护 Android/Termux 预编译（如社区项目 `android-pydantic-core` 与第三方 Termux wheel 索引）⇒ 官方 wheel 不覆盖该平台。**缓解**：① 移动端**非本期交付项**（SRS §6.3、Q-2）；② 回退到**手写校验**（`bench/store.py` 已验证）；③ 若必须采用社区 wheel，须在 ADR 记录**来源与摘要**（`SECURITY.md` 供应链要求）。其余组件在 **linux aarch64** 上的可安装性仍**待核验**（`pip download --only-binary=:all: --platform manylinux2014_aarch64`；Termux 无标准方法，标注为"目标设备阶段验证"） |
 | V-k | `structlog` 在 `mypy --strict` 下的实际体验（官方声明 typed，但泛型 `BoundLogger` 在严格模式下可能有摩擦） | E1 可用性 | 写一个最小样例（结构化日志 + 脱敏 processor）跑 `mypy --strict` |
 | V-l | `pydantic` 在 `mypy --strict` 下的实际体验（`BaseModel` 与严格模式） | D2 可用性 | 同上的最小样例法 |
+| V-m | `urllib3` 2.x 的**许可证、最新版本与运行期依赖集合**（D3 改选后的新增核验项） | D3 的许可证合规与体积判断；未核验前 §5.2.4 D1 的结论属"证据不完整" | 访问 PyPI `urllib3` 项目页抄录 `License` / 最新版本 / `Requires-Dist`，并读 wheel `METADATA`。**注：`2.7.0` 变更日志日期（2026-05-07）与 `urllib3-lts`（2026-02-22）目前均为单一来源，需以 PyPI 官方页二次确认** |
+| V-n | `urllib3` 的**代理与环境变量行为**（是否默认读取 `HTTP(S)_PROXY`；如何显式指定代理） | D3 改选理由第 ③ 条（"代理默认值更保守"）**未逐行核对源码 ⇒ 【待核验】** | 读 `urllib3` 官方文档与源码中 `ProxyManager` / `proxy_from_url` / 环境变量处理的相关章节，确认"默认不读环境变量、需显式配置"这一断言 |
+| V-o | `urllib3` 在**三个关键写法**上的实际评估：**出站超时、响应体大小上限、SSE 流式** | D3 的可用性——安全基线要求"出站超时 + 限制响应体大小"，且云端模型可能需要 SSE 流式 | 写最小样例逐项验证：① 连接/读取超时；② 读取时限制响应体字节数（`preload_content=False` + 分块读取 + 计数）；③ 流式逐行解析 SSE |
 
 > **纪律**：上表的任何一项**在核验完成前不得写进** `docs/` 的结论性表述或 `pyproject.toml` 的注释，
 > 只能以 **【待核验】** 形式出现（`docs-and-adr` 规则要求）。
@@ -614,13 +630,13 @@ src/agent_sec_perf/
 
 ## 9. 后续行动
 
-- [ ] **所有者确认 §8.1 的 D1~D10**（本 ADR 转「已接受」的前提）
-- [ ] 完成 §8.2 的 V-a ~ V-l 核验，把结果补入本文对应表格（**不修改结论，只补事实**）
-- [ ] 按 §5.4.1 建立目录骨架（`contracts/` 优先，因为它是接口先行原则的载体）
-- [ ] 把 `bench/{proc,paths,errors}.py` 提升为 `foundation/`，同步 import 与 AST 测试白名单（单独 `refactor` 提交）
+- [x] **所有者确认 §8.1 的 D1~D10**（2026-09-18 完成；**D7 暂缓待 V-a**，其余通过）
+- [ ] 完成 §8.2 的 V-a ~ V-o 核验，把结果补入本文对应表格（**不修改结论，只补事实**；V-e 随 D3 改选而关闭）
+- [ ] **【已启动】** 按 §5.4.1 建立目录骨架（`contracts/` 优先，因为它是接口先行原则的载体）——由实现工程师在 `src/` 进行
+- [ ] **【已启动】** 把 `bench/{proc,paths,errors}.py` 提升为 `foundation/`，同步 import 与 AST 测试白名单（单独 `refactor` 提交）——由实现工程师进行
 - [ ] 实现 `tests/unit/test_architecture_layers.py`（§7.1 的 V1~V6）
 - [ ] 建立 `tests/security/` 并落 §7.2 的 S1~S3
 - [ ] 编写 `docs/design/architecture.md` 与 `docs/design/interfaces/*.md`（契约级细节）
 - [ ] 威胁模型初稿（`docs/design/threat-model/`，当前 **0 条**）——**前置交付物**，与安全层实现同步
 - [ ] 按 §7.4 完成选定组件的可安装性与类型兼容验证后，**经批准**才修改 `pyproject.toml` 的 `dependencies`
-- [ ] 在 `docs/adr/README.md` 索引中登记本文（状态：提议中）
+- [x] 在 `docs/adr/README.md` 索引中登记本文（状态：**已接受（2026-09-18）**）
