@@ -128,6 +128,7 @@ Refs: #<issue>
 | 场景 | 产出 |
 | --- | --- |
 | 选型 / 架构变更 / 依赖增删 / 流程变更 | `docs/adr/NNNN-<slug>.md` |
+| 协作机制变更（角色 / 派活 / 回报 / 文件域） | `.codebuddy/agents/` + `docs/engineering/agent-teams.md` + 本文 §10 |
 | 新功能 | `docs/requirements/` + `docs/design/` |
 | 安全设计 | `docs/design/threat-model/` |
 | 探索性实验（含失败） | `docs/research/` |

@@ -149,6 +149,7 @@ Refs: #<issue>
 | 场景 | 必须产出的文档 |
 | --- | --- |
 | 技术选型、架构变更、引入/移除依赖、流程变更 | `docs/adr/NNNN-<slug>.md` |
+| 协作机制变更（角色 / 派活 / 回报 / 文件域） | [`.codebuddy/agents/`](.codebuddy/agents/)（角色定义）+ [`docs/engineering/agent-teams.md`](docs/engineering/agent-teams.md)（完整机制）+ 本文 §10（常驻结论） |
 | 新功能 | 需求条目（`docs/requirements/`）+ 设计说明（`docs/design/`） |
 | 安全相关设计 | 威胁模型更新（`docs/design/threat-model/`） |
 | 探索性实验（含失败） | `docs/research/` 中的结论笔记 |
