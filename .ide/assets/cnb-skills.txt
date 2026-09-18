@@ -1,0 +1,72 @@
+# ============================================================================
+# CNB 平台能力清单（构建期安装并固化进镜像）
+#
+# 决策依据：docs/adr/0016-cnb-platform-integration-and-remote-write-authorization.md
+#           （方案 B：接入官方 Skills 与 cnb-cli，远端写入按「可回退性」分级）
+# 目录依据：docs/adr/0017-project-level-agent-skills.md
+#
+# 【落点】均在 /workspace **之外**，工作区重建不丢：
+#   - npm CLI       → npm 全局前缀（`/usr/local/bin`，即 PATH 上的 `cnb`）
+#   - 官方 Skill    → ~/.agents/skills/<name>/          （canonical 目录）
+#                     + ~/.codebuddy/skills/<name>      （**符号链接**，CodeBuddy 读这里）
+#   这两层结构是 2026-09-18 实测得到的：`skills add -g` 的真实落点就是
+#   `~/.agents/skills/` + 指向它的 `~/.codebuddy/skills/` 符号链接。
+#   ⇒ 手工安装**必须复刻两层结构**，只放其中一层代理都读不到。
+#
+# 【格式】每行**固定 7 个字段**（字段以 `|` 分隔；空行与 `#` 开头为注释）；
+#         不适用某列时写 `-`。**不得增删列**——脚本按固定列数解析。
+#
+#   <类型>|<名称>|<附加>|<钉定值>|<许可证>|<体积>|<说明>
+#
+#   npm        ：<附加>=`-`        <钉定值>=精确版本号
+#   skill-repo ：<附加>=仓库 URL   <钉定值>=完整 commit SHA
+#   skill      ：<附加>=`-`        <钉定值>=该 Skill 的 SKILL.md sha256
+#
+#   ⚠️ **顺序有约束**：`skill-repo` 行必须出现在它所提供的 `skill` 行**之前**
+#      （脚本按清单顺序单遍处理：先克隆仓库，再逐 Skill 校验并落点）。
+#
+# 【为什么钉到这种程度】
+#   1. **npm 必须写精确版本** —— 禁止 `^` / `~` / `latest`：本项目所有依赖都必须锁定版本。
+#   2. **Skill 仓库必须写完整 commit SHA** —— 禁止分支与标签。
+#      ⚠️ 官方 `skills add` 命令**不支持指定 ref / commit**（2026-09-18 实测：其 `--help`
+#      无该项；`pkg@X` 里的 `@` 是**技能名**而不是 ref）⇒ **不得用 `skills add` 安装本清单
+#      里的 Skill**，一律走 install-cnb-skills.sh 的「clone + checkout SHA + 摘要校验」
+#      路径（即 ADR-0016 §5.4 的退路 L3）。
+#      ⚠️ 钉 SHA 不是形式主义：**本清单起草期间该仓库 HEAD 就漂过一次**——
+#      实测从 `bcd2587…` 变为 `8399c38…`。因此每次改动本清单都必须
+#      **重新取 SHA 并重算下面 5 个 SKILL.md 的 sha256**。
+#   3. **Skill 文本本身就是指令面** —— `description` 常驻上下文、`SKILL.md` 触发时加载
+#      ⇒ 它与可执行代码同等对待：来源、commit、摘要三项缺一不可
+#      （见 docs/design/threat-model/ 的 T-04 与 T-09）。
+#
+# 【为什么只装 5 个（官方仓库共 11 个）】
+#   入选：cnb-api / cnb-docs / cnb-code-review / cnb-pr-analysis / cnb-pipeline
+#   排除理由：
+#     - cnb-code-commit —— 引导"提交并创建 PR"，与本项目的 PR 模板 +
+#       Conventional Commits 门禁**职责重叠**，会形成"同一件事两处口径"，
+#       而这正是本项目反复吃亏的失效模式（一致性报告 A-3 / A-14 / A-16）；
+#     - cnb-npc-search / cnb-tapd-resource-fetcher / cnb-text-path-converter /
+#       cnb-upload-attachment / cnb-repo-knowledge-base —— 本项目用不上。
+#   直接收益：Skill 的 `description` 是**常驻上下文**，11 → 5 把这块开销砍掉一半。
+#
+# 【与项目内 Skill 的分工（交集必须为空，不得互相复述）】
+#   官方 `cnb-pipeline`  → CNB 平台**通用** `.cnb.yml` 语法与构建失败诊断；
+#   项目内 `repo-ci-conventions`（.codebuddy/skills/）→ **本仓库**的 `.cnb.yml` 约定与历史坑。
+#   判据见 docs/adr/0017-project-level-agent-skills.md §5.3.2：
+#   仓库约定应能被本地文件（.cnb.yml / Makefile / 测试）证明，API 用法只能来自上游。
+#
+# 【新增 / 升级的约束】
+#   1. 必须同时提供 来源 URL + 精确版本或 commit SHA + **明确许可证**；许可证未声明者不得
+#      进入（SECURITY.md 供应链条款）；
+#   2. 升级后必须重跑 `install-cnb-skills.sh verify`，并同步 Dockerfile 自检阶段的断言；
+#   3. 本文件是**构建期依赖**：改动它须同步 .cnb.yml 的 build.by，否则构建报错（CNB 硬性约束）。
+# ============================================================================
+
+npm|@cnbcool/cnb-cli|-|1.15.36|MIT|1.35 MB|CNB OpenAPI 的命令行入口，提供 `cnb` 命令；调用平台 API 的统一入口。无传递依赖。integrity=sha512-IYWbbLDCk5X8fzPW7pUMl8ImcGHRdR1yyMaHdu1CwrNgOZ+1HKp3I3qMUV4zybbX5sKuIfMoOJBed3z1CHNuRg==
+npm|skills|-|1.5.0|MIT|578 KB|官方 Skill 管理 CLI（`skills list` / `find` 等）。**钉 1.5.0 而非最新**：1.6.0 与 1.7.0 的 engines 要求 node >= 22.20.0，而镜像第 3 阶段装的是 node 20.20.2（实测 npm 报 EBADENGINE）。传递依赖：tar、yaml。integrity=sha512-PzotCoDQVNMO+usmrSJqzIddbP3Jim3TdJljg6w0fweIqfQSNXCgNFOhBrN01W83Pe5NkfCc+6QOTZNZRXd+4A==
+skill-repo|cnb-skill|https://cnb.cool/cnb/skills/cnb-skill.git|8399c3833c5a5dd643d5872efb519e87eae0936d|MIT|—|官方 Skill 仓库。许可证依据：仓库根 `LICENSE.md` = "The MIT License (MIT)"，Copyright (c) 2024-present, cnb.cool。仓库内 `skills/` 下共 11 个 Skill，本清单只取下列 5 个。**禁止用 `skills add` 安装**（无法钉 commit），见文件头第 2 条。
+skill|cnb-api|-|6fc36e61d8d5743492d7e35fb12c4fa87b8be6e774fcfd5efe27d6d9453f05c6|MIT|—|CNB 平台交互命令：代码仓库、Issue、PR、CI、制品库读写等操作。
+skill|cnb-docs|-|49adfa1c1454f6fa0cdfa4b741e7aea0974591943af1a669044c2daa1ad54b0e|MIT|—|查询 CNB 平台官方文档，覆盖代码托管、制品库、AI 助手、云原生构建等。
+skill|cnb-code-review|-|f98dfbebbb9eb8b892f1ff91b327b23604aff2cc95b56dbea5dbb90bf5bb2132|MIT|—|PR 代码评审：检查安全漏洞、Bug 与代码质量。
+skill|cnb-pr-analysis|-|e04e351fd238a10b495f7e31b7903e93dd949acb2a243059f8111e97dc92e15b|MIT|—|获取 PR diff 变更并总结，概述主要改动点、生成变更说明。
+skill|cnb-pipeline|-|54f4ba4da800fd980a7fd21cf9b847b1cb28d2c7e4d1e423545558d9c6e8e97c|MIT|—|CNB 平台**通用** `.cnb.yml` 编写 / 修改 / 审查与构建失败诊断。**本仓库的具体约定**见 `.codebuddy/skills/repo-ci-conventions/SKILL.md`（交集为空，不得互相复述）。

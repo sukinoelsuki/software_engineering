@@ -134,6 +134,8 @@
             - .ide/assets/benchmarks.txt
             - .ide/assets/references.txt
             - .ide/fetch-assets.sh
+            - .ide/install-cnb-skills.sh
+            - .ide/assets/cnb-skills.txt
         image: cnbcool/default-dev-env:latest
       services:
         - vscode
@@ -230,6 +232,8 @@ bench/nightly:
             - .ide/assets/benchmarks.txt
             - .ide/assets/references.txt
             - .ide/fetch-assets.sh
+            - .ide/install-cnb-skills.sh
+            - .ide/assets/cnb-skills.txt
       lock:
         key: bench-cpu
         wait: true
@@ -266,6 +270,8 @@ bench/nightly:
             - .ide/assets/benchmarks.txt
             - .ide/assets/references.txt
             - .ide/fetch-assets.sh
+            - .ide/install-cnb-skills.sh
+            - .ide/assets/cnb-skills.txt
       lock:
         key: bench-cpu
         wait: true
@@ -304,6 +310,8 @@ bench/nightly:
             - .ide/assets/benchmarks.txt
             - .ide/assets/references.txt
             - .ide/fetch-assets.sh
+            - .ide/install-cnb-skills.sh
+            - .ide/assets/cnb-skills.txt
       lock:
         key: bench-cpu
         wait: true
@@ -345,6 +353,8 @@ bench/nightly:
             - .ide/assets/benchmarks.txt
             - .ide/assets/references.txt
             - .ide/fetch-assets.sh
+            - .ide/install-cnb-skills.sh
+            - .ide/assets/cnb-skills.txt
       lock:
         key: bench-cpu
         wait: true

@@ -298,7 +298,39 @@ RUN set -eux; \
     bash /tmp/ide/fetch-assets.sh benchmarks /opt/benchmarks
 
 # ---------------------------------------------------------------------------
-# 13. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
+# 13. CNB 平台能力：cnb-cli + 官方 Skills
+#
+#     决策依据：docs/adr/0016-cnb-platform-integration-and-remote-write-authorization.md
+#               （方案 B：接入官方 Skills 与 cnb-cli，远端写入按「可回退性」分级）
+#     目录依据：docs/adr/0017-project-level-agent-skills.md
+#
+#     ⚠️ **这一段的层序是刻意的，不要往前提**：
+#       第 10~12 阶段是 GB 级资产（模型 / 参考仓库 / 基准集），重建时靠层缓存复用。
+#       本段的 COPY 若放在它们**之前**，就会使那些层失效——每次改一行 Skill 清单
+#       都要多花约 20~25 分钟重新下载（该代价已由第 10 阶段的注释实测记录）。
+#       放在第 12 阶段**之后** ⇒ 前序层输入不变、命中缓存，重建只跑本段 + 自检两层。
+#
+#     ⚠️ 也**不要**把本段逻辑并进 .ide/fetch-assets.sh：那个脚本的位置更靠前
+#       （它服务第 10~12 阶段），理由完全一致。详见 .ide/install-cnb-skills.sh 文件头。
+#
+#     **装什么、钉到哪个版本 / commit、为什么只装 5 个** —— 全部只在
+#     `.ide/assets/cnb-skills.txt` 里写一份（**单一真源**），本段不重复列举。
+#
+#     落点（两层结构，见该清单文件头）：~/.agents/skills/<name>/ 为 canonical，
+#     ~/.codebuddy/skills/<name> 为指向它的符号链接（CodeBuddy 读后者）。
+#
+#     校验：脚本内建 fail-secure（版本 / 摘要不符即中断构建），
+#     并在第 14 阶段再断言一次——凡"失败不阻断构建"的环节都必须显式校验一次。
+#     升级方式：改 .ide/assets/cnb-skills.txt → 销毁开发环境 → 重新启动（触发重建），
+#     并在 docs/devlog 中记录「旧 → 新」的对照。
+# ---------------------------------------------------------------------------
+COPY .ide/install-cnb-skills.sh /tmp/ide/
+COPY .ide/assets/cnb-skills.txt /tmp/ide/assets/
+RUN set -eux; \
+    bash /tmp/ide/install-cnb-skills.sh install
+
+# ---------------------------------------------------------------------------
+# 14. 自检：构建时验证关键组件与预置资产（失败即中断构建，避免交付坏环境）
 #
 #     原则：凡是"失败不阻断构建"的环节，都必须在这里显式校验一次——
 #     镜像构建期的静默失败已经出现过两次：CodeBuddy 漏装（0006 §2.4.1）、
@@ -322,6 +354,8 @@ RUN set -eux; \
     code-server --list-extensions; \
     code-server --list-extensions | grep -qix 'Tencent-Cloud.coding-copilot'; \
     code-server --list-extensions | grep -qix 'ms-pyright.pyright'; \
+    cnb --version; \
+    bash /tmp/ide/install-cnb-skills.sh verify; \
     bash /tmp/ide/fetch-assets.sh verify /opt/models /opt/benchmarks; \
     test -d /opt/references/harness; \
     test -n "$(find /opt/references/harness -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
