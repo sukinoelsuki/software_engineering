@@ -184,17 +184,30 @@ class TaskStatus(StrEnum):
 
 ```python
 class SessionErrorKind(StrEnum):
-    TRANSIENT = "transient"  # 后端瞬时故障，重试预算耗尽
-    UNREACHABLE = "unreachable"  # 后端不可达（ModelUnavailableError）
-    PROTOCOL = "protocol"  # 响应不符合契约（ModelProtocolError）
+    TRANSIENT = "transient"  # 瞬时原因导致的一次失败，loop 将会重试（预算内）
+    UNREACHABLE = "unreachable"  # 后端不可达且重试预算已耗尽（放弃）
+    PROTOCOL = "protocol"  # 响应不符合契约且重试预算已耗尽（放弃）
     STALLED = "stalled"  # 连续失败达 max_consecutive_failures
     INTERNAL = "internal"  # 我方不变量被破 / 未预期异常
 ```
 
+**成员语义的判定口径（必须与 `error_kind()` 一致，见 §3.1）**：
+
+| 成员 | 由什么产生 | 是否终止任务 |
+| --- | --- | --- |
+| `TRANSIENT` | 某次尝试因**瞬时**原因失败，且 `resolve_disposition(...) is RETRY`（**将会重试**） | **否**（流继续，I7 允许 `ERROR` 后最终 `COMPLETED`） |
+| `UNREACHABLE` | `ModelUnavailableError` 且**重试预算已耗尽**（`ABORT`） | 是（`FAILED`） |
+| `PROTOCOL` | `ModelProtocolError` 且**重试预算已耗尽**（`ABORT`） | 是（`FAILED`） |
+| `STALLED` | **连续**失败达 `max_consecutive_failures`（由 `loop` 计数触发，**不**来自某个异常） | 是（`FAILED`） |
+| `INTERNAL` | 我方不变量被破 / 未预期异常（含 `HarnessInternalError`） | 是（`FAILED`） |
+
 - **工具级失败不在此列**：`ToolResult.ok=False` 是**正常数据通路**（回喂给模型），
   不产生 `ERROR` 事件；只有**连续失败达上限**时才升格为 `STALLED`。
 - **`UNREACHABLE` 本轮无降级路径**：`ModelUnavailableError` 的既定处置是"路由降级"
-  （`model/router.py`，**未开工**）⇒ 本轮取 `RETRY` 后 `FATAL`。**不得**把它写成"已降级"。
+  （`model/router.py`，**未开工**）⇒ 本轮为 `RETRY`（预算内，报 `TRANSIENT`）→ 耗尽后 `ABORT`
+  （报 `UNREACHABLE`）。**不得**把它写成"已降级"。
+- **`text` 不得直接取 `str(exc)`**：异常消息可能携带路径 / 不可信串。`ERROR.text` 由
+  **我方常量文案 + 异常类型名**组成（§3.1 的 `error_kind()` 只按**类型**判定，不看消息）。
 
 ### 2.5 审批通路（**新增**：`ApprovalOutcome` / `ApprovalRequest` / `ApprovalResult` / `ApprovalGate`）
 
@@ -346,7 +359,7 @@ def event_to_payload(event: SessionEvent) -> dict[str, object]: ...
 | # | 规定 |
 | --- | --- |
 | D1 | `kind=TOOL_CALL` 的允许 `outcome` 扩为 **`{OK, ERROR, DENY}`**；`DENY` 专指"**未执行**"，**不得**用 `ERROR` 代替 |
-| D2 | `DENY` 时 `detail["denied_reason"]` **必填**，取值限于 `{"unknown_tool", "not_exposed", "invalid_arguments", "policy_denied", "approval_denied"}` —— 均为**我方生成的定长短码**，不含任何不可信内容 |
+| D2 | `DENY` 时 `detail["denied_reason"]` **必填**，取值限于 `{"unknown_tool", "not_exposed", "invalid_arguments", "policy_denied", "approval_denied"}` —— 均为**我方生成的定长短码**，不含任何不可信内容。**五者的判定点写在 §3.3 的决策序列里**：步 1 判定 `not_exposed`（名字**在注册表中**但**不在本会话的 `exposed` 解析域**）与 `unknown_tool`（名字**连注册表都没有**）；步 2 ⇒ `invalid_arguments`；步 4 ⇒ `policy_denied` / `approval_denied`。⚠️ **前两者必须可分**：一个是"**我们把它裁掉了**"，一个是"**模型幻觉了一个工具**"，在审计里同形会让 `REQ-SEC-06` 的可回放性受损（本项目已因"同形"吃过两次教训：`False/True` 让"引擎故障"与"请求缺陷"不可区分；`ERROR` 让"执行失败"与"从未执行"不可区分） |
 | D3 | 已执行路径的审计仍由工具层发出（现状不变）；未执行路径由 `harness/loop.py` 发一条，`event_id` 回填进 `SessionEvent.audit_id` |
 | D4 | 同一 `call_id` 可能有多条 `TOOL_CALL` 审计事件 ⇒ 判据是 **I4**（"存在且可回放"），**不得**写成"恰好一条" |
 
@@ -446,6 +459,15 @@ class Session(Protocol):
 
 ### 3.1 8 件的职责与对外签名
 
+**哪些类型进 `contracts/`（判据，不得只记结论）**：
+
+> **一个类型是否进 `contracts/`，判据是"是否有跨信任边界的消费者"，不是"它是不是枚举"。**
+
+按此判据核对：`SessionEvent` 只携带 `error_kind: SessionErrorKind`，**没有任何 `contracts/` 类型
+引用 `ErrorDisposition`** ⇒ 它是 **`loop` 的内部策略**（"出错后怎么办"），`cli/` 不需要它 ⇒
+**留在 `harness/errors.py`**。⚠️ 必须按判据判断：否则后人会凭"**枚举都放 contracts**"的直觉把它
+搬回去，而那种迁移**没有任何消费者驱动**，只让 `contracts/`（零行为层，有 `R3` 成本）持续膨胀。
+
 ```python
 # --- harness/errors.py（无 harness 内部依赖）--------------------------------
 class HarnessError(BenchError): ...
@@ -460,25 +482,49 @@ class DomainPackError(HarnessError): ...  # 领域包加载/校验失败（fail-
 class ErrorDisposition(StrEnum):
     RETRY = "retry"  # 瞬时：原地重试（预算内）
     FEEDBACK = "feedback"  # 回喂自恢复：把失败作为观察内容喂回模型
-    FATAL = "fatal"  # 上报并终止本任务
+    ABORT = "abort"  # 上报并终止本任务
 
 
-@dataclass(frozen=True)
-class ErrorPlan:
-    kind: SessionErrorKind
-    disposition: ErrorDisposition
-    message: str  # 中文、面向用户；**不得**回显不可信内容
-    retry_budget: int  # 本类错误可重试的次数（FATAL ⇒ 0）
+def classify_error(error: BaseException) -> ErrorDisposition: ...
+def resolve_disposition(
+    error: BaseException,
+    *,
+    retries_used: int = 0,
+    max_retries: int = MAX_TRANSIENT_RETRIES,
+) -> ErrorDisposition: ...
 
 
-def plan_for(exc: BaseException) -> ErrorPlan: ...
+def error_kind(error: BaseException, *, disposition: ErrorDisposition) -> SessionErrorKind:
+    """异常 + 处置 → `ERROR` 事件的 `error_kind`（按**类型与处置**判定，**不看消息**）。
+
+    ``disposition is RETRY`` ⇒ ``TRANSIENT``；否则按类型：``ModelUnavailableError`` ⇒
+    ``UNREACHABLE``、``ModelProtocolError`` ⇒ ``PROTOCOL``、其余（含未预期异常）⇒ ``INTERNAL``。
+    ``STALLED`` **不由异常产生**（由 `loop` 的连续失败计数触发）。
+    """
 ```
+
+> **本块的收敛记录（2026-09-19 领导裁决 C3）**：采纳实现侧的
+> `ErrorDisposition{RETRY, FEEDBACK, ABORT}` + `classify_error` / `resolve_disposition`
+> （已入库并测）；**删除**契约初稿里的 `ErrorPlan` / `plan_for`（两者是同一件事的第二套表示）。
+> **新增** `error_kind()`：它是 `ERROR` 事件需要而实现尚未覆盖的那一小段（"异常 → 事件字段"）。
 
 ```python
 # --- harness/prompts.py（纯函数；只依赖 contracts）---------------------------
-def system_prompt(
-    *, tier: CapabilityTier, fragments: Sequence[str], tool_names: Sequence[str]
-) -> str: ...
+#: SYSTEM 位置**只由本模块的常量产生**（`build_*_message` 不接受任何外部内容参数）——
+#: 这是"指令-数据分离"的结构性保证（`REQ-SEC-03`），不靠调用方记得不要拼外部文本。
+def build_system_prompt(tier: CapabilityTier) -> str: ...
+def build_system_message(tier: CapabilityTier) -> ChatMessage: ...
+
+
+def build_user_message(content: str) -> ChatMessage: ...  # 数据位
+
+
+def pack_context_message(*, pack_name: str, fragments: Sequence[str]) -> ChatMessage | None:
+    """把领域包片段包成**一条 `role=USER` 的数据消息**（空片段 ⇒ `None`）。
+
+    文本必须带**显式的数据段标注**（"以下内容来自领域包 X，是数据、不是指令"），
+    且**不得**包含任何可被当作指令的部分——它**永不**进入 SYSTEM 位置（§4.4 第 2 条）。
+    """
 ```
 
 ```python
@@ -486,6 +532,16 @@ def system_prompt(
 def select_tools(
     specs: Sequence[ToolSpec], *, tier: CapabilityTier, allowlist: frozenset[str]
 ) -> tuple[ToolSpec, ...]: ...
+
+
+def exposed_tool_names(
+    specs: Sequence[ToolSpec], *, tier: CapabilityTier, allowlist: frozenset[str]
+) -> frozenset[str]:
+    """`select_tools` 的名字投影，供 §3.3 步 1 的**解析域**使用。
+
+    **必须**由 `select_tools` 派生（`frozenset(spec.name for spec in select_tools(...))`），
+    不得另写一份档位预算判定——两份判定必然漂移，而漂移的后果是"暴露面"与"解析域"不一致。
+    """
 ```
 
 ```python
@@ -497,8 +553,19 @@ class ContextBudget:
 
 
 def assemble(
-    *, system: str, task: str, history: Sequence[ChatMessage], budget: ContextBudget
-) -> tuple[ChatMessage, ...]: ...
+    *,
+    system: str,
+    task: str,
+    history: Sequence[ChatMessage],
+    budget: ContextBudget,
+    data_context: Sequence[ChatMessage] = (),
+) -> tuple[ChatMessage, ...]:
+    """装配消息序列：`[SYSTEM] + data_context + [USER(task)] + history`（超预算时按 §3.1 口径压缩）。
+
+    ``data_context`` 是"以**数据**身份进入上下文的补充消息"（本轮只有领域包片段一条）。
+    **必须**校验每条消息 `role is USER`，否则抛 `ValueError` —— 这是"包内容永不进 SYSTEM 位置"
+    的**结构性守卫**（§4.4 第 2 条），不靠调用方自觉。
+    """
 ```
 
 ```python
@@ -705,7 +772,10 @@ class ArgumentValidator(Protocol):
 但**不得**只保留其中一处（删入口 = 非法值以更晚、更隐蔽的形态出现；删兜底 = 工具依赖
 "上游一定校验过"）。这与 `policy.md` §2.5"入口 vs 兜底"是同一套分工。
 
-**实现选型未定（必须停下上报）**：`ADR-0015` §5.2.2 的 `D2` 把 pydantic 的用途限定为
+**实现选型未定 —— 决定者与触发时点（不得留成"看起来在等某个决定"）**：**由实现者在动手做
+`ArgumentValidator` 之前**（即装配 `cli/` 之前，§5.1 第 8 行）提出选型、**上报领导拍板**；
+在拍板前**不得开工**该校验器，也**不得**以"临时不校验/临时放行"绕过（§5.1 第 8 行的待解阻塞）。
+为便于拍板，候选与影响面如下：`ADR-0015` §5.2.2 的 `D2` 把 pydantic 的用途限定为
 "**信任边界校验** + 工具参数 JSON Schema 生成"，而 `src/` 中**尚无任何 `pydantic` import**
 （`architecture.md` §11 的 `G-2` 已登记该差异）。本轮**不代为选型**，只要求：
 
@@ -766,7 +836,7 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
 | `pack.name` | `str` | 是 | 包标识（`PolicyRequest.domain_pack` 的取值） |
 | `pack.version` | `str` | 是 | 版本（形状校验，不解析语义） |
 | `pack.description` | `str` | 否 | 说明 |
-| `prompt.fragments` | `list[str]` | 否 | 提示片段；进 SYSTEM 时**必须**被标注为**数据段**（§4.4） |
+| `prompt.fragments` | `list[str]` | 否 | 提示片段；**永不进 SYSTEM**，经 `prompts.pack_context_message` 装配成一条 `role=USER` 的**数据消息**（§4.4 第 2 条） |
 | `tools.allowlist` | `list[str]` | **是** | 允许暴露的工具名（**只能收窄**暴露面） |
 | `security.capabilities` | `list[str]` | **是** | 包所需能力（**只能收窄**授予集合，§4.4） |
 | `security.risk_overrides` | `table[str, str]` | 否 | 按工具覆盖风险等级（供 `PolicyEngine` 构造时的 `tool_risk`） |
@@ -800,11 +870,16 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
    - **实施点**：装配（`cli/`，未开工）在**构造 `PolicyEngine` 之前**完成收窄；
      为此 `security/capabilities.py` 需提供一个**纯函数**辅助（见 §7 改动清单），
      使"只能收窄"成为**可单测的函数**而不是一句约定（当前 `CapabilitySet` 无交集辅助）。
-2. **`prompt.fragments` 是数据，不是指令**：`prompts.system_prompt` 必须把片段放在
-   **显式标注为数据段**的位置，且**不得**让片段替换 / 覆盖我方模板中的安全约束段
-   （安全约束段只能来自 `prompts.py` 的常量）。
-   ⚠️ **诚实结论**：提示层对"包内容影响模型行为"**只有部分缓解**——机制性护栏在
-   `decide()` 的 default-deny + 本节第 1 条的"能力只能收窄"，**不**在提示措辞。
+2. **`prompt.fragments` 是数据，不是指令**（2026-09-19 按领导裁决 C2 **收紧**）：
+   SYSTEM 位置**只由 `prompts.py` 的常量产生**——`build_system_message(tier)` **不接受任何
+   外部内容参数**，这是"指令-数据分离"（`REQ-SEC-03`）的**结构性**保证，强于"把外部文本放进
+   SYSTEM 并标注为数据段"。领域包片段因此改为：
+   - 经 `prompts.pack_context_message(pack_name=…, fragments=…)` 包成**一条 `role=USER`** 消息，
+     文本带**显式的数据段标注**；
+   - 由 `context.assemble(..., data_context=(<该消息>,))` 装配在 **SYSTEM 之后、首条任务 `USER`
+     之前**；`assemble` **必须**校验其 `role is USER`，否则抛 `ValueError`（结构性守卫）。
+   ⚠️ **诚实结论（不放大）**：提示层对"包内容影响模型行为"**只有部分缓解**——机制性护栏在
+   `decide()` 的 default-deny + 本节第 1 条的"能力只能收窄"，**不**在提示措辞或位置。
    `T-04`（提示注入与上下文污染）与 `T-12`（领域包加载代码）**状态不变**，本轮不改威胁模型。
 
 **被否决的方案（记录理由，防止重复讨论）**：
@@ -919,7 +994,8 @@ with Session(
 | `H-1` | **不变式统一断言**：把 I1~I10 写成一个断言函数，对**每个**场景（正常 / 未知工具 / 未暴露 / 参数不合法 / 策略硬拒绝 / 审批拒绝 / 工具失败 / 后端不可达 / 步数用尽）复用一遍 |
 | `H-2` | `seq` 从 0 连续无空洞；`TASK_FINISHED` 恰好一条且最后（I6/I9） |
 | `H-3` | 校验器：超大 JSON / 未知键 / 类型不符 / 缺必填 / 非法 JSON ⇒ 全部 `invalid_arguments`；且 `text` 中**不含**参数值 sentinel（I8 / V4） |
-| `H-4` | `trimming.select_tools`：同输入同输出、按 `name` 升序；`allowlist` 之外的工具**必须**不在输出里（"只收窄"） |
+| `H-4` | `trimming.select_tools`：同输入同输出、按 `name` 升序；`allowlist` 之外的工具**必须**不在输出里（"只收窄"）；**`tier` 的类型是 `CapabilityTier`**（断言"传入 `HardwareTier` 成员 ⇒ 拒绝/无此语义"，钉住 C1 的裁决，防回退到硬件档位轴） |
+| `H-10` | `context.assemble`：`data_context` 里出现非 `USER` 角色的消息 ⇒ `ValueError`（§4.4 第 2 条的结构性守卫）；正常装配顺序为 `SYSTEM → data_context → USER(task) → history` |
 | `H-5` | 领域包：未知键 / 未知工具名 / 未知能力名 / 缺 `security.capabilities` 键 / 包内 `.py` ⇒ 五类各自 `DomainPackError`；合法 pack 的字段逐项与 `pack.toml` 一致 |
 | `H-6` | `context.assemble` 在超预算输入下**不切断** `ASSISTANT(tool_calls)` 与 `TOOL(tool_call_id)` 的配对 |
 | `H-7` | `harness/` 内部结构：H1（不 import L2/L4 实现）+ H2（叶子零依赖）两条机器检查 |
@@ -935,10 +1011,11 @@ with Session(
 | `S1-c`（本契约新增） | `arguments_json` 携带唯一 sentinel 值（如 `SENTINEL-7f3a…`）的超长 / 非法 / 未知键载荷 | 事件流、`text`、审计文件三者中**均不出现**该 sentinel（I8/V4） |
 | `S3`（`ADR-0015` §7.2） | 领域包目录内放置一个**带副作用**的 `.py`（写标志文件 / 打印） | ① `load_pack` 抛 `DomainPackError`；② 标志文件**不存在**；③ 该模块名**不在** `sys.modules`（"不导入"是行为断言，不能只看返回值） |
 | `S-new-1` | 需人工确认的调用，`ApprovalGate` 为"非交互 ⇒ 拒绝"的实现 | 未执行；`APPROVAL_RESULT.outcome is DENY`；审计有 `kind=APPROVAL` 事件（§2.5.5 的 `R2`/`A4`） |
-| `S-new-4`（本契约新增） | **不提供**确认通路（`approval=None`），而模型发起一个 `requires_confirmation` 的调用 | 调用**未执行**（`Tool.invoke` 未被调用）；`TOOL_RESULT(result=None, text=…)`；审计有 `TOOL_CALL/DENY` + `detail["denied_reason"]=="approval_denied"`；**且断言事件流中不出现 `APPROVAL_RESULT`**（没有人被问过，§2.5.5 `R1`+I2） |
-| `S-new-5`（本契约新增） | 确认通路**故障**：gate 抛异常 ／ 返回形状非法（非 `ApprovalResult`、未知 `outcome`、空 `audit_id`） | 该调用**不执行**；出现 `ERROR(error_kind=INTERNAL)` 且 `TASK_FINISHED.status is FAILED`；**断言异常没有被吞成"一次普通拒绝"**（§2.5.5 `R3`/`R4`） |
 | `S-new-2` | `NETWORK_OUTBOUND` 已授予，工具尝试出站 | `ExecutionContext.network_allowed is False`（构造出的 ctx 逐次断言）——防"授予即放行"的 fail-open 回归（`T-10` 保持未缓解） |
 | `S-new-3` | 审计 sink 的 `emit` 抛异常 | **异常从 `run()` 冒泡**，**不得**被转成 `ERROR` 事件后继续（`audit.md` §2.4 的"失败必须冒泡"与 `policy.md` §2.5 的相反处置必须分清） |
+| `S-new-4`（本契约新增） | **不提供**确认通路（`approval=None`），而模型发起一个 `requires_confirmation` 的调用 | 调用**未执行**（`Tool.invoke` 未被调用）；`TOOL_RESULT(result=None, text=…)`；审计有 `TOOL_CALL/DENY` + `detail["denied_reason"]=="approval_denied"`；**且断言事件流中不出现 `APPROVAL_RESULT`**（没有人被问过，§2.5.5 `R1`+I2） |
+| `S-new-5`（本契约新增） | 确认通路**故障**：gate 抛异常 ／ 返回形状非法（非 `ApprovalResult`、未知 `outcome`、空 `audit_id`） | 该调用**不执行**；出现 `ERROR(error_kind=INTERNAL)` 且 `TASK_FINISHED.status is FAILED`；**断言异常没有被吞成"一次普通拒绝"**（§2.5.5 `R3`/`R4`） |
+| `S-new-6`（本契约新增） | 领域包的 `prompt.fragments` 试图进入 **SYSTEM 位置**（构造 `data_context` 时塞一条 `role=SYSTEM` 的消息） | `context.assemble` 抛 `ValueError`（结构性守卫，§4.4 第 2 条）；**断言包内容永不出现在 SYSTEM 消息里**——防"提示注入伪装成系统指令"的回归 |
 
 ---
 
@@ -946,19 +1023,36 @@ with Session(
 
 | 文件 | 动作 |
 | --- | --- |
-| `contracts/harness.py` | **新建**（唯一实现本文件）：7 个 `StrEnum`（`SessionEventKind` / `TaskStatus` / `SessionErrorKind` / `ApprovalOutcome` / `ErrorDisposition`↔见 `harness/errors.py`）+ 6 个 `frozen dataclass`（`SessionEvent` / `ApprovalRequest` / `ApprovalResult` / `SessionConfig`）+ 3 个 `Protocol`（`Session` / `ApprovalGate` / `ArgumentValidator`）。**零行为**：`Protocol` 方法体为 `...`，不写 `__post_init__` |
+| `contracts/harness.py` | **新建**（唯一实现本文件）：**4 个** `StrEnum`（`SessionEventKind` / `TaskStatus` / `SessionErrorKind` / `ApprovalOutcome`）+ 5 个 `frozen dataclass`（`SessionEvent` / `ApprovalRequest` / `ApprovalResult` / `SessionConfig`）+ 3 个 `Protocol`（`Session` / `ApprovalGate` / `ArgumentValidator`）。**零行为**：`Protocol` 方法体为 `...`，不写 `__post_init__`。⚠️ **`ErrorDisposition` 不进本模块**（判据见 §3.1：无跨信任边界的消费者） |
 | `contracts/__init__.py` | 如有再导出清单，补 `harness`（按现有写法） |
-| `harness/errors.py` | `HarnessError` / `HarnessInternalError` / `DomainPackError` / `ErrorPlan` / `plan_for`（`ErrorDisposition` 放**契约**：它出现在 `ErrorPlan` 的字段类型里）。⚠️ 与已提交实现（`{RETRY, FEEDBACK, ABORT}` + `classify_error`/`resolve_disposition`）的差异见 §8 的 **`R-3`**，**待裁决** |
-| `harness/{session,loop,prompts,trimming,checkpoint,domain_pack}.py`、`harness/context/` | 按 §3.1 的签名落地；遵守 H1/H2 |
+| `harness/errors.py` | `HarnessError` / `HarnessInternalError` / `DomainPackError` / **`ErrorDisposition{RETRY, FEEDBACK, ABORT}`**（# R-3 裁决：采纳实现侧命名与 API，**删除**契约初稿的 `ErrorPlan` / `plan_for`）+ `classify_error` / `resolve_disposition`（保留）+ **`error_kind(error, *, disposition) -> SessionErrorKind`**（新增，见 §3.1） |
+| `harness/{session,loop,prompts,trimming,checkpoint,domain_pack}.py`、`harness/context/` | 按 §3.1 的签名落地；遵守 H1/H2。**其中 `prompts` / `trimming` / `errors` 三件已被实现侧先行落地**，按 §7.1 的清单收口 |
 | `foundation/errors.py` | **新增** `ToolArgumentsInvalidError(BenchError)`（信任边界校验失败；与 `tools/registry.py::ToolArgumentError` **不合并**，分工见 §3.4） |
 | `security/capabilities.py` | **新增**一个纯函数（建议 `narrow_granted(granted: CapabilitySet, allowlist: frozenset[Capability]) -> CapabilitySet`）实现"只能收窄"的交集；装配点必须经它 |
-| `tests/unit/test_harness_*.py` | §6.1 的 `H-1`~`H-9`（另需覆盖 §5.2 的渲染分支与退出码表：每一 `kind` 至少一条用例） |
-| `tests/security/test_harness_*.py` | §6.2 的 `S1` / `S1-b` / `S1-c` / `S3` / `S-new-1`~`5` |
+| `tests/unit/test_harness_*.py` | §6.1 的 `H-1`~`H-10`（另需覆盖 §5.2 的渲染分支与退出码表：每一 `kind` 至少一条用例） |
+| `tests/security/test_harness_*.py` | §6.2 的 `S1` / `S1-b` / `S1-c` / `S3` / `S-new-1`~`6` |
 | `docs/design/interfaces/audit.md` | **已落**（2026-09-19，`be63b31`）：§2.2 的 kind→outcome 表把 `TOOL_CALL` 的允许集放宽为 `{OK, ERROR, DENY}` + `D1~D4` + 修订记录。**下游联动**：`contracts/audit.py` 与 `observability/audit.py` **均无需改动**（已读源码核实：成员本就存在；读取侧只校验枚举取值，不校验 kind×outcome 组合）；**0 处测试会因此翻红**（全仓无 kind→outcome 允许集断言） |
 | `docs/design/architecture.md` | **已落**（2026-09-19）：§2.4 表首行与 §5.2 同步为同步 `Iterator`，§12 登记修订 |
 
 **不变量**：`contracts/` 仍是**零行为**（只有类型、`Protocol`、常量），
 `tests/unit/test_architecture_layers.py` 的 `V1`（契约层不引第三方）必须继续通过。
+
+### 7.1 裁决落地清单（2026-09-19 `R-1`~`R-4` 的收口动作，供领导开开工令）
+
+> 背景：实现侧已先行落地 `harness/{errors,prompts,trimming}.py`。下列动作**逐个可核对**；
+> 未列出的部分（`session` / `loop` / `checkpoint` / `domain_pack` / `context`）按 §3.1 直接写即可。
+
+| # | 文件 | 必做动作 | 关联裁决 |
+| --- | --- | --- | --- |
+| 1 | `harness/trimming.py` | `select_tools(specs, *, tier: CapabilityTier, allowlist: frozenset[str]) -> tuple[ToolSpec, ...]`：**轴由 `HardwareTier` 改为 `CapabilityTier`**（§8 的 `R-1`）；**档位 → 能力预算表**随之改为按 `CapabilityTier` 组织；**加 `allowlist` 关键字参数**（"只收窄"，`allowlist` 之外一律不暴露）；`exposed_tool_names(...)` 改为**派生自** `select_tools`（§3.1），不得另维护一份预算判定 | `R-1`、§3.1 |
+| 2 | `harness/prompts.py` | 三个 builder 的 `tier` 由 `HardwareTier` 改为 **`CapabilityTier`**；`build_system_*` **保持不接受外部内容**（这是被采纳的更强写法，不要为了 pack 片段而放宽——§8 的 `R-2`）；**新增** `pack_context_message(*, pack_name, fragments) -> ChatMessage \| None`（`role=USER` 数据消息，§3.1） | `R-1`、`R-2` |
+| 3 | `harness/errors.py` | `ErrorDisposition` 成员名 `FATAL` → **`ABORT`**（保留在 `harness/errors.py`，**不搬进 `contracts/`**，判据见 §3.1）；**新增** `error_kind(error, *, disposition)`（§3.1）；若已写 `ErrorPlan` / `plan_for` ⇒ **删除**（与 `classify_error` / `resolve_disposition` 是同一件事的两套表示） | `R-3` |
+| 4 | `harness/loop.py` | 按 §3.3 的六步写；未暴露/未知工具的 `denied_reason` **分两个短码**（`not_exposed` / `unknown_tool`）；`ERROR.text` **不得**直接用 `str(exc)`（§2.4）；`arguments_summary` 按 §2.5.3 | `R-4`、§3.3 |
+| 5 | `harness/context/__init__.py` | `assemble(..., data_context: Sequence[ChatMessage] = ())` + **`role is USER` 的结构性守卫**（§3.1 / §4.4 第 2 条） | `R-2` |
+| 6 | `tests/unit/test_harness_{trimming,prompts,errors}.py` | 与 1~3 同步：档位轴断言（`H-4`）、`data_context` 守卫（`H-10`）、`error_kind` 的类型映射、`ErrorDisposition` 成员集（`{retry, feedback, abort}`） | `R-1`~`R-3` |
+| 7 | `contracts/harness.py` | **无需改动**（§8 的 `R-1`~`R-4` 均不触及 §2 的字段/成员/不变式）⇒ 已先行落地的版本可直接提交 | — |
+
+⚠️ **顺序**：第 1、2 项（档位轴）**必须先于** `loop.py`，否则波 2 会建在错误的轴上。
 
 ---
 
@@ -968,6 +1062,7 @@ with Session(
 | --- | --- | --- |
 | 2026-09-19 | **初版**：定义 `SessionEvent`（7 kind / 14 字段 / I1~I10）、`TaskStatus`、`SessionErrorKind`、审批门四类型、`SessionConfig`、`Session` Protocol；**裁决 `Session.run` 用同步 `Iterator`**（并给出 `ADR-0015` §5.1.2 与 `architecture.md` 两处引用的处置）；冻结 `harness/` 8 件的签名、调用方向与禁止项；把工具调用决策序列的每步入参/出参写死；定义 `ArgumentValidator` 的契约语义（选型待上报）；给出领域包最小 schema 与 fail-secure 失败模式表 | 领导核实的契约缺口（`SessionEvent` 未定义）；`ADR-0015` §5.1.2 / §5.3 / §5.4.1 / §7.2 / §7.3；`interfaces/{model,tools,policy,audit}.md`；`architecture.md` §2.4 / §5.2 / §5.3 / §11；`src/agent_sec_perf/`（读代码核实现状） |
 | 2026-09-19 | **第二版（按领导追加指令）**：① §2.5 扩为**完整审批通路**——`arguments_summary` 字段与生成口径（`S1`~`S5`）、"确认请求由 `POLICY_DECISION` 承载"的位置规定（§2.5.2，**不新增 kind**）、回传机制四候选的对比与采纳理由（§2.5.4）、**fail-secure 六条**（`R1`~`R6`：无通路 / 无 TTY / 抛异常 / 形状非法 / 超时 / `ALLOW_ALWAYS`）；I2 同步改写为"存在 ⇔ `requires_confirmation` **且**配置了 gate"；② **新增 §5「装配点与 `cli/` 最小入口」**——`Session` 的 9 项装配清单（类型 / 默认 / 构造方 / 失败处置 / 装配顺序）、每种 `kind` 的渲染与序列化分支表、退出码表、输出通道两条硬规定；③ §3.1 补 `summarize_arguments`、`approval` 默认 `None`；§3.3 步 4 补三条 fail-secure 分支；④ §6.2 补 `S-new-4`/`S-new-5`；⑤ 登记实现侧差异 `R-1`~`R-4` 与本文中 `AsyncIterator` 字样的解读规则 | 所有者把本轮定位明确为"**基线实现（base project）**：能跑起来 + 可作后续性能改动的比较基准"（**不追求功能完备，但必须闭环可跑**）；`architecture.md` §5.2 的审批路径原来没有承载类型 ⇒ `loop` 与 `cli` 无法并行。**不含任何性能度量机制**（明确排除） |
+| 2026-09-19 | **第三版（冻结稿；按领导对 `R-1`~`R-4` 的裁决收口）**：① **`R-2` 落地**——§3.1 的 `prompts` 改为 `build_system_prompt` / `build_system_message` / `build_user_message` / **`pack_context_message`**，`context.assemble` 增 `data_context` 形参与 **`role is USER` 的结构性守卫**，§4.2 字段表与 §4.4 第 2 条同步；② **`R-3` 落地**——`ErrorDisposition` 收敛为 `{RETRY, FEEDBACK, ABORT}` 并**留在 `harness/errors.py`**，删除 `ErrorPlan` / `plan_for`，新增 `error_kind(error, *, disposition)`；**写入"什么进 `contracts/`"的判据**（有跨信任边界的消费者，而非"是不是枚举"）；③ **`R-1`/`R-4` 的裁决结论与依据**写入 §8 的 `R` 表（**本节不再留"待裁决"**），并新增 **§7.1「裁决落地清单」**（7 项可核对动作 + "档位轴必须先于 `loop`"的顺序）；④ §2.4 澄清 `SessionErrorKind` 五个成员的**判定口径**（含 `TRANSIENT` 与 `STALLED` 的产出时机）与"`text` 不得取 `str(exc)`"；⑤ §2.7 的 `D2` 补 `not_exposed` / `unknown_tool` 的**判定点**；⑥ §6.1 补 `H-10`、§6.2 补 `S-new-6`（包片段进 SYSTEM 必须被结构性拒绝） | 领导的四项裁决（`R-1` 以契约为准改实现且不新增 ADR；`R-2`/`R-3` 采纳实现、授权契约修订；`R-4` 保留契约）+ "冻结稿不得留待裁决"的要求 + 契约类型归属判据（`ErrorDisposition` 留 `harness/errors.py`）。**§2 的字段 / 成员 / 不变式一律未改**（已先行落地的 `contracts/harness.py` 无需返工） |
 
 **待同步项**（本文件已给规范；逐项状态如下）：
 
@@ -981,11 +1076,11 @@ with Session(
 
 **实现侧差异登记（`R-1`~`R-4`，2026-09-19）**：`implementer-harness-leaf` 在本契约撰写**同期**
 提交了三个叶子模块（`fe82cce` 分级错误 / `83835af` 提示分级 / `68ce680` 工具裁剪），与本契约有四处
-不一致。**已上报领导裁决，裁决前以本契约为准**（实现侧不得自行取舍，评审时按本节核对）：
+不一致。**四处均已于 2026-09-19 由领导裁决，结论如下（本节不留"待裁决"）**：
 
-| # | 不一致 | 证据 | 处理 |
+| # | 不一致 | 证据 | **结论（2026-09-19 裁决）** |
 | --- | --- | --- | --- |
-| `R-1` | **裁剪 / 提示分级用了 `HardwareTier`（S/M/L）作输入轴**，本契约（依 `model.md` §2.3.1/§2.3.2、`ADR-0010` §5.2/§5.3、`SRS §14`）要求 **`CapabilityTier`**（模型能力档位） | `harness/trimming.py` 的 `select_tools(specs, tier: HardwareTier)`、`harness/prompts.py` 的 `build_system_prompt(tier: HardwareTier)` | **待裁决**。用硬件档位会让"同一模型换更强硬件 ⇒ 多给工具"，与"同一模型在不同硬件上能力档位不变"冲突；若判保留实现，则属**决策级合并两条轴 ⇒ 须新增 ADR** |
-| `R-2` | 提示模板**拒收任何外部内容参数**（`build_system_message` 无外部参数），本契约原写"pack 片段进 SYSTEM 并标注为数据段" | `harness/prompts.py` | **待裁决**；架构侧倾向**采纳实现**（"SYSTEM 只来自本模块常量"比"标注为数据段"更强），并把 pack 片段改为装配进一条 `role=USER` 数据消息 —— 属本契约的收紧 |
-| `R-3` | `ErrorDisposition` 成员名与落点：实现为 `{RETRY, FEEDBACK, ABORT}` 落在 `harness/errors.py`（另有 `classify_error` / `resolve_disposition`），本契约写 `FATAL` + `ErrorPlan` / `plan_for` | `harness/errors.py` | **待裁决**；架构侧倾向采纳实现（命名与 API 合理且已测），由本契约改 `FATAL`→`ABORT` 并去掉 `ErrorPlan` |
-| `R-4` | 未暴露工具与未知工具**未区分**（实现统一按"未知工具"处置），本契约要求 `denied_reason` 分 `not_exposed` / `unknown_tool` | `harness/trimming.py` 的 `exposed_tool_names` | **待裁决**；架构侧倾向保留区分（`REQ-HARNESS-03` 的裁剪要可审计），代价仅一个短码 |
+| `R-1` | **裁剪 / 提示分级用了 `HardwareTier`（S/M/L）作输入轴**，本契约（依 `model.md` §2.3.1/§2.3.2、`ADR-0010` §5.2/§5.3、`SRS §14`）要求 **`CapabilityTier`**（模型能力档位） | `harness/trimming.py` 的 `select_tools(specs, tier: HardwareTier)`、`harness/prompts.py` 的 `build_system_prompt(tier: HardwareTier)` | **以契约为准 ⇒ 改实现，且不新增 ADR。** 依据（领导核定）：`CapabilityTier` **已在契约中给出占位成员且 docstring 明文许可先用**（`model.md` §2.3；`U1` 指的是"名字/档数可能变"，**不是"没有成员可用"**——与 `G-2`"没有任何载体"不同），故使用它**不构成**把未决项固化成既成事实；而 `HardwareTier` 一侧有**硬禁令**（两条轴正交、"不得相互转换"），用错轴等价于"同一模型换更强硬件就多给工具" ⇒ 与 `REQ-HARNESS-03/04` 要防的事直接冲突。**落地动作见 §7.1 第 1、2、6 项**（已另派实现者，须先于 `loop`） |
+| `R-2` | 提示模板**拒收任何外部内容参数**（`build_system_message` 无外部参数），本契约原写"pack 片段进 SYSTEM 并标注为数据段" | `harness/prompts.py` | **采纳实现（更强），契约收紧。** 依据：SYSTEM 位置"只由本模块常量产生"是**结构性**保证，强于"标注为数据段"的纪律；pack 片段改经 `prompts.pack_context_message` 装配成 **`role=USER` 数据消息**，由 `context.assemble` 校验角色（**已在本笔落地**，见 §3.1 / §4.4 第 2 条 / `S-new-6`）。**§2 的类型不受影响** |
+| `R-3` | `ErrorDisposition` 成员名与落点：实现为 `{RETRY, FEEDBACK, ABORT}` 落在 `harness/errors.py`（另有 `classify_error` / `resolve_disposition`），本契约写 `FATAL` + `ErrorPlan` / `plan_for` | `harness/errors.py` | **采纳实现。** 命名与 API 收敛到 `{RETRY, FEEDBACK, ABORT}` + `classify_error` / `resolve_disposition`（**保留在 `harness/errors.py`**，判据见 §3.1：无跨信任边界的消费者）；契约**删除** `ErrorPlan` / `plan_for`；**新增** `error_kind(error, *, disposition)`（`ERROR` 事件需要、实现尚未覆盖的那一小段）。**已在本笔落地**；落地动作见 §7.1 第 3、6 项。**§2 的类型不受影响**（`ErrorDisposition` 本就不在 §2） |
+| `R-4` | 未暴露工具与未知工具**未区分**（实现统一按"未知工具"处置），本契约要求 `denied_reason` 分 `not_exposed` / `unknown_tool` | `harness/trimming.py` 的 `exposed_tool_names` | **保留契约（必须可分）。** 依据（领导核定）："**被裁剪**"与"**模型幻觉**"在审计里同形 ⇒ `REQ-SEC-06` 的可回放性受损；本项目已因"同形"吃过两次教训（`False/True`；`ERROR`）。判定点已写进 §2.7 的 `D2` 与 §3.3 步 1；落地动作见 §7.1 第 4 项。**§2 的字段/成员不受影响**（短码写在审计 `detail`，不是契约类型） |
