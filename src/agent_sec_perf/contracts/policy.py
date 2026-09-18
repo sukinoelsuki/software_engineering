@@ -45,6 +45,12 @@ class PolicyRequest:
     ``arguments`` 是**已校验**的结构化参数，但仍按**数据**处理：策略不得把它们拼接进
     命令、路径、正则或表达式求值（``REQ-SEC-03``）；需要路径时经
     ``foundation.paths.resolve_within`` 再比较。
+
+    ``requested`` **必须非空**（前置条件）：工具未声明任何能力属**声明缺陷**，应在构造**之前**
+    拒绝，不得构造出空集请求。注意该前置条件**只是调用方约定**——``frozenset[Capability]``
+    在类型层面表达不了"非空"，而本层是零行为契约层（不得加 ``__post_init__``）⇒ 空集的兜底
+    由 :class:`PolicyEngine` 的实现负责（硬拒绝，见其 docstring 与
+    ``docs/design/interfaces/policy.md`` §2.5「补充规定」）。
     """
 
     session_id: str
@@ -78,6 +84,13 @@ class PolicyEngine(Protocol):
     fail-secure：**求值阶段**任何异常都收敛为
     ``allow=False, requires_confirmation=True, risk_level=CRITICAL``，**禁止**逃逸为 allow；
     而 ``AuditSink.emit()`` 的异常**必须原样冒泡**，不得被上述收敛吞掉（二者处置相反）。
+
+    ``PolicyRequest.requested`` 为空集（上游构造缺陷）⇒ **硬拒绝**：``allow=False``、
+    ``requires_confirmation=False``、``risk_level=CRITICAL``，且**仍须** ``emit`` 一条
+    ``POLICY_DECISION`` 事件（``capability=None``，由 ``detail["requested"] == []`` 表达）。
+    多元素时 ``capability`` 取**确定性代表**（缺失集合非空则取其名字最小者，否则取请求中最小者）；
+    完整集合写入 ``detail["requested"]``。规则与理由见
+    ``docs/design/interfaces/policy.md`` §2.5「补充规定」。
     """
 
     def decide(self, request: PolicyRequest) -> PolicyDecision: ...
