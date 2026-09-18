@@ -18,6 +18,7 @@
 >   - **A-12**（`REQ-PERF-04` 验收入口）：`e41af26` 改为实际入口 `make bench-round`（证据 `Makefile:138` + `rounds.py:602`）
 >   - **A-14**（`bench/nightly`/`bench/data` 分支表缺口）：`1240806` 在 `ADR-0013` §9 + `git-workflow.md` §2 补登，附例外条件
 >   - **A-2 残留项**（`docs/proposals/0003` 头部状态栏仍为「待决策」）：架构师复核时发现，`7b6356f` 已同步为采纳结论
+>   - **B1 / B4 现状盘点路径修正（记录员，依据 `617f564`）**：`bench/{proc,paths,errors}.py` 经 `git mv` 提升为 `src/agent_sec_perf/foundation/`；B1 盘点表（line 60 / 65）与 B4 框架缺口表（line 95）里的旧路径已同步为 `foundation/...`（`bench/evaluate.py` 未动、仍在 `bench/`）。**A 表原始描述保留作历史证据，未改写**（本段只承载处置状态）。
 > - **已随收篇处理**：A-13（0012 / 0002 / 0004 收篇，0005 明确为"待人类逐条确认的清单"）
 > - **仍未修**：**A-11**（README/SECURITY 宣称"CI 密钥扫描"，CI 实际不查）——列在 [devlog 0013 §7](../devlog/0013-2026-09-18-一致性核查与地基修复.md) 优先级 D
 > - **引文更正（A-3）**：A-3 行（line 34）所引 `git-workflow §3.3` 系改版前编号；2026-09-18 核对后实际为 **§4「Pull Request → 合并策略」**（§3 为提交规范）。ADR-0013 §5.5 同名错误引用已由其在 **§9.4** 更正。A 表原始描述保留作历史证据，本段承载更正。
@@ -57,12 +58,12 @@
 | --- | --- | --- |
 | `bench/protocol.py` | 协议常量、S/M/L→模型映射、任务集与夹具白名单、`RunParams.validate()`、`server_argv()` | ✅ |
 | `bench/assets.py` | 模型清单解析（sha256 唯一真源）、流式哈希 | ✅ |
-| `bench/proc.py` | **全项目唯一子进程封装层**（非特权 uid + rlimit + 最小环境） | 由 AST 测试强制 |
+| `foundation/proc.py` | **全项目唯一子进程封装层**（非特权 uid + rlimit + 最小环境） | 由 AST 测试强制 |
 | `bench/runner.py` | llama-server 生命周期 + `chat()` + 日志解析（prefill/gen 速率） | ✅ |
 | `bench/evaluate.py` | 产物客观判定（AST + mypy --strict + 行为等价 + pytest + 变异测试） | ✅ |
 | `bench/stats.py` / `bench/store.py` / `bench/report.py` | 统计汇总 / schema 校验与索引 / 人读报告与比较签名 | ✅ |
 | `bench/rounds.py` | 一轮编排 + CLI（`--validate-only`、`--merge-into`） | 无专属单测（手工验证 + 静态校验） |
-| `bench/paths.py` / `bench/errors.py` | 路径白名单（防穿越）/ 异常层次 | 间接覆盖 |
+| `foundation/paths.py` / `foundation/errors.py` | 路径白名单（防穿越）/ 异常层次 | 间接覆盖 |
 
 测试基建：`tests/unit/` 9 个模块 + `conftest.py`，**全部为 `unit` 标记**；
 其中 `test_bench_encapsulation.py`（源码级 AST 约束）与 `test_cnb_config.py`（流水线约束）是"把约定做成机器检查"的载体。
@@ -92,7 +93,7 @@
 | --- | --- | --- |
 | **模型层** | `/opt/models` + `.ide/assets/models.txt` + `.ide/fetch-assets.sh` + `bench/runner.py`（llama-server 生命周期与 chat）+ `bench/protocol.py`（档位映射） | 统一模型抽象（本地/云端可路由、能力可探测）⇒ `REQ-MODEL-03/05/06` 无载体 |
 | **Harness** | 仅 `bench/protocol.py` 的**评测提示词**（不是 agent 循环） | 全部：ReAct 循环、工具裁剪、提示分级、检查点 ⇒ `REQ-HARNESS-01~08` 无载体 |
-| **安全层** | `bench/proc.py`（隔离 + rlimit + 最小环境 + 唯一进程入口）、`bench/paths.py`（路径白名单）、`bench/errors.py`、`bench/evaluate.py`（不可信产物执行边界） | 权限/能力模型、策略引擎、审计、拒答；`docs/design/threat-model/` ⇒ `REQ-SEC-01~09` 无载体 |
+| **安全层** | `foundation/proc.py`（隔离 + rlimit + 最小环境 + 唯一进程入口）、`foundation/paths.py`（路径白名单）、`foundation/errors.py`、`bench/evaluate.py`（不可信产物执行边界） | 权限/能力模型、策略引擎、审计、拒答；`docs/design/threat-model/` ⇒ `REQ-SEC-01~09` 无载体 |
 | **工具层** | 无 | 全部（文件读写/命令执行/检索）⇒ `REQ-TOOL-01` 无载体 |
 | **UX / CLI** | 仅 `bench/rounds.py` 的 argparse 入口（基准专用） | 产品 CLI（Typer）+ 权限确认交互 ⇒ `REQ-UX-01~04` 无载体 |
 | **可观测** | `bench/store.py`（结构化 JSON）、`bench/report.py`、`rounds.configure_logging` | 产品级结构化日志 + 审计查看器 ⇒ `REQ-OBS-01` 无载体 |
