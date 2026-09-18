@@ -17,8 +17,23 @@ PKG     ?= agent_sec_perf
 # 是否在测试中启用并行执行
 PYTEST_XDIST ?= -n auto
 
-.PHONY: help setup lint format format-check typecheck test test-cov test-security \
-        security security-bandit security-audit commit-check changelog bump \
+# ---------------------------------------------------------------------------
+# 本地 git 钩子层：**显式开关**，不再从 `$CI` 推断
+#
+# 为什么改（2026-09-18 实测，一致性报告 A-11 / 新增 A-15）：
+#   `$CI` 的**存在性**对"云开发工作区"与"CI 流水线"是同一个值，语义却不同——
+#   本工作区实测 `CI` 未设置，而更早的工作区 `CI=true` 只是"云环境"（不是流水线）。
+#   用它当判据 ⇒ 钩子被静默跳过 ⇒ 文档声称的本地防线（detect-private-key、
+#   commit-msg 校验）**从未运行**且长期无人察觉。凡"声称已生效的缓解措施"
+#   必须能被实测，故这里改为**谁需要关闭，谁自己写 LOCAL_HOOKS=0**。
+#
+#   语义：LOCAL_HOOKS=1（默认）⇒ 安装钩子，并**断言它真的存在**（hooks-check）；
+#        LOCAL_HOOKS=0        ⇒ 不安装、也不断言（见 .cnb.yml：CI 流水线用不到本地钩子）。
+# ---------------------------------------------------------------------------
+LOCAL_HOOKS ?= 1
+
+.PHONY: help setup hooks-check lint format format-check typecheck test test-cov test-security \
+        security security-bandit security-secrets security-audit commit-check changelog bump \
         check branch-status clean distclean \
         bench-round bench-publish bench-verify-assets
 
@@ -35,13 +50,22 @@ setup: ## 安装开发环境（虚拟环境 + 依赖 + git hooks）
 	@command -v $(UV) >/dev/null 2>&1 || pip install -q uv
 	@echo ">> 同步依赖"
 	$(UV) sync --extra dev --extra security
-	@if [ "$$CI" = "true" ]; then \
-		echo ">> CI 环境：跳过 pre-commit 钩子安装"; \
+	@if [ "$(LOCAL_HOOKS)" = "0" ]; then \
+		echo ">> LOCAL_HOOKS=0：跳过 pre-commit 钩子安装（并跳过钩子存在性断言）"; \
 	else \
 		echo ">> 安装 pre-commit 钩子"; \
 		$(UV) run pre-commit install --hook-type pre-commit --hook-type commit-msg; \
+		echo ">> 复验钩子确实已安装"; \
+		$(MAKE) --no-print-directory hooks-check; \
 	fi
 	@echo ">> 完成。运行 make check 进行首次自检。"
+
+hooks-check: ## 断言本地 git 钩子**真的已安装**（fail-secure；CI 以 LOCAL_HOOKS=0 显式跳过）
+	@if [ "$(LOCAL_HOOKS)" = "0" ]; then \
+		echo ">> hooks-check：LOCAL_HOOKS=0（CI 流水线不需要本地钩子），跳过"; \
+	else \
+		bash scripts/check-local-hooks.sh; \
+	fi
 
 # ---------------------------------------------------------------------------
 # 代码质量
@@ -83,10 +107,13 @@ test-security: ## 仅运行安全与对抗性测试（**零用例视为失败**�
 # ---------------------------------------------------------------------------
 # 安全
 # ---------------------------------------------------------------------------
-security: security-bandit security-audit ## 运行全部安全检查
+security: security-bandit security-secrets security-audit ## 运行全部安全检查
 
 security-bandit: ## 静态安全扫描
 	$(UV) run bandit -q -r $(SRC)
+
+security-secrets: ## 密钥泄漏扫描（复用 pre-commit 的 detect-private-key，避免两套口径）
+	$(UV) run pre-commit run detect-private-key --all-files
 
 security-audit: ## 依赖漏洞审计
 	$(UV) run pip-audit
@@ -106,7 +133,9 @@ bump: ## 按提交历史自动提升版本号并打标签（需人工确认）
 # ---------------------------------------------------------------------------
 # 聚合
 # ---------------------------------------------------------------------------
-check: format-check lint typecheck test security ## 完整自检（提交 PR 前必须全绿）
+# hooks-check 放在最前：本地防线缺失时应**立刻**失败并给出修复命令，
+# 而不是等 100+ 个测试跑完再说（见 hooks-check 目标与 scripts/check-local-hooks.sh）。
+check: hooks-check format-check lint typecheck test security ## 完整自检（提交 PR 前必须全绿）
 
 # ---------------------------------------------------------------------------
 # 分支卫生（只读，不阻断）

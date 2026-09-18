@@ -26,7 +26,7 @@
 
 ### 验证
 
-- [ ] `make check` 全绿（format-check + lint + typecheck + test + security）
+- [ ] `make check` 全绿（hooks-check + format-check + lint + typecheck + test + security）
 - [ ] 在本地实际运行过改动涉及的功能，而非"看代码觉得对"
 - [ ] 报告中给出的命令与输出是**真实执行过的**
 
@@ -61,6 +61,9 @@
       —— 该目录**已建立**（2026-09-18，13 条 `T-01`~`T-13`；状态分布：已缓解并验证 **0** /
       部分缓解 8 / 未缓解 5）。若本次改动的威胁**尚未登记**，先新增条目再实现
       （编号只增不复用；**状态升级的唯一依据是仓库里可执行的用例**）
+- [ ] 本次新增/依赖的**安全缓解措施**（本地钩子、CI stage、探针）已被**实测确实在运行**，
+      而非只写在文档里（[`SECURITY.md` **S-8**](../../SECURITY.md)：声称的保护必须可实测；
+      本地钩子层由 `make hooks-check` 断言，CI 阶段由 `tests/unit/test_cnb_config.py` 计数断言）
 - [ ] 新增依赖/资产已记录来源、版本与许可证
 
 ---

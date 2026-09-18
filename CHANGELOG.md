@@ -78,9 +78,22 @@
   未核验标【待核验】）与自研边界（5 项落到具体层 + 13 项不自研清单）；状态「提议中」，
   选定组件须所有者逐条确认。**回应 `CODEBUDDY.md` §9 两项待办（base project 选型冻结、
   目录结构与模块划分 ADR），并登记 A-1**。
+- 新增 [`scripts/check-local-hooks.sh`](scripts/check-local-hooks.sh) 与 `make hooks-check`：
+  **断言本地 git 钩子层真的已安装**（存在 / 可执行 / 是 pre-commit 生成的 / 指向本仓库配置 /
+  钩子类型正确），并已成为 `make check` 的第一步。
+- 新增 `make security-secrets`：复用 pre-commit 的 `detect-private-key` 做密钥扫描
+  （纳入 `security` 聚合，本地与 CI 同一实现，不另写一套）。
 
 ### Changed
 
+- **本地钩子安装改为显式开关 `LOCAL_HOOKS`**（默认 `1` = 安装并**断言**；`0` = 不安装、不断言，
+  仅 CI 流水线使用）：原实现按 `$CI` 环境变量的**存在性**推断，而"云开发工作区"与"CI 流水线"
+  在该变量上可能同值、语义却相反，导致本地钩子被静默跳过。`.cnb.yml` 的 `make setup` /
+  `make check` 均显式写 `LOCAL_HOOKS=0`。
+- **`make check` 增加"本地钩子层存在性"断言**（`hooks-check`，置于最前）并新增密钥扫描
+  （`security-secrets`）；CI 的 `push` / `pull_request` 流水线各增一段**具名 `secret-scan` stage**。
+- **`SECURITY.md` §3 新增红线 `S-8`**：声称已生效的缓解措施必须能被**实测**（钩子 / CI stage /
+  探针必须可验证确实在运行），只有文档描述不算；`S-1` 的检查方式同步为三处可实测防线。
 - **安全门禁 `bandit` 口径统一为"不读配置"**：`pre-commit` 去掉 `-c`、`pyproject.toml` 失效的 `[tool.bandit]`（`skips=["B101"]`）删除，两处门禁规则集一致；净效果因不再跳过 `B101` 而**更严**（`9804a0a`）。
 - **沙箱方案**：由单一用户态命名空间隔离（bwrap/firejail）改为**分层抽象 + 能力探测 + fail-secure 降级**。
 - SRS 定向修订至 **v0.1.1**：更新 `REQ-SEC-05` 验收标准、假设项 A-1/A-2、风险 R-4 与复用清单。
@@ -120,6 +133,15 @@
 
 ### Fixed
 
+- **修复"声称已生效的本地防线实际从未运行"的根因**（一致性报告 A-11 / 新增 A-15）：
+  `make setup` 原先在 `CI=true` 时**静默跳过**钩子安装，而云开发工作区恰好带着 `CI=true`
+  ⇒ `.git/hooks/` 长期为空，`.pre-commit-config.yaml` 声明的 `detect-private-key`
+  与 commit-msg 校验从未运行，且**没有任何检查会因此失败**。现改为显式开关 + 可执行断言
+  （见上方 Added / Changed），并追加 5 个"钩子被移除/被顶替"场景的回归用例
+  （`tests/unit/test_local_gates.py`，用临时 git 仓库真实复现）。
+- **修正隔离模式的静态守卫缺失**：新增 `tests/unit/test_isolation_mode_guard.py`，
+  机器断言 `Makefile` 默认 `BENCH_ISOLATION ?= user`，且 `Makefile` 与 `.cnb.yml` 中
+  **不得出现**把隔离选成 `root` 的写法（T-08 残余项；裁决见 `devlog 0014` §7）。
 - **`make test-security` 在零 `security` 用例时 fail-secure**：原实现把 pytest 退出码 5（无匹配用例）当正常并 `exit 0`，安全测试层缺失或标记丢失时门禁假绿；现改为 `exit 1` 并说明原因（`a39ad48`，关联一致性报告 A-9）。`tests/security/` 现有 13 个用例，不会误伤。
 - **修正基准数据发布的 refspec**：数据分支首次创建时必须用**全限定引用名**
   （`HEAD:refs/heads/bench/data`）——远端已存在带斜杠的分支时，短写法

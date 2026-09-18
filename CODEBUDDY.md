@@ -77,7 +77,7 @@
 1. 明确任务    →  关联 Issue 编号；没有 Issue 先建议创建
 2. 选择分支    →  feat/ fix/ perf/ security/ docs/ exp/ + <issue>-<slug>
 3. 实现        →  最小改动 + 同步测试 + 同步文档
-4. 本地自检    →  make check（format-check + lint + typecheck + test + security）必须全绿
+4. 本地自检    →  make check（hooks-check + format-check + lint + typecheck + test + security）必须全绿
 5. 提交        →  Conventional Commits，格式见下
 6. 开 PR       →  套用模板，逐条对照验收标准；禁止自评自合绕过门禁
 ```

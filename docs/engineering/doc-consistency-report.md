@@ -22,6 +22,21 @@
 >   - **B1 / B4 现状盘点路径修正（记录员，依据 `617f564`）**：`bench/{proc,paths,errors}.py` 经 `git mv` 提升为 `src/agent_sec_perf/foundation/`；B1 盘点表（line 60 / 65）与 B4 框架缺口表（line 95）里的旧路径已同步为 `foundation/...`（`bench/evaluate.py` 未动、仍在 `bench/`）。**A 表原始描述保留作历史证据，未改写**（本段只承载处置状态）。
 > - **已随收篇处理**：A-13（0012 / 0002 / 0004 收篇，0005 明确为"待人类逐条确认的清单"）
 > - **A-11 重大更正（2026-09-18 第二轮，实测）**：原处置（"把 SECURITY 的『CI 密钥扫描』改为『pre-commit（本地）』"）**事实上从未生效**——本轮回查发现 `.git/hooks/` 在相当长时间内为空、本地 pre-commit 钩子从未安装（`.pre-commit-config.yaml` 的 `detect-private-key` 与 commit-msg 校验实际未运行；`Makefile:38-43` 在 `CI=true` 时故意跳过安装，本工作区处于 CI 上下文、准备后未再跑 `make setup`）。⇒ 当时"密钥扫描"既不在 CI、也不在本地运行，**A-11 实质未缓解**。影响：本轮所有提交都未经任何本地钩子，唯一本地防线是"成员自觉跑 `make check`"。当前状态：团队领导已手动恢复安装钩子（`pre-commit`/`commit-msg` 已就位）；**根因处置待所有者裁决**——是否在 `.cnb.yml` 增加密钥扫描、以及 CI 是否补 `detect-private-key`。远端仍有门禁：`.cnb.yml` 的 `make check`（push 时生效）。详见 [devlog 0014 §3/§5](../devlog/0014-2026-09-18-威胁模型与安全修复.md)。
+> - **A-11 / A-15 已处置（2026-09-18 第三轮，实测）**：所有者裁决"按推荐两条都做"后落地——
+>   ① `Makefile` 的钩子安装由 `$CI` **推断**改为**显式开关** `LOCAL_HOOKS`（默认 `1`；CI 流水线显式写 `LOCAL_HOOKS=0`）；
+>   ② "本地钩子存在"做成**可执行断言**：`make hooks-check`（`scripts/check-local-hooks.sh`，
+>   断言存在 / 可执行 / 是 pre-commit 生成的 / 指向本仓库配置 / 钩子类型正确），
+>   且它现在是 **`make check` 的第一步**；
+>   ③ CI 增加**具名 `secret-scan` stage**（`make security-secrets`，复用 pre-commit 的
+>   `detect-private-key`，不另写一套扫描），并由 `tests/unit/test_cnb_config.py` 的计数断言
+>   保证"每个门禁流水线都有该阶段"；
+>   ④ 检查本身**非恒过**：`tests/unit/test_local_gates.py` 用临时 git 仓库复现
+>   "缺失 / 不可执行 / 被顶替 / 指向别的配置 / 钩子装串"五种状态并逐一断言报红。
+>   ⇒ **S-1（密钥零入库）现在有三处可实测的防线**（提交时钩子 / `make check` 的 `security-secrets` / CI 的 `secret-scan`），
+>   S-8（"声称已生效的缓解措施必须可实测"）作为新红线写入 `SECURITY.md` §3。
+>   残余：**CI 侧未经一次真实流水线验证**（本地无 CNB runner），待下次 push 核对；
+>   `pre-commit run --all-files` 不覆盖未跟踪文件（提交时钩子覆盖暂存区）。
+>   详见 `devlog 0014` §3/§7、[`security-scan-gate-config.md`](security-scan-gate-config.md) §7。
 > - **引文更正（A-3）**：A-3 行（line 34）所引 `git-workflow §3.3` 系改版前编号；2026-09-18 核对后实际为 **§4「Pull Request → 合并策略」**（§3 为提交规范）。ADR-0013 §5.5 同名错误引用已由其在 **§9.4** 更正。A 表原始描述保留作历史证据，本段承载更正。
 > - 其余新增发现（`.codebuddy/rules/git-workflow/` 分支摘要未列 `bench/*`、`ruff` 格式化 `docs/` 代码块等）已登记于 devlog 0013 §7，由对应角色处理。
 > - **新增 A-15（2026-09-18 第二轮）**：记录在 A 表——"一个被误认为已生效的缓解措施"这一类问题（文档/配置声称的保护与实际不符）。本轮实例即上述 A-11 的本地 pre-commit 钩子。

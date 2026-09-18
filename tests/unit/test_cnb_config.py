@@ -41,6 +41,11 @@ def _lines() -> list[str]:
     return CNB_YML.read_text(encoding="utf-8").splitlines()
 
 
+def _gate_pipeline_block() -> str:
+    """取 `"**":` 门禁流水线组的正文（截止到 `bench/nightly:` 之前）。"""
+    return "\n".join(_lines()).split('"**":', 1)[1].split("bench/nightly:", 1)[0]
+
+
 @pytest.mark.unit
 def test_stage_scripts_avoid_bash_only_shell_options() -> None:
     """阶段脚本不得使用 `pipefail`（dash 不支持，会直接中止整段脚本）。"""
@@ -78,6 +83,49 @@ def test_bench_crontab_keys_are_declared() -> None:
     assert '"crontab: 0 4 * * 2-6,0"' in text, "夜轮（周二~周日 04:00）缺失"
     assert '"crontab: 0 4 * * 1"' in text, "深跑（周一 04:00）缺失"
     assert "bench/nightly:" in text, "基准流水线必须挂在单一明确分支上"
+
+
+@pytest.mark.unit
+def test_every_gate_pipeline_has_a_dedicated_secret_scan_stage() -> None:
+    """每个门禁流水线都必须有具名密钥扫描阶段（一致性报告 A-15 的处置①）。
+
+    为什么强调"具名"：A-15 的教训是"声称已生效的缓解措施"可能根本没在运行。
+    藏在 `make check` 聚合里的扫描无法从流水线上被**直接看到**，
+    具名 stage 才让"CI 到底有没有这道扫描"成为肉眼可核的事实。
+
+    判据刻意用**成对计数**，而不是"文本里出现过"：2026-09-18 的变异探针实测，
+    后者在"只删掉其中一个流水线的阶段"时**依然通过**——保护没少（`make check`
+    仍会跑它），但可观测性少了，而本测试要钉住的正是可观测性。
+    成对计数同时让"新增一条门禁流水线"也必须补上这道阶段。
+    """
+    gate = _gate_pipeline_block()
+
+    gate_runs = gate.count("make check LOCAL_HOOKS=0")
+    secret_stages = gate.count("- name: secret-scan")
+
+    assert gate_runs > 0, "门禁流水线组里应当至少有一条执行完整门禁的流水线"
+    assert secret_stages == gate_runs, (
+        f"具名密钥扫描阶段数（{secret_stages}）与门禁流水线数（{gate_runs}）不一致"
+    )
+    assert "make security-secrets" in gate, "密钥扫描必须复用 Makefile 的目标（唯一事实来源）"
+
+
+@pytest.mark.unit
+def test_ci_setup_and_check_disable_local_hooks_explicitly() -> None:
+    """流水线里的 `make setup` / `make check` 必须**显式**带 `LOCAL_HOOKS=0`。
+
+    两个方向都防：
+    ① 忘带 ⇒ `make check` 里的 `hooks-check` 找不到本地钩子（流水线里本就不需要）⇒ 红灯；
+    ② 误以为"这个开关可以随便关" ⇒ 本断言把它钉在流水线语境里，
+       而本地默认仍是 `LOCAL_HOOKS=1`（安装并断言）。
+    """
+    offenders = [
+        line.strip()
+        for line in _lines()
+        if line.strip().startswith(("make setup", "make check")) and "LOCAL_HOOKS=0" not in line
+    ]
+
+    assert offenders == [], f"流水线中的 make setup/check 必须显式带 LOCAL_HOOKS=0：{offenders}"
 
 
 @pytest.mark.unit

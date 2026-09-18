@@ -49,13 +49,24 @@
 
 | 编号 | 规则 | 检查方式 |
 | --- | --- | --- |
-| S-1 | 禁止提交任何密钥、令牌、私钥、真实凭证 | `pre-commit` 的 `detect-private-key`、CI 密钥扫描 |
+| S-1 | 禁止提交任何密钥、令牌、私钥、真实凭证 | 三处同时生效：① 提交时本地 `detect-private-key` 钩子；② `make check` 的 `security-secrets`（`pre-commit run detect-private-key --all-files`）；③ CI 的具名 `secret-scan` stage（同一目标） |
 | S-2 | 禁止硬编码内部地址、账号、生产环境信息 | 自评审清单 + CI 关键词扫描 |
 | S-3 | 依赖必须锁定版本并记录来源 | 锁文件（`uv.lock` 等）+ `make security` |
 | S-4 | 禁止引入来源不明的权重/二进制/脚本 | PR 模板中的"依赖与来源"必填项 |
 | S-5 | 不可信事件（PR 等）触发的 CI 不得访问密钥 | `.cnb.yml` 中密钥操作仅置于可信事件 |
 | S-6 | 安全相关检查不得被静默绕过 | 绕过必须附 ADR 说明 |
 | S-7 | 豁免标记（`# nosec` / `# noqa`）**标记行只写规则号**（标记行上不写理由）；理由写在**紧邻其上的独立注释行**，且**理由中不得出现其它规则号** | `make check` 的 `bandit` 段无 `Test in comment` 告警；`tests/unit/test_bench_encapsulation.py` 的 E4 断言（`# nosec` 后的 id 集合**恰等于**预期） |
+| S-8 | **声称已生效的缓解措施必须能被实测**：钩子 / CI stage / 探针必须可验证"确实在运行"；**只有文档描述不算缓解措施** | `make hooks-check`（本地钩子层存在性断言，含"是 pre-commit 生成的、指向本仓库配置、钩子类型正确"）+ `tests/unit/test_local_gates.py`（用临时 git 仓库证明该检查**非恒过**）+ CI 具名 `secret-scan` stage + `tests/unit/test_cnb_config.py`（计数断言：门禁流水线数 == 具名密钥扫描阶段数） |
+
+> **为什么 S-8 是硬性要求**（2026-09-18 实测，一致性报告 A-11 / 新增 A-15，见
+> [`devlog 0014`](docs/devlog/0014-2026-09-18-威胁模型与安全修复.md) §3/§6）：
+> 文档与配置长期声称"本地 `pre-commit` 提供密钥扫描与提交信息校验"，而 `.git/hooks/`
+> 实质**长期为空**——`make setup` 用 `$CI` 的**存在性**推断"要不要装钩子"，
+> 而云开发工作区恰好带着 `CI=true`。于是"声称的保护"与"真正运行的保护"之间是空的，
+> **且没有任何检查会因"钩子不存在"而失败**，问题因此活了很久才被发现。
+> 处置：钩子安装改为**显式开关** `LOCAL_HOOKS`（不再从 `$CI` 推断），
+> 并把"钩子真的装了"做成可执行检查 `make hooks-check`（`make check` 的第一步）；
+> CI 侧补具名 `secret-scan` stage。**凡"缺失应失败"的约束，必须把"缺失"本身做成失败条件。**
 
 > **为什么 S-7 是硬性格式**（2026-09-18 实测，依据 [`ADR-0014`](docs/adr/0014-benchmark-automation.md) §2.9）：
 > 扫描器会把 `# nosec` / `# noqa` **之后**的文本当作**规则号候选**——理由里只要出现某个规则 ID，

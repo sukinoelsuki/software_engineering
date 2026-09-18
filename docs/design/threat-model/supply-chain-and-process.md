@@ -32,7 +32,13 @@
     ② 标记后**只能有规则号**（`:144-146`，正则见 `:44`）；
     ③ 每行 id 集合**恰好等于**预期（`:147-153`，期望集 `:33-39` = 1×`B404` + 3×`B603` + 3×`S603`）；
   - **变异探针**已证明该检查**非恒过**（`aedbcc8`：`# nosec B404, B101` 与"标记后加自由文本"两种违规均使用例失败）；
-  - **逐点豁免理由 + 4↔4 承载关系**：豁免点与规则号一一对应、无多无少（`ADR-0014 §2.9.1(b)`）。
+  - **逐点豁免理由 + 4↔4 承载关系**：豁免点与规则号一一对应、无多无少（`ADR-0014 §2.9.1(b)`）；
+  - **【2026-09-18 新增】"检查本身是否在运行"已被机器断言**：`make check` 的第一步
+    `hooks-check`（`scripts/check-local-hooks.sh`）断言本地钩子层**真的已安装**
+    （存在 / 可执行 / 是 pre-commit 生成的 / 指向本仓库配置 / 钩子类型正确），
+    `tests/unit/test_local_gates.py` 用临时 git 仓库证明该检查**非恒过**（五种状态逐一报红）；
+    CI 侧有具名 `secret-scan` stage，并由 `tests/unit/test_cnb_config.py` 的**计数断言**保证
+    "每个门禁流水线都有这道阶段"。依据：devlog 0014 §7 优先级 A 第 1 条。
 - **残余风险**：
   1. **E4 的扫描范围只有 `src/`**（`test_bench_encapsulation.py:25` 的 `SRC_ROOT`）
      ⇒ `tests/`、`scripts/`、`.cnb.yml`、`docs/` 里的豁免标记**完全不受检查**。
@@ -52,6 +58,17 @@
   4. **`ruff` 的 `RUF100` 不在门禁语义内**：`# noqa: <不在当前选集中的规则号>` 不会报错
      （`S404` 处于 preview、当前未启用即为实例，`ADR-0014 §2.9.1(a)`）
      ⇒ 登记表里可能出现"**虚的规则号**"。
+  5. **【2026-09-18 实测·已处置但留残余】"本地 pre-commit 防线"一度整体不存在**：
+     `Makefile` 的 `setup` 在 `CI=true` 时**跳过钩子安装**，而云开发工作区恰好带着
+     `CI=true` ⇒ `.git/hooks/` 长期为空，`detect-private-key` 与 commit-msg 校验
+     **从未运行**，而文档两处都声称它在（一致性报告 A-11 / 新增 A-15）。
+     处置：钩子安装改为**显式开关** `LOCAL_HOOKS`、`make check` 首条断言 `hooks-check`、
+     CI 补具名 `secret-scan` stage（见上"现有缓解"末条、
+     [`security-scan-gate-config.md`](../../engineering/security-scan-gate-config.md) §7）。
+     **残余（不得省略）**：① `pre-commit run --all-files` 只覆盖**已跟踪**文件
+     （未 `git add` 的新文件不在 `make security-secrets` 范围内；提交时钩子看暂存区可覆盖）；
+     ② **CI 侧未经一次真实流水线验证**（本轮无 CNB runner，"stage 语法与目标已本地跑通"
+     ≠ "CI 里真的执行了"），待下次 push 核对。
 - **验证方式**：
   - **已有**：E4（结构性，`make check` 内自动跑）；E1/E2/E3（人工，命令与判据见 `ADR-0014 §2.9.1`）。
   - **本轮实测证据（可复现）**——原结论**已复现**，且**排除了一次可能的混淆**：
@@ -92,9 +109,12 @@
     做成**显式白名单**（当前是写死的单文件，等同于隐式白名单）；
     c. **显式化配置发现**：给门禁的 bandit 命令加 `-c pyproject.toml`，**或**把配置迁到 `.bandit`
     ——**两者择一，不得两处各写一套**（`Makefile` 不在架构师域，需**领导裁决**）。
-- **相关**：`SECURITY.md` §3 `S-6`/`S-7`、`ADR-0014 §2.9`/§2.9.1/§2.9.2、
+- **相关**：`SECURITY.md` §3 `S-6`/`S-7`/`S-8`、`ADR-0014 §2.9`/§2.9.1/§2.9.2、
   `docs/engineering/definition-of-done.md` §1（第 17 行）、`tests/unit/test_bench_encapsulation.py`、
-  `devlog 0013` §4（证据链）/§6 第五条。
+  `devlog 0013` §4（证据链）/§6 第五条；
+  本地钩子层与 CI 密钥扫描：`scripts/check-local-hooks.sh`、`tests/unit/test_local_gates.py`、
+  `tests/unit/test_cnb_config.py`、[`security-scan-gate-config.md`](../../engineering/security-scan-gate-config.md) §7、
+  `devlog 0014` §3/§6。
 
 ---
 

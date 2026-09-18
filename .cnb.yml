@@ -25,6 +25,12 @@
 #      （`.ide/Dockerfile` 的 `FROM python:3.12-bookworm`）分叉。
 #      现统一为 `python:3.12-bookworm`，与开发镜像同源。
 #      依据与证据：docs/devlog/0012 §5、docs/notes/reproducibility-and-gates.md。
+#   3. **流水线里 `make setup` / `make check` 必须带 `LOCAL_HOOKS=0`**（2026-09-18 新增）。
+#      本地 git 钩子层（pre-commit / commit-msg）是**开发机**的防线，流水线里没有意义；
+#      而 `make check` 现在包含 `hooks-check`（断言钩子真的装了）⇒ 不带该开关会红灯。
+#      注意：**不要**把 `LOCAL_HOOKS=0` 理解成"可以随便关"——它是**显式**开关，
+#      用来取代原先按 `$CI` 环境变量推断的做法（那个判据把云开发工作区误判成流水线，
+#      导致本地钩子从未安装且无人察觉，见一致性报告 A-11/A-15）。
 # ============================================================================
 
 "**":
@@ -40,12 +46,21 @@
           script: |
             set -eu
             command -v make >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq --no-install-recommends make)
-            make setup
+            make setup LOCAL_HOOKS=0
 
         - name: verify
           script: |
             set -eu
-            make check
+            make check LOCAL_HOOKS=0
+
+        - name: secret-scan
+          script: |
+            set -eu
+            # 密钥扫描做成**独立具名 stage**（而不是只藏在 make check 的 security 聚合里）：
+            # 一致性报告 A-15 要求"声称已生效的缓解措施"可被**实测确实在运行**，
+            # 而"CI 里到底有没有这道扫描"只有具名 stage 能在流水线上被直接看到。
+            # 命令复用 Makefile 的同一个目标（唯一事实来源），不在此另写一套。
+            make security-secrets
 
         - name: commit-message
           script: |
@@ -76,12 +91,19 @@
           script: |
             set -eu
             command -v make >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq --no-install-recommends make)
-            make setup
+            make setup LOCAL_HOOKS=0
 
         - name: verify
           script: |
             set -eu
-            make check
+            make check LOCAL_HOOKS=0
+
+        - name: secret-scan
+          script: |
+            set -eu
+            # 与 push 流水线同一条具名阶段，理由见上（A-15：缓解措施必须可实测）。
+            # 本阶段**不使用任何凭据**，符合"不可信事件不得访问密钥"的约束（SECURITY.md S-5）。
+            make security-secrets
 
   # --------------------------------------------------------------------------
   # 云原生开发：从页面启动 WebIDE / VS Code Remote-SSH 时使用自定义开发环境
@@ -147,6 +169,22 @@
             echo "--------------------------------------------------"
             make branch-status || echo "[warn] 分支自检未执行（不影响开发）"
 
+        - name: local-hooks
+          script: |
+            set -eu
+            # 启动期断言：**声称已生效的本地防线必须真的在**（一致性报告 A-15）。
+            # 判据：`.venv` 存在 ⇒ 工作区已准备（`make setup` 跑过）⇒ 此时钩子缺失就是缺陷，红灯；
+            #       `.venv` 不存在 ⇒ 尚未准备，没有可断言的义务 ⇒ 只给出提示，不判红
+            #       （否则每次新会话都恒红，红灯会被当成背景噪声——那比不检查更糟）。
+            echo "--------------------------------------------------"
+            echo " 本地钩子层自检（pre-commit / commit-msg 是否真的已安装）"
+            echo "--------------------------------------------------"
+            if [ ! -d .venv ]; then
+              echo "[info] 工作区尚未准备（无 .venv）：先执行 make setup，再复验本地钩子层"
+            else
+              make hooks-check
+            fi
+
 # ============================================================================
 # 基准自动化（仅挂在 bench/nightly 分支）
 #
@@ -200,8 +238,8 @@ bench/nightly:
         - name: verify
           script: |
             set -eu
-            make setup
-            make check
+            make setup LOCAL_HOOKS=0
+            make check LOCAL_HOOKS=0
         - name: round-quick
           script: |
             set -eu
@@ -236,7 +274,7 @@ bench/nightly:
         - name: prepare
           script: |
             set -eu
-            make setup
+            make setup LOCAL_HOOKS=0
         - name: round-nightly
           timeout: 90m
           script: |
@@ -274,7 +312,7 @@ bench/nightly:
         - name: prepare
           script: |
             set -eu
-            make setup
+            make setup LOCAL_HOOKS=0
         - name: round-deep
           timeout: 150m
           script: |
@@ -315,7 +353,7 @@ bench/nightly:
         - name: prepare
           script: |
             set -eu
-            make setup
+            make setup LOCAL_HOOKS=0
         - name: round-manual
           timeout: 90m
           script: |

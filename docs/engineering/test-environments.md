@@ -40,7 +40,7 @@
 
 ```bash
 cd /workspace
-make check            # format-check + lint + typecheck + test + security
+make check            # hooks-check + format-check + lint + typecheck + test + security
 make test             # 只跑非 benchmark 测试
 ```
 
