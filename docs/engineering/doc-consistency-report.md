@@ -37,6 +37,13 @@
 >   残余：**CI 侧未经一次真实流水线验证**（本地无 CNB runner），待下次 push 核对；
 >   `pre-commit run --all-files` 不覆盖未跟踪文件（提交时钩子覆盖暂存区）。
 >   详见 `devlog 0014` §3/§7、[`security-scan-gate-config.md`](security-scan-gate-config.md) §7。
+> - **新增 A-16（2026-09-18 第三轮，实测）**：**文档允许的提交类型 `security` 被门禁拒绝**——
+>   `git-workflow.md` §3 的类型表、`.codebuddy/rules/` 摘要与 `CODEBUDDY.md` / `AGENTS.md`
+>   都写着 `type ∈ {… security}`，而 `.pre-commit-config.yaml` 调用的 `cz check` 实际 schema 为
+>   `(build|bump|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)`，**不含 `security`**
+>   （本次实测：以 `security(ci): …` 提交被 `commitizen check` 挡下，`exit code 14`）。
+>   ⇒ 与 A-3/A-11/A-15 同族（**文档声明 ≠ 门禁执行**），只是发生在**提交规范**上。
+>   **处置需裁决**（改门禁 schema 或改文档口径），未决前安全类提交只能借用 `fix`/`ci`。
 > - **引文更正（A-3）**：A-3 行（line 34）所引 `git-workflow §3.3` 系改版前编号；2026-09-18 核对后实际为 **§4「Pull Request → 合并策略」**（§3 为提交规范）。ADR-0013 §5.5 同名错误引用已由其在 **§9.4** 更正。A 表原始描述保留作历史证据，本段承载更正。
 > - 其余新增发现（`.codebuddy/rules/git-workflow/` 分支摘要未列 `bench/*`、`ruff` 格式化 `docs/` 代码块等）已登记于 devlog 0013 §7，由对应角色处理。
 > - **新增 A-15（2026-09-18 第二轮）**：记录在 A 表——"一个被误认为已生效的缓解措施"这一类问题（文档/配置声称的保护与实际不符）。本轮实例即上述 A-11 的本地 pre-commit 钩子。
@@ -63,6 +70,7 @@
 | **A-13** | `docs/devlog/README.md` 索引中有 **4 篇同时"进行中"**（0002/0004/0005/0012） | `CODEBUDDY.md` §2/§10.2「**最新一篇 devlog 的 §7 是唯一任务清单**」+ devlog README「议题讲完即收篇…旧篇成为封闭记录」 | 无法判断当前该只看 0012 §7，还是仍有多个尾巴 | 收口 0002/0004/0005（标注"已收篇/已被修正"或把未决项并入 0012 §7） |
 | **A-14** | `ADR-0014` §2.1 把 `bench/nightly`、`bench/data` 定为**长驻分支**（"对 ADR-0013 的显式例外"）；devlog 0012 §7 自认需"登记到 ADR-0013 分支表" | `ADR-0013` §5.3「短期分支必须合回 develop」，全篇无 bench 分支；`git-workflow.md` §2 分支表也无 | 分支模型权威文档与实际运行的两条长驻分支不一致 ⇒ 按 ADR-0013 会误判它们"该被合回/删除" | 在 ADR-0013 分支表登记这两个分支及例外条件 |
 | **A-15** | `docs/design/**` / `SECURITY.md` / `.pre-commit-config.yaml` 声称"本地 pre-commit 提供密钥扫描 / 提交规范校验"（即 A-11 原处置"改为 pre-commit（本地）"所依赖的前提） | 实际 `.git/hooks/` 长期为空、钩子从未安装（`Makefile:38-43` 在 `CI=true` 下跳过安装，本工作区处于 CI 上下文、准备后未再跑 `make setup`）；`detect-private-key` 与 commit-msg 校验实际未运行 | **文档/配置承诺的保护不真实存在**——密钥泄漏的本地防线从未运行、且长期无人察觉（与 A-11 同源：A-11 的"本地扫描"前提本身不成立） | 把"声称已生效的缓解措施"做成**可执行检查**：① CI 是否真有 `detect-private-key` stage；② 启动期断言 `.git/hooks/pre-commit` 存在；当前钩子已由团队领导手动恢复，根因处置（CI 是否补密钥扫描）待所有者裁决 |
+| **A-16** | `docs/engineering/git-workflow.md` §3 提交类型表、`.codebuddy/rules/` 摘要、`CODEBUDDY.md` / `AGENTS.md`：`type ∈ {… security}`；`SECURITY.md` §5「安全修复走 `security/<issue>-<slug>` 分支」 | `.pre-commit-config.yaml` 实际调用的 `cz check`（`cz_conventional_commits`）schema 为 `(build\|bump\|chore\|ci\|docs\|feat\|fix\|perf\|refactor\|revert\|style\|test)`，**不含 `security`** | 按文档写的 `security(x): …` 会被 `commitizen check` 挡下（2026-09-18 实测 `exit code 14`）⇒ 安全类改动**只能借用 `fix` / `ci`**，与"安全改动走 security 分支"的口径不一致，会持续误导 | **需裁决**（二选一）：① 改门禁——换 `cz_customize` 并写 schema 纳入 `security`；② 改文档——从三处类型列表删掉 `security`。未决前一律用 `fix`/`ci`，并在 devlog 记明 |
 
 ---
 
