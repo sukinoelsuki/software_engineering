@@ -44,8 +44,12 @@
      ⇒ 越界"能被拦住"目前只是**第 N 层拦截**，且**拦截所需的策略层与审计层都还没实现**。
   2. **`argv[0]` 未被 `run()` 强制为绝对路径**：`resolve_binary()` 是**独立 helper**，
      `run()` 不调用它。`proc.py:131` 写的是"**应**为绝对路径"——**建议而非强制**。
-  3. **`cwd` 未被 `run()` 校验**：`run()` 不调用 `paths.resolve_within()`，
-     白名单靠**调用方自觉**。`SandboxRequest.cwd`「必须落在 `allowed_roots` 内」这一不变式**无承载**。
+  3. **`cwd` 未被 `run()` 校验**：`run()` 不调用 `paths.resolve_within()`，白名单靠**调用方自觉**。
+     `SandboxRequest.cwd`「必须落在 `allowed_roots` 内」（`../interfaces/sandbox.md` §2.5）这一不变式
+     **在 `proc` 层没有任何承载**。现有两个调用方是 `bench/evaluate.py:155` 与 `:187`
+     （后者执行 **模型生成的代码**，隔离档取自 `self._isolation`），其工作目录由 `bench` 自建、
+     **未过 `paths`** ⇒ 这就是"白名单靠自觉"的实例：当前该目录是自建的一次性目录、现状可接受，
+     但**没有任何机制保证**下一个调用方会去校验。
   4. **`isolation="root"` 无机器检查**：`proc.py:135` 写"在 CI 中不得使用"，但没有任何检查阻止；
      且该模式下 `env=dict(os.environ)`（`proc.py:142`）会**继承凭据**（关联 `T-08`）。
   5. **`preexec_fn` 与 `user=`/`group=` 的施加上下文未验证** 【待验证】：
@@ -55,13 +59,24 @@
 - **验证方式**：
   - **已有**（**结构性**，非行为）：`tests/unit/test_bench_encapsulation.py:52-89`、
     `tests/unit/test_architecture_layers.py:244-274`。
-  - **应有**（行为，**缺验证**）——三条用例规格，可直接照写：
-    `a. test_child_process_cannot_write_outside_allowed_roots`：经 `proc.run` 执行
-    `python -c "open('/tmp/..越界..','w')"` → 断言**文件不存在**且返回值表达失败；
-    `b. test_child_process_hits_rlimit_instead_of_host`：子进程内分配超过
-    `ADDRESS_SPACE_LIMIT_B`（`proc.py:39`）→ 断言子进程内 `MemoryError`，宿主不受影响；
-    `c. test_isolation_failure_does_not_fall_back`：构造无法降权的上下文调用
-    `run(isolation="user")` → 断言抛 `IsolationError` 且**命令未被启动**（fail-secure）。
+  - **应有**（行为，**缺验证**）——两条用例规格，可直接照写：
+    `a. test_child_process_hits_rlimit_instead_of_host`：经 `proc.run` 执行子进程并分配超过
+    `ADDRESS_SPACE_LIMIT_B`（`proc.py:39` 的 2 GiB）→ 断言子进程内 `MemoryError`、宿主不受影响
+    （`_apply_limits` 见 `proc.py:113-118`；此路可行经 2026-09-18 代码级核实）；
+    `b. test_isolation_failure_does_not_fall_back`：**确定性写法**——monkeypatch 使
+    `subprocess.run` 抛 `PermissionError` → 断言抛 `IsolationError` 且 `run()` **不回退**为普通执行
+    （`proc.py:159-161`）。**环境依赖写法**（以非 root 身份调用 `user=65534`）在本环境不可用
+    （当前以 root 运行）⇒ **不得**作为唯一判据。
+  - **⛔ 一条必须排除的"假断言"**（2026-09-18：**代码级核实后修正本条目**）：
+    **不得**对 `proc.run` 写"子进程写到白名单外路径 → 文件不存在"这一类断言。
+    `proc.run`（`proc.py:121-174`）**只**设置 rlimit、`cwd`、`env` 与 uid，**没有任何路径白名单参数**
+    ——子进程写到 `/tmp/...` **会成功、文件会存在**。
+    路径白名单的唯一入口是 `foundation.paths.resolve_within`，属**调用方**职责
+    ⇒ 这类断言**只能**归属 [`T-02`](#t-02-路径穿越) 的 `S2`。
+    写成 `proc.run` 的断言是一条**永远不会通过**的假断言——比没有断言更糟：
+    它会诱导实现者给 `proc.run` 增加一个不属于它的职责（并在过程中破坏 `R4` 的"唯一入口"语义）。
+    **本条记录留存的原因**：这正是"存在验证方式"与"验证方式正确"的差别；
+    威胁模型的验证方式**必须同样经过核实**，否则它会以"有验证"的形态误导实现。
   - **【待验证】项的验证方式**：`proc.run([sys.executable, "-c", "import resource;print(resource.getrlimit(resource.RLIMIT_CPU))"], ...)`
     → 断言 soft 限等于 `CPU_LIMIT_S`（证明 `preexec_fn` 在降权后仍然生效）。
 - **相关**：`REQ-SEC-05`/`REQ-SEC-09`、`ADR-0006`（规则 S-1/S-2）、`ADR-0007 §4.1`、
