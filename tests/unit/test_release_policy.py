@@ -62,6 +62,11 @@ def _declared_versions() -> set[str]:
     return {str(item["version"]) for item in _milestones()}
 
 
+def _version_key(version: str) -> tuple[int, ...]:
+    """把 `x.y.z` 拆成可比较的整数元组（用于"严格递增"与"取下一个里程碑"）。"""
+    return tuple(int(part) for part in version.split("."))
+
+
 def _locked_version() -> str:
     """读出 `uv.lock` 里本项目（可编辑安装）的版本号。"""
     project_name = str(_pyproject()["project"]["name"])
@@ -292,19 +297,36 @@ def test_release_editor_refuses_invalid_targets(target: str, reason: str) -> Non
 
 @pytest.mark.unit
 def test_release_plan_is_consistent_and_does_not_touch_the_ladder() -> None:
-    """对真实仓库算一次计划：三份文件都被改写，且改后的版本号四副本仍自洽。"""
-    editor = _load_release_editor()
-    plan = editor.build_plan(version="0.0.1", release_date="2026-09-19")
+    """对真实仓库算一次计划：三份文件都被改写，且改后的版本号仍自洽。
 
+    目标版本**从台账动态取**（当前版本之上的最小者），**不写死**：写死会让这条用例
+    随版本推进自行失效——2026-09-19 实测过一次：首个 `make release VERSION=0.0.1`
+    正是被写死 `0.0.1` 的本用例挡下（编辑完成后门禁红，脚本按设计**回滚**、版本号未变）。
+    那次失败同时证明了两件事：**门禁真的拦得住**、**回滚真的生效**。
+    """
+    editor = _load_release_editor()
+    current = str(_pyproject()["project"]["version"])
+    target = min(
+        (
+            version
+            for version in _declared_versions()
+            if _version_key(version) > _version_key(current)
+        ),
+        key=_version_key,
+    )
+
+    plan = editor.build_plan(version=target, release_date="2026-09-19")
+
+    assert plan.previous_version == current
     assert set(plan.files) == {PYPROJECT_PATH, INIT_PATH, CHANGELOG_PATH}, (
         "计划应恰好涉及三份文件（uv.lock 由 `uv lock` 另行同步，不由本模块改写）"
     )
 
     updated_pyproject = tomllib.loads(plan.files[PYPROJECT_PATH])
-    assert updated_pyproject["project"]["version"] == "0.0.1"
-    assert updated_pyproject["tool"]["commitizen"]["version"] == "0.0.1"
+    assert updated_pyproject["project"]["version"] == target
+    assert updated_pyproject["tool"]["commitizen"]["version"] == target
     assert updated_pyproject["tool"]["lowspec"]["releases"]["milestones"] == _milestones()
 
     init_text = plan.files[INIT_PATH]
-    assert '__version__ = "0.0.1"' in init_text
-    assert "## [0.0.1] - 2026-09-19" in plan.files[CHANGELOG_PATH]
+    assert f'__version__ = "{target}"' in init_text
+    assert f"## [{target}] - 2026-09-19" in plan.files[CHANGELOG_PATH]
