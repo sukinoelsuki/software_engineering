@@ -64,10 +64,10 @@
 | # | 问题 | 结论 | 落点 |
 | --- | --- | --- | --- |
 | Q1 | 12 个类型的字段/成员 | 全部给定（含 2 个新增枚举支撑字段）；**另按 `REQ-PERF-06` 新增 `HardwareTier`**（见 [`model.md`](model.md) §2.3.2） | 各模块文件 §「类型」 |
-| Q2 | `ModelClient.chat(...)` 省略的参数；`tools` 是否可选 | 「否」——5 个参数见下；`tools` **可选，默认 `None`（不暴露任何工具）** | [`model.md`](model.md) §2.1 |
-| Q3 | `PolicyEngine` / `ToolRegistry` 是否也在 `contracts/` 定义 Protocol | **是**——两者都在 | [`policy.md`](policy.md) §2.6、[`tools.md`](tools.md) §2.6 |
+| Q2 | `ModelClient.chat(...)` 省略的参数；`tools` 是否可选 | 「否」——5 个参数见下；`tools` **可选，默认 `None`（不暴露任何工具）** | [`model.md`](model.md) §4 |
+| Q3 | `PolicyEngine` / `ToolRegistry` 是否也在 `contracts/` 定义 Protocol | **是**——两者都在 | [`policy.md`](policy.md) §2.5、[`tools.md`](tools.md) §2.6 |
 | Q4 | `ModelUnavailableError` / `ModelProtocolError` 归属 | **`foundation/errors.py`**（单一异常层次） | [`model.md`](model.md) §3 |
-| Q5 | `PolicyDecision` 是否需要拒绝理由 / 审计关联字段 | **需要**，新增 `risk_level` / `reason` / `audit_id` | [`policy.md`](policy.md) §2.5 |
+| Q5 | `PolicyDecision` 是否需要拒绝理由 / 审计关联字段 | **需要**，新增 `risk_level` / `reason` / `audit_id` | [`policy.md`](policy.md) §2.4 |
 | Q6 | `AuditEvent` 字段 | 12 个字段 + 2 个枚举 | [`audit.md`](audit.md) §2 |
 | Q7 | `sandbox.*` 三类型字段 | 给定；并补齐 ADR-0007 要求的**逐维度**结构 | [`sandbox.md`](sandbox.md) §2 |
 | Q8 | `ToolSpec` / `ExecutionContext` 字段 | 给定；二者由 **Protocol 占位改为 `frozen` dataclass** | [`tools.md`](tools.md) §2 |
@@ -102,6 +102,8 @@
 | U3 | **"本次 / 总是 / 拒绝"的持久授权**表示（`REQ-UX-02`） | 不在本轮 9 条问题内；属 `security/` 的审批门 + 配置存储 | 审批门设计时定义（**本目录不扩写**） |
 | U4 | 审计事件的 `detail` **脱敏规则** | 依赖 `REQ-SEC-07` 的脱敏处理器（`observability/` + structlog 管线，D4） | `observability/` 设计时定；契约只强制"必须已脱敏" |
 | U5 | ~~硬件档位 `S/M/L` 在 `contracts/` 中无对应类型~~ ⇒ **已解决（2026-09-18 领导批准）** | 契约缺该类型时，实现者**无法表达一个已批准的需求**（`REQ-PERF-06`）；**授权判据**：`ADR-0011 §5.1` 已定义 `S/M/L` ⇒ 这是"实现**已有**决策、不是新决策" | **已落**：定义见 [`model.md`](model.md) §2.3.2（与 §2.3.1 的两轴对照表），落地动作见 §5 表；`ADR-0015` 修订记录已登记；实现者补 `contracts/model.py` + 单测（"集合恰好相等"断言） |
+| U6 | ~~`capability`（单值字段）与 `PolicyRequest.requested`（集合字段）的语义缺口~~ ⇒ **已裁决（2026-09-19，`e7d9298` + 本笔）** | 修订前的不变式要求 `POLICY_DECISION` 的 `capability` **无条件非 `None`**，与"返回前必须 `emit`"在**空集**下互斥；**多元素时取哪一个**未定义（该半由架构侧独立查出）；**非 `Capability` 成员**（类型违规）未被覆盖（实现侧第三轮报出） | **已落**：[`policy.md`](policy.md) §2.5「补充规定」给出**三种情形**的规定行为（空集 ⇒ 硬拒绝且**仍须 `emit`**；多元素 ⇒ **合法**、取确定性代表、任一缺失即整体拒绝；非法成员 ⇒ **整体拒绝**，判据必须是**类型检查**而非名字检查）与**确定性代表规则**；不变式改写并扩为 [`audit.md`](audit.md) §2.3 的 **I1~I4**；被否决方案（占位成员 `NONE` / 只靠上游构造前强制 / `capability` 改集合类型 / 非法成员走 `False/True` / 忽略非法成员）理由同在 §2.5。**实现侧待改两处**：求值失败路径补 `detail["requested"]`、新增非法成员硬拒绝分支 |
+| U7 | ~~`audit.directory`（项目级 `.lowspec.toml`）可决定审计落点~~ ⇒ **已裁决（2026-09-19，`a83b938`）** | 项目级配置**跟着仓库走** ⇒ 按 `SECURITY.md` 口径属**不可信输入**；只校验"绝对路径 + 无 NUL"不满足"路径必须做规范化与白名单校验"，且构成**任意路径追加写**原语（污染用户文件 / 把审计写到取证看不到处 / DoS）。实现侧正确地拒绝自行发明 `roots` | **已落**：[`audit.md`](audit.md) §2.5 的 `P1`~`P7`（根集合为**常量** `ALLOWED_AUDIT_ROOTS`、配置期 `ConfigError` / 装配期 `PathNotAllowedError` 两层校验、**先校验后 `mkdir`**、禁止回退默认或静默关审计、校验在构造期）与判据 `W1`~`W8`；威胁模型 `T-02` 已联动登记（**状态与计数不变**）；两项**策略待确认项**见 [`audit.md`](audit.md) §5（`A1` 额外根 / `A2` 是否移除该键） |
 
 ---
 

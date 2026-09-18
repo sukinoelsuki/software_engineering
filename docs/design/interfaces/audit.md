@@ -77,7 +77,7 @@ class AuditOutcome(StrEnum):
 | `outcome` | `AuditOutcome` | 结果（见 §2.2） |
 | `call_id` | `str \| None` | 本次操作标识（`TOOL_CALL` / `POLICY_DECISION` 必填） |
 | `tool_name` | `str \| None` | 相关工具名（`REQ-OBS-01` 按工具检索） |
-| `capability` | `Capability \| None` | 相关能力的**单一代表**（多能力时为字典序最小者；空能力请求时为 `None`）；**完整集合在 `detail["requested"]`**（不变式 I2/I3；取值规则见 [`policy.md`](policy.md) §2.5「补充规定」） |
+| `capability` | `Capability \| None` | 相关能力的**单一代表**（多能力时为字典序最小者；空能力请求 / 含非法成员时为 `None`）；**完整集合在 `detail["requested"]`**（不变式 I2/I3/I4——**必须是 `Capability` 实例或 `None`，不得是裸 `str`**；取值规则见 [`policy.md`](policy.md) §2.5「补充规定」） |
 | `risk_level` | `RiskLevel \| None` | 风险等级（策略决策与审批时给出） |
 | `detail` | `Mapping[str, object]` | 结构化附加信息；**必须已脱敏**（`REQ-SEC-07`） |
 
@@ -120,14 +120,21 @@ class AuditEvent:
 > 架构侧复核确认）。修订后：**完整集合进 `detail["requested"]`，单值字段是它的确定性代表**，
 > 两者由 I3 锁定一致；空集与多元素的规定行为见 [`policy.md`](policy.md) §2.5「补充规定」。
 
-**不变式**（`POLICY_DECISION` 部分于 2026-09-19 修订为 I1~I3，缘由见 §4）：
+**不变式**（`POLICY_DECISION` 部分于 2026-09-19 修订为 I1~I4，缘由见 §4）：
 
 - **I1（关联键，无条件）**：`kind == POLICY_DECISION` ⇒ `call_id` / `risk_level` 均非 `None`；
 - **I2（能力集合必须可回放）**：`kind == POLICY_DECISION` ⇒ `detail["requested"]` **存在**，
-  为 `list[str]`——元素是 `Capability` 的**值**、**升序**、无重复；请求不可解析时记 `[]`
-  （此时 `detail["error"]` 存在，见 [`policy.md`](policy.md) §2.5）；
+  为 `list[str]`——元素是 `Capability` 的**值**、**升序**、无重复。以下三种情形记 `[]`，
+  且**必须**用判别键区分来源（否则"没有能力信息"与"请求非法"在审计里同形）：
+  ① **确为空集**（既无 `error` 也无 `invalid`）；② **请求不可解析**（含 `error`）；
+  ③ **含非 `Capability` 成员**（含 `invalid`）——见 [`policy.md`](policy.md) §2.5；
 - **I3（单值字段与集合字段必须一致）**：`capability is None` **⇔** `detail["requested"] == []`；
   且 `capability is not None` ⇒ `capability.value ∈ detail["requested"]`；
+- **I4（`capability` 的类型，硬约束）**：`capability` 必须是 `Capability` 实例或 `None`——
+  **不得**是裸 `str`；即使取值与某个能力名相同也**必须**拒绝（`StrEnum` 与 `str` 的 `==` / `hash`
+  相等 ⇒ 只做名字/取值校验会让类型违规**静默通过**。2026-09-19 实测：`frozenset({"read_file"})`
+  被当作 `READ_FILE` **放行**，且 **ALLOW 路径**的事件同样破 I2/I3）。
+  详见 [`policy.md`](policy.md) §2.5「非法成员的规定行为」；
 - `kind == TOOL_CALL` ⇒ `call_id` / `tool_name` 非 `None`；
 - `detail` 中**不得**出现密钥/令牌/凭据/个人数据（`REQ-SEC-07`）；脱敏由 `observability/`
   的处理器保证（U4），契约层只强制"已脱敏"这一前置条件。
@@ -245,8 +252,8 @@ class AuditSink(Protocol):
 3. import 补 `field`（`dataclasses`）、`Capability` / `RiskLevel`（`contracts/policy.py`）；
 4. `AuditSink` **保持不变**；
 5. 模块 docstring 删除"字段未规定 ⇒ 占位"，改为指向本文件并重申"失败必须冒泡"。
-6. `AuditEvent` docstring 里的不变式一句按 §2.3 修订后的 I1~I3 改写（**仅注释**）；
-7. **字段与类型不变**——本次是语义澄清，不改 schema，**不得**为 I1~I3 在契约层加运行期校验
+6. `AuditEvent` docstring 里的不变式一句按 §2.3 修订后的 I1~I4 改写（**仅注释**）；
+7. **字段与类型不变**——本次是语义澄清，不改 schema，**不得**为 I1~I4 在契约层加运行期校验
    （`contracts/` 的零行为不变量，见 [`README.md`](README.md) §5）。
 
 ---
@@ -257,6 +264,7 @@ class AuditSink(Protocol):
 | --- | --- | --- |
 | 2026-09-19 | §2.3 的不变式第 1 条改写为 I1~I3：`capability` 的"非 `None`"改为**以 `requested` 非空为前置**，并把**完整能力集合**规定为 `detail["requested"]`；同步 §2.3 字段表、生产者表与 §3 清单 | 实现侧报出的契约缺口（空集下"必须 `emit`"与"`capability` 非 `None`"互斥）；裁决、规则与验证判据见 [`policy.md`](policy.md) §2.5「补充规定」 |
 | 2026-09-19 | **新增 §2.5「落点来源与路径白名单」**：`audit.directory` 来自项目级 `.lowspec.toml`（不可信输入）⇒ 现只校验"绝对路径 + 无 NUL"**不满足** `SECURITY.md` 的路径白名单硬性要求。规定 P1~P7（根集合为常量 `ALLOWED_AUDIT_ROOTS`、配置期 `ConfigError` / 装配期 `PathNotAllowedError` 两层校验、先校验后 `mkdir`、禁止静默降级回退、校验时点在构造期、冒泡规则不变），并给出 W1~W8 判据 | 实现侧报出的接口决策缺口（`resolve_within` 的 `roots` 需调用方提供，"允许哪些根"属接口决策）；复核成立：不加约束时构成**任意路径追加写**原语；威胁模型侧同步见 `T-02`（**不升降状态、不改计数**） |
+| 2026-09-19 | I2 的 `[]` 来源由两种更正为**三种**（新增"含非 `Capability` 成员"，判别键 `invalid`）；**新增 I4**——`capability` 必须是 `Capability` 实例或 `None`（裸 `str` 即使取值合法也拒绝）；`capability` 字段表同步 | 同族缺口的第三轮报出（类型违规输入）与架构侧独立复现：裸 `str` 取值合法时会被**放行**，审计的 `capability` 类型与 I2/I3 同时被破；规定与规范见 [`policy.md`](policy.md) §2.5「非法成员的规定行为」 |
 
 ---
 

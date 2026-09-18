@@ -102,6 +102,12 @@ class PolicyRequest:
   表达不了"非空"（`mypy --strict` 拦不住），`contracts/` 又是**零行为**层
   （[`README.md`](README.md) §5）⇒ 契约层无法校验，按威胁模型口径记为**部分缓解**；
   兜底由 `PolicyEngine` 的防御分支负责（§2.5）。
+- **前置条件二：每个元素必须是 `Capability` 成员**（**类型**要求）。值恰好等于合法能力名的
+  **裸 `str` 同样不合规**——`StrEnum` 与 `str` 的 `==` / `hash` 相等，故"只做名字或取值校验"
+  会**静默通过**（2026-09-19 实测：`frozenset({"read_file"})` 被当成 `READ_FILE` **放行**）。
+  声明式来源的能力名**必须**先经 `security/capabilities.py` 的 `parse_capabilities()`
+  （未知名即拒绝，**不跳过**）再进入 `requested`；**不得**把原始声明字符串直接塞进来。
+  同上，契约层无法校验 ⇒ 兜底仍由 `PolicyEngine` 的防御分支负责（§2.5）。
 - **谁消费**：`PolicyEngine.decide()`。
 - **安全语义**：`arguments` 已过校验，但仍是**数据**。策略若需要路径，必须走
   `foundation.paths.resolve_within` 再比较，**禁止**自行做字符串前缀判断。
@@ -142,7 +148,7 @@ class PolicyDecision:
 | `True` | `False` | 自动放行 |
 | `True` | `True` | 自动路径不放行，**须人工确认**后执行 |
 | `False` | `True` | 自动拒绝，但**可升级**为人工确认（`HIGH` 的保守取值、求值失败） |
-| `False` | `False` | **硬拒绝**（`CRITICAL`：连人工确认也不接受）；来源：能力未授予、`requested` 为空的构造缺陷 |
+| `False` | `False` | **硬拒绝**（`CRITICAL`：连人工确认也不接受）；来源：能力未授予、`requested` 为空集、`requested` 含非 `Capability` 成员（后两者均属**上游构造缺陷**） |
 
 > 这四格是 `REQ-SEC-01`（"未授权操作拦截率 100%"）的**可断言形式**：
 > 测试要对每一格给出期望行为，而不是只测 `allow` 一个布尔。
@@ -201,6 +207,7 @@ class PolicyEngine(Protocol):
 | **空集** `frozenset()` | **否**——属**上游构造缺陷** | `PolicyEngine` **硬拒绝**：`allow=False` / `requires_confirmation=False` / `risk_level=CRITICAL`；`reason` 说明"未声明所需能力"；`capability=None`；**仍必须 `emit`** 一条 `POLICY_DECISION`（`outcome=DENY`） |
 | **单元素** | 是 | 常规求值；`capability` = 该成员 |
 | **多元素** | **是**——"先读后写"这类操作本就需要多个能力，**不得**拒绝 | 常规求值；**任一缺失即整体拒绝**（`CapabilitySet.missing` 语义，不做"部分满足"降级）；`capability` 取**确定性代表**（见下）；完整集合进 `detail["requested"]` |
+| **含非 `Capability` 成员**（类型违规） | **否**——属**上游构造缺陷**（与空集同族） | `PolicyEngine` **硬拒绝**：`allow=False` / `requires_confirmation=False` / `risk_level=CRITICAL`；`capability=None`；`detail["requested"]=[]`；非法项进 `detail["invalid"]`；**仍必须 `emit`**（`outcome=DENY`）。**整体拒绝**，**禁止**忽略非法成员后用合法子集继续求值——详见下方「非法成员的规定行为」 |
 
 **`capability` 的取值规则（确定性，不得依赖枚举声明顺序）**：
 
@@ -211,6 +218,75 @@ class PolicyEngine(Protocol):
 两条规则都保证 `capability ∈ requested`（因为 `missing ⊆ requested`），从而满足
 [`audit.md`](audit.md) §2.3 的不变式 I3。**不得**改用枚举声明顺序或集合迭代顺序：那会让同一
 输入在不同版本给出不同审计内容，历史事件无法比对——"确定性"本身就是"可回放"的前提。
+
+**非法成员的规定行为（2026-09-19 第二次裁决）**：`requested` 里出现**非 `Capability` 成员**
+（类型违规）时的处置。
+
+**实测证据（架构侧 2026-09-19 独立复现，非采信转述）**：
+
+| 输入 | 现行为 | 破的约束 |
+| --- | --- | --- |
+| `frozenset({"bogus"})` | **拒绝**（`False/False`），但事件里 `capability` 是**裸 `str` `"bogus"`**；`detail["requested"] == ["bogus"]` | 字段类型 `Capability \| None`；[`audit.md`](audit.md) §2.3 的 I2（元素须是 `Capability` 的值）与 I3（`capability.value` 直接 `AttributeError`） |
+| `frozenset({"read_file"})`（**裸 `str`、取值恰好合法**） | **`allow=True`——放行！**，且 `capability` 仍是裸 `str` | 同上，且**在 ALLOW 路径上**也破 I2/I3 |
+
+第二条是"**必须做类型检查、不得做名字检查**"的依据：`StrEnum` 与 `str` 的 `==` / `hash` 相等
+⇒ `frozenset({"read_file"}) - frozenset({Capability.READ_FILE})` 是**空集** ⇒ 缺失判定为"无缺失"
+⇒ 走常规求值路径，"名字巧合合法"就被**静默当作**该能力。**任何"解析名字再比较"的兜底都不可靠。**
+
+**裁决：(a) 视为与空集同族的构造缺陷 ⇒ 硬拒绝**。逐项规定：
+
+| 项 | 规定 |
+| --- | --- |
+| 判据 | **类型检查**：只要存在 `not isinstance(member, Capability)` 的成员即命中（**不看取值是否合法**） |
+| 是否整体拒绝 | **整体拒绝**。**禁止**"忽略非法成员、用剩下合法的继续求值"——静默丢弃不可解析成员等于**悄悄缩小请求面**：我们**无法知道**丢弃后剩下的能力是否足以覆盖本次操作（例：工具其实需要 `WRITE_FILE`，声明被写错成 `writes_files` 而被丢弃）。"默认**缩小**请求"与"默认**放宽**请求"是同一件事（`REQ-SEC-01` 的 100% 拦截率随之失效） |
+| 决策取值 | `allow=False` / `requires_confirmation=False`（**硬拒绝**）/ `risk_level=CRITICAL`——与空集同族（理由见下"为什么空集取硬拒绝"）；且与实现侧已钉住的不变式 `not allow and not requires_confirmation ⇒ risk_level is CRITICAL` 一致 |
+| `capability` | `None`（**没有任何合法的"单一代表"可选**——这正是不变量 I4 要求"必须是 `Capability` 实例或 `None`"的由来） |
+| `detail["requested"]` | `[]`（沿用 `[]` = "**没有可用的能力信息**"；**不得**只记合法子集——那会让读者以为"合法部分被考虑了/被授予了"，与"整体拒绝"的处置不符） |
+| `detail["invalid"]` | **新增**：非法成员的安全标识列表（规范见下） |
+| `outcome` | `DENY`（与 [`audit.md`](audit.md) §2.2 的 kind→outcome 约束一致） |
+| `reason` | 中文，说明"请求含非法能力成员，整体拒绝"；**不回显**具体取值（`reason` 会进确认界面 / CLI；取值细节属诊断信息，放 `detail`） |
+
+**`detail["invalid"]` 的规范（内容不可信，只作数据）**：
+
+1. **升序、去重**（确定性：同一输入同一输出，与 `capability` 代表规则的取向一致）；
+2. `str` 取值 ⇒ **先脱敏 + 截断**（`foundation.logging.sanitize_for_display`，上限 **32** 字符——
+   与 `parse_capabilities()` 回显未知能力名的既有口径一致），**不得**整段回显；
+3. **非 `str` 取值 ⇒ 只记类型名**（形如 `<int>`，**不回显内容**）：非字符串对象没有"名字"可谈，
+   回显 `repr` 会把任意对象带进长期留存的证据；
+4. **永远只是数据**：查看器 / 调用方**不得**据此做权限判定或名称解析；**禁止**把它写进
+   `capability` 或 `requested`（那正是本次缺口）；**禁止**因它出现在 `invalid` 里就把它当作
+   "已识别的能力"。
+
+**实现顺序（§2.5 第 1 步的细化，顺序本身是契约的一部分）**：
+
+```text
+1. 求值
+   1a. requested 为空集          ⇒ 硬拒绝（理由：未声明所需能力）
+   1b. 存在非 Capability 成员    ⇒ 硬拒绝（理由：含非法能力成员）
+   1c. missing / risk_level      ⇒ 常规求值（§2.4 的四格）
+```
+
+> 1b **必须**早于 1c：非法成员会让 `missing` 的集合运算与代表选取作用于**混合类型**
+> （实测 `min({"bogus", Capability.READ_FILE}, key=str)` 返回裸 `str`），
+> 审计的 `requested` / `missing` / `capability` 随之**全部不可靠**。
+> 1a 与 1b 的先后无实质差别（空集没有成员可判非法）；此处固定为"先空集、后类型"只为**确定性**。
+
+**与 `parse_capabilities()` 的分工（避免两处语义分叉）**：
+
+| 检查点 | 输入 | 判据 | 失败处置 | 位置 |
+| --- | --- | --- | --- | --- |
+| **正规入口**（解析） | **声明式来源的字符串**：配置文件、领域包、未来 MCP 工具描述里的工具能力声明 | 名字能否成为 `Capability` 成员（`Capability(name)`） | `UnknownCapabilityError`（**拒绝，不跳过**） | `security/capabilities.py::parse_capabilities()`（**M0 在途**） |
+| **引擎兜底**（类型） | 已被构造进 `PolicyRequest.requested` 的**对象** | `isinstance(member, Capability)` | 本节 1b 的**硬拒绝** | `security/policy.py::PolicyEngine` |
+
+- **两者判据不同、方向相同**：入口管"**名字能不能变成成员**"，引擎管"**成员类型对不对**"。
+- **引擎不得做名字解析**：那会把"名字→成员"的职责复制两份 ⇒ 正是分叉源；且如上实测，
+  **名字检查单独不可靠**（裸 `str` 与枚举取值相等）。反过来**入口也不得只做类型检查**
+  （字符串永远"是字符串"）。
+- **不得只保留一处**：删入口 ⇒ 非法值以更晚、更隐蔽的形态出现（本缺口即是实例）；
+  删兜底 ⇒ 引擎的判定依赖"调用方守规矩"（与"前置条件只是调用方约定"同一依据）。
+- **上游要求（`HARNESS` / `tools/`）**：`ToolSpec.capabilities` 的类型标注挡不住来自 MCP /
+  领域包的字符串 ⇒ **工具注册 / 加载时**必须经 `parse_capabilities()` 解析并拒绝非法声明；
+  `PolicyRequest.requested` 只能由**已解析的** `Capability` 构成。
 
 **为什么空集取硬拒绝（`False/False`）而不是可升级拒绝（`False/True`）**：`False/True` 的语义是
 "可经人工确认后继续"（§2.4），而"所需能力未知"意味着审批门**没有任何东西可以对照**——一旦
@@ -228,13 +304,25 @@ class PolicyEngine(Protocol):
 **事件内容要求（`POLICY_DECISION`）**：`detail["requested"]` **必存在**且为**升序能力名列表**
 （元素是 `Capability` 的**值**字符串）；**求值未失败时**另需 `detail["missing"]`（同规范）。
 求值失败时 `missing` **可省略，且不得以 `[]` 冒充**——`[]` 的语义是"无缺失 ⇒ 已授权"，
-用它表示"求值失败"会把故障伪装成授权充足。请求不可解析时 `detail["requested"]` 记 `[]`
-（即 `[]` 有两种来源：**确为空集** / **无法解析**，二者由 `detail` 是否含 `error` 键区分）。
+用它表示"求值失败"会把故障伪装成授权充足。`detail["requested"]` 记 `[]` 有**三种来源**，
+**必须用判别键区分**（否则"没有能力信息"与"请求非法"在审计里同形）：
+
+| `[]` 的来源 | 判别键 | 语义 |
+| --- | --- | --- |
+| **确为空集** | 既无 `error` 也无 `invalid` | 请求没声明任何能力（构造缺陷） |
+| **请求不可解析** | `detail["error"]`（异常类型名） | 求值阶段故障 |
+| **含非 `Capability` 成员** | `detail["invalid"]`（安全标识列表） | 类型违规输入（规范见上） |
+
 `detail` 里的 `reason` / `domain_pack` 等其余键**不禁止**。
 
-**实现侧影响（本次裁决的唯一代码改动）**：求值失败路径（"实现顺序"第 1 步的收敛分支）当前只写
-`detail["error"]`，**未写 `requested`** ⇒ 需按上一条补齐，否则违反 [`audit.md`](audit.md) §2.3 的
-I2/I3。其余行为与现行实现一致（**空集与多元素的处置无需改动**）。
+**实现侧影响（历次裁决累计，共两处）**：
+
+1. **求值失败路径**（"实现顺序"第 1 步的收敛分支）当前只写 `detail["error"]`，**未写 `requested`**
+   ⇒ 需按"事件内容要求"补齐（不可解析时记 `[]`），否则违反 [`audit.md`](audit.md) §2.3 的 I2/I3；
+2. **新增 1b 分支**（存在非 `Capability` 成员 ⇒ 硬拒绝，见上）：判据用 `isinstance(member, Capability)`，
+   **不得**用名字解析；`requested` 记 `[]`、非法项记 `detail["invalid"]`、`capability=None`。
+
+其余行为与现行实现一致（**空集与多元素的处置无需改动**）。
 
 **验证方式**（每条都是可断言判据；`tests/security/` 归验证工程师、`tests/unit/` 归实现工程师）：
 
@@ -245,7 +333,11 @@ I2/I3。其余行为与现行实现一致（**空集与多元素的处置无需�
 | V3 | `requested={read_file, write_file}`，全授予且 `risk_level=LOW` | 放行；`event.capability is Capability.READ_FILE`（`read_file` < `write_file`，**确定性代表**）；重复调用结果一致 |
 | V4 | 求值失败（能力模型抛错）、`requested={write_file}` | 收敛为拒绝；`event.capability is Capability.WRITE_FILE`；`detail["requested"] == ["write_file"]`；`detail` **无** `missing` 键 |
 | V5 | 求值失败、`requested=None`（不可解析） | 收敛为拒绝；`event.capability is None`；`detail["requested"] == []` **且** `detail["error"]` 存在 |
-| V6 | 对 V1~V5 产生的事件套用 [`audit.md`](audit.md) §2.3 的 I1~I3 | 全部成立（建议抽成**一个**不变式断言函数，复用到全部策略用例） |
+| V6 | 对 V1~V10 产生的**全部**事件套用 [`audit.md`](audit.md) §2.3 的 **I1~I4** | 全部成立（建议抽成**一个**不变式断言函数，复用到全部策略用例） |
+| V7 | `requested=frozenset({"bogus"})`，且 `granted=list(Capability)`（**全授予**） | `(allow, requires_confirmation) == (False, False)`；`risk_level is CRITICAL`；`outcome is DENY`；恰好 1 条事件；`capability is None`；`detail["requested"] == []`；`detail["invalid"]` 含 `"bogus"`；`detail` **无** `error` 键 |
+| V8 | `requested=frozenset({"read_file"})`（**裸 `str`、取值合法**），`granted={READ_FILE}`，`risk_level=LOW` | **仍然拒绝** `(False, False)`——**不得放行**；`capability is None`；`detail["invalid"] == ["read_file"]` ⇒ 直接钉住"必须类型检查、不得名字检查" |
+| V9 | `requested=frozenset({Capability.READ_FILE, "bogus"})`，`granted={READ_FILE}` | **整体拒绝** `(False, False)`（**不得**因 `read_file` 已授予而放行，也**不得**只报 `read_file`）；`detail["requested"] == []`；`detail["invalid"] == ["bogus"]` |
+| V10 | `requested=frozenset({123})`（非 `str` 成员） | 拒绝；`detail["invalid"] == ["<int>"]`（**只类型名、不回显内容**）；审计里**不出现**该对象的 `repr` |
 
 **被否决的方案（记录理由，防止重复讨论）**：
 
@@ -255,6 +347,8 @@ I2/I3。其余行为与现行实现一致（**空集与多元素的处置无需�
 | R2 | 给 `Capability` 增加占位成员（如 `NONE`） | **否决**。① **不能消除空集**：`frozenset()` 仍可构造，引擎的防御分支照样要有 ⇒ 付出 ADR 成本却没解决根因；② 同一语义会有**两种表示**（`frozenset()` 与 `frozenset({NONE})`），审计出现两种等价记录而无法判断哪种是规范形；③ 哨兵值污染授权语义（`CapabilitySet.allows(NONE)` 该返回什么？`parse_capabilities(["none"])` 会被静默接受）；④ 扩成员改变**权限模型面积**，按 §2.1 与 `contracts/policy.py` 的 docstring 需开 ADR——为一个只用于**表达"无"**的哨兵值开 ADR，代价远大于收益 |
 | R3 | 规定 `requested` 必须非空，由 HARNESS 在**构造前**强制 | **单独采用不足以解决**（已作为 R1 的**附加**前置条件采纳）。① 类型层面表达不了非空（`frozenset`），静态检查拦不住；② 契约层零行为 ⇒ 不能落在 `PolicyRequest` 上 ⇒ 只能靠**调用方自觉**；③ 引擎仍会收到空集（测试、`cli/`、未来调用点）⇒ 防御分支**仍然必须**有定义。即 R3 管**上游卫生**、R1 管**引擎兜底**，两者不是替代关系 |
 | R4 | 把 `AuditEvent.capability` 改成 `frozenset[Capability]` | **否决**。① 改的是**已定案**的审计 schema（`approval` / `refusal` 生产者与按工具/结果的查询口径都要跟着改），影响面远超本缺口；② `REQ-OBS-01` 的检索维度是标量，集合字段削弱可查询性；③ 审计事件本就用 `detail` 承载结构化附加信息，"集合进 `detail`"是既有约定，不必改 schema |
+| R5 | **非法成员走"求值失败"路径**（`False/True` 收敛） | **否决**。① **不可对照**：与空集同族——人工确认无法解除一个"所需能力不可解析"的请求 ⇒ 放行即绕过 default-deny；② 会把**实现层故障**与**请求侧缺陷**混进同一条路径，审计读者无法区分"引擎坏了"与"调用方传错了"（这正是本节反复强调的"表象相同、性质不同"）；③ `False/True` 分支的判别键是 `detail["error"]`（**异常类型名**），把非异常情形塞进去会让该键**语义漂移** ⇒ 本次为非法成员单列 `detail["invalid"]`，**两类情形在审计里必须可区分** |
+| R6 | **忽略非法成员、用合法子集继续求值** | **否决**：静默缩小请求面 = fail-open（"默认缩小请求"与"默认放宽请求"同一件事）；且丢弃哪些成员由**输入**决定，等于让不可信输入影响权限判定的**输入面**（`REQ-SEC-03`） |
 
 ---
 
@@ -280,7 +374,8 @@ I2/I3。其余行为与现行实现一致（**空集与多元素的处置无需�
 5. 新增 `PolicyEngine` Protocol（`contracts/policy.py` 内，零行为）；
 6. 模块 docstring 更新：`PolicyEngine.decide()` 的**实现**仍在 `security/policy.py`，
    契约层只放 Protocol；
-7. `PolicyRequest` docstring 补一句前置条件（`requested` **必须非空**；空集属上游构造缺陷）
+7. `PolicyRequest` docstring 补**两条**前置条件（`requested` **必须非空**；**每个元素必须是
+   `Capability` 成员**——裸 `str` 即使取值合法也不合规；两条均属上游构造缺陷，见 §2.3）
    ——**仅注释**；
 8. `PolicyEngine` Protocol docstring 补一句空集处置（硬拒绝 + **仍须 `emit`**；`capability=None`
    由 `detail["requested"] == []` 表达，见 §2.5「补充规定」）——**仅注释**；
@@ -294,3 +389,4 @@ I2/I3。其余行为与现行实现一致（**空集与多元素的处置无需�
 | 日期 | 修订 | 依据 |
 | --- | --- | --- |
 | 2026-09-19 | §2.3 给 `requested` 加**非空**前置条件（并说明契约层不可强制）；§2.4 的 `False/False` 一格补来源；§2.5 新增「补充规定」——空集/多元素的裁决、`capability` 确定性代表规则、事件内容要求、验证判据 V1~V6、被否决方案 R2/R3/R4；§4 补 3 条实现动作 | 实现侧报出的契约缺口；裁决方向 **R1** |
+| 2026-09-19 | §2.3 补**前置条件二**（元素必须是 `Capability` 成员，裸 `str` 不合规）；§2.4 的 `False/False` 一格再补来源；§2.5 新增「**非法成员的规定行为**」——实测证据（含"裸 `str` 取值合法 ⇒ 被放行"）、裁决 (a) 与逐项规定、`detail["invalid"]` 规范、实现顺序 1a/1b/1c、与 `parse_capabilities()` 的分工表、被否决方案 R5/R6；验证判据扩为 **V1~V10**（V6 同步为 I1~I4）；"`[]` 的来源"由两种更正为**三种**并给出判别键；§4 第 7 条同步 | 实现侧第二/第三轮报出的同族缺口（类型违规输入）；架构侧独立复现并**扩大**（ALLOW 路径同样被破） |
