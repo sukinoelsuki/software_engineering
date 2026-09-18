@@ -56,7 +56,8 @@
     传入含 `;` `$()` `../` 的 `arguments` → 断言策略求值**不产生**命令/路径拼接的副作用
     （用 spy 记录 `proc` / `paths` 的调用参数）。
   - **能力**：本组应归属 `tests/security/` + `tests/security/corpus/`
-    （对抗语料集，`docs/engineering/testing-strategy.md` §5）——**语料集目录当前不存在**。
+    （对抗语料集，`docs/engineering/testing-strategy.md` §5）——`corpus/` 目录**已建立**（2026-09-18），
+    但当前**只有路径穿越语料**（`traversal_payloads.txt`），**注入语料仍不存在**。
 - **相关**：`REQ-SEC-03`、`ADR-0015 §5.1.2`（关键约定）、`../interfaces/model.md` §2.1、
   `../interfaces/tools.md` §2.1/§2.3/§2.4、`SECURITY.md` §2 第 4 条。
 
@@ -90,7 +91,8 @@
   - `ADR-0015 §5.2.6` 明确**不引入** `LLM Guard` / `garak` / `promptfoo`，
     理由是"**都要建立在威胁模型之上；威胁模型当前 0 条，先建模型再选工具**"。
 - **残余风险**：
-  1. **注入语料集不存在**（`tests/security/corpus/` 未建立）⇒ **没有任何回归能力**：
+  1. **注入语料集仍不存在**（`tests/security/corpus/` 目录已建立，但当前仅含路径穿越语料
+     `traversal_payloads.txt`）⇒ **没有任何注入回归能力**：
      今天拦住的注入，明天可能因为一句提示词改动而失效，且**无人知道**。
   2. **`ADR-0015 §5.2.6` 的阻塞条件已解除（本目录即威胁模型）**，但选型**尚未开始**
      ⇒ 输出侧防护当前为 **0**。
@@ -202,7 +204,10 @@
   - **应有**（**缺验证**）——即 `ADR-0015 §7.2` 的 **`S1`**
     `test_unauthorized_tool_call_is_denied_and_audited`：
     ① 能力缺失时调用被拒；② **审计中存在可回放记录**（`audit_id` 能查回事件）。
-    **落地位置 `tests/security/`；当前 `S1` 未落地**（验证工程师进行中）。
+    **落地位置 `tests/security/`；当前 `S1` 未落地**——被测实现（`PolicyEngine`/`AuditSink`）
+    在仓库中**不存在** ⇒ 验证者**拒绝造测**（正确）。
+    （对比：`S2` 的"拒绝"半已于 `f436b0b` 落地，因为其被测对象 `foundation.paths.resolve_within`
+    真实存在。）
   - **建议补足**（契约已给判据，可直接写）：把 §2.4 的**四格**逐一断言
     （`True/False`、`True/True`、`False/True`、`False/False`），
     而不是只断言 `allow` 一个布尔；并加一条
