@@ -62,12 +62,13 @@
   - **应有**（行为，**缺验证**）——两条用例规格，可直接照写：
     `a. test_child_process_hits_rlimit_instead_of_host`：经 `proc.run` 执行子进程并分配超过
     `ADDRESS_SPACE_LIMIT_B`（`proc.py:39` 的 2 GiB）→ 断言子进程内 `MemoryError`、宿主不受影响
-    （`_apply_limits` 见 `proc.py:113-118`；此路可行经 2026-09-18 代码级核实）；
+    （`_apply_limits` 见 `proc.py:113-118`；此路可行已由验证者 `verifier-security` 2026-09-18 独立核实）；
     `b. test_isolation_failure_does_not_fall_back`：**确定性写法**——monkeypatch 使
     `subprocess.run` 抛 `PermissionError` → 断言抛 `IsolationError` 且 `run()` **不回退**为普通执行
     （`proc.py:159-161`）。**环境依赖写法**（以非 root 身份调用 `user=65534`）在本环境不可用
     （当前以 root 运行）⇒ **不得**作为唯一判据。
-  - **⛔ 一条必须排除的"假断言"**（2026-09-18：**代码级核实后修正本条目**）：
+  - **⛔ 一条必须排除的"假断言"**（2026-09-18：**验证者 `verifier-security` 独立核实后修正本条目**，
+    团队领导另行逐行核实；取证见 `README.md` §7「归属取证」）：
     **不得**对 `proc.run` 写"子进程写到白名单外路径 → 文件不存在"这一类断言。
     `proc.run`（`proc.py:121-174`）**只**设置 rlimit、`cwd`、`env` 与 uid，**没有任何路径白名单参数**
     ——子进程写到 `/tmp/...` **会成功、文件会存在**。
