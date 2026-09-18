@@ -13,13 +13,20 @@
 
   > 🔴 **`SessionEvent` 被引用但未定义**：`ADR-0015` §5.1.2（`UX ↔ HARNESS` 行）与
   > `architecture.md` §2.4 / §5.2 写了 `Session.run(task) -> AsyncIterator[SessionEvent]`
-  > 与"业务失败以 `SessionEvent(kind="error")` 表达"，但 `contracts/` 与 `interfaces/`
-  > 里都没有它。**"未落盘 = 不存在" ⇒ 实现者无法开工。**
+  > （后者的 `AsyncIterator` **已按 §2.9 的裁决更正为同步**）与"业务失败以
+  > `SessionEvent(kind="error")` 表达"，但 `contracts/` 与 `interfaces/` 里都没有它。
+  > **"未落盘 = 不存在" ⇒ 实现者无法开工。**
 
 **本轮范围声明（重要）**：本契约的目标是"**能让实现者并行开工**"，**不是**把 Harness 设计完。
 明确**不展开**：上下文效率引擎的检索/压缩算法、提示分级的具体话术、检查点持久化的落点、
-能力探测与档位判定、路由降级、多轮评审/自动验证（`REQ-HARNESS-07`）。
+能力探测与档位判定、路由降级、多轮评审/自动验证（`REQ-HARNESS-07`）、
+**以及任何性能度量机制**（基准与对比属 `bench/` 与后续性能工作）。
 **本项目的失败模式是"文档宣称与实现不一致"，不是"文档不够长"** —— 宁可少写、写准。
+
+> **关于本文中出现的 `AsyncIterator` 字样**：本契约的**全部规范性表述一律是同步
+> `Iterator[SessionEvent]`**（§2.9 的裁决）。文中每一处 `AsyncIterator` 都是在**引用被更正的历史
+> 表述**（`ADR-0015` §5.1.2 的原文、或本文裁决的论证依据），**不是**契约内容；
+> 实现与评审时以 §2.9 与本行为准。
 
 ---
 
@@ -112,7 +119,7 @@ class SessionEvent:
 | `tool_name` | `str \| None` | 工具名，**原样取自模型请求 ⇒ 不可信数据**（渲染前必须净化，见 §2.6 第 5 条） | 同上 4 个 |
 | `response` | `ModelResponse \| None` | 模型响应整体（`content` 为**不可信**模型输出） | `MODEL_RESPONSE` |
 | `decision` | `PolicyDecision \| None` | 策略决策（含 `reason` / `risk_level` / `audit_id`） | `POLICY_DECISION` |
-| `approval` | `ApprovalResult \| None` | 人工确认结果 | `APPROVAL_RESULT` |
+| `approval` | `ApprovalResult \| None` | 人工确认结果（**未提供 `ApprovalGate` 时该 kind 不产出**，见 I2） | `APPROVAL_RESULT` |
 | `result` | `ToolResult \| None` | 工具执行结果；**`None` ⇒ 本次调用未执行**（被拒） | `TOOL_RESULT` |
 | `text` | `str \| None` | **我方生成**的中文说明（拒绝理由 / 错误说明 / 结束原因）。**不得**承载模型或工具的原文（I8） | `ERROR` / `TASK_FINISHED`；`TOOL_RESULT` 且 `result is None` |
 | `error_kind` | `SessionErrorKind \| None` | 错误分级（见 §2.4） | `ERROR` |
@@ -132,7 +139,10 @@ class SessionEvent:
   同一 `MODEL_RESPONSE` 的多个 `tool_calls` **按 tuple 顺序串行处理完**（事件之间不交错）。
 - **I2（决策与确认的相对位置）**：`TOOL_CALL` 与 `TOOL_RESULT` 之间**至多一条**
   `POLICY_DECISION` 与**至多一条** `APPROVAL_RESULT`（同一 `call_id`）；`POLICY_DECISION`
-  在前；`APPROVAL_RESULT` 存在 **⇔** 该 `decision.requires_confirmation` 为真。
+  在前。`APPROVAL_RESULT` 存在 **⇔** 「`decision.requires_confirmation` 为真 **且** 该会话
+  配置了 `ApprovalGate`（`approval is not None`）」——**未提供确认通路时不产生该事件**
+  （没有人被问过；伪造一条"用户拒绝"会让审计撒谎），此时该 `TOOL_RESULT` 必为
+  `result is None` + 中文 `text`（§2.5.5 的 R1）。
 - **I3（结果与执行）**：`TOOL_RESULT.result is None` **⇔** 本次调用**未执行**；此时 `text`
   **必须**非空（中文说明）、`audit_id` **必须**非空。`result is not None` ⇒ 已执行，成败看
   `result.ok`（**不得**用 `result.ok=False` 表示"未执行"）。
@@ -186,11 +196,13 @@ class SessionErrorKind(StrEnum):
 - **`UNREACHABLE` 本轮无降级路径**：`ModelUnavailableError` 的既定处置是"路由降级"
   （`model/router.py`，**未开工**）⇒ 本轮取 `RETRY` 后 `FATAL`。**不得**把它写成"已降级"。
 
-### 2.5 审批门（**新增**：`ApprovalOutcome` / `ApprovalRequest` / `ApprovalResult` / `ApprovalGate`）
+### 2.5 审批通路（**新增**：`ApprovalOutcome` / `ApprovalRequest` / `ApprovalResult` / `ApprovalGate`）
 
 **这一组类型存在的原因（依赖倒置）**：`architecture.md` §5.2 的时序图里"需人工确认"由
 `cli/approval` 处理，而 `R1` **禁止 `harness` 依赖 `cli`**。若不给这个接缝定形，实现者只能
 自己发明一种回调，或让 `harness` 去 `input()`（既违反分层，又让单测无法注入）。
+
+#### 2.5.1 类型
 
 ```python
 class ApprovalOutcome(StrEnum):
@@ -206,6 +218,7 @@ class ApprovalRequest:
     tool_name: str  # 原样取自模型请求 ⇒ 不可信数据，展示前必须净化
     risk_level: RiskLevel
     reason: str  # 来自 PolicyDecision.reason（我方生成的中文理由）
+    arguments_summary: str | None = None  # 见 §2.5.3：**由 harness 生成**的参数摘要
 
 
 @dataclass(frozen=True)
@@ -218,16 +231,74 @@ class ApprovalGate(Protocol):
     def request(self, request: ApprovalRequest) -> ApprovalResult: ...
 ```
 
-**规定**：
+#### 2.5.2 确认请求**在事件流里的位置**（**不新增 kind**）
 
-| # | 规定 | 理由 |
+**确认请求由 `POLICY_DECISION` 事件承载**；CLI 的判定只有一条：
+`event.kind is POLICY_DECISION and event.decision.requires_confirmation`。
+
+| 渲染确认提示所需的全部信息 | 来自哪个字段 |
+| --- | --- |
+| 是**哪一次**调用 | `SessionEvent.call_id` |
+| 待确认的**工具** | `SessionEvent.tool_name`（ⓘ 渲染前净化，§2.6 第 5 条） |
+| 待确认的**操作对象**（"要动什么"） | `ApprovalRequest.arguments_summary`（§2.5.3） |
+| **风险等级** | `decision.risk_level` |
+| **理由**（`REQ-SEC-02` 要求展示） | `decision.reason` |
+| 同一次决策的审计关联键 | `decision.audit_id` |
+
+**为什么不新增 `APPROVAL_REQUIRED` 成员**：① 它要携带的信息是 `POLICY_DECISION` 的**子集**
+（同一 `call_id` 上 `requires_confirmation=True` 已完整表达）⇒ 多一个 kind 就多一处"同一事实
+两处表述"（`README.md` C10 的教训）；② I2 已把"`APPROVAL_RESULT` 与 `requires_confirmation`
+的对应关系"钉死，配对无歧义。若将来确认界面所需的信息**超出** `PolicyDecision` +
+`ApprovalRequest` 能表达的范围（例如必须展示完整参数），属**新增 kind 或新增字段**的契约变更，
+走 §8 的变更流程，**不得**在实现里私自扩字段。
+
+#### 2.5.3 `arguments_summary`：让确认界面能看到"操作对象"，但**不回显原始参数**
+
+| # | 规定 |
+| --- | --- |
+| S1 | **由 `harness`（`loop.py`）生成**：此时参数已通过校验 ⇒ 是**结构化参数**，不是原始 JSON 文本 |
+| S2 | 口径（确定性、可测）：按**键名升序**遍历**全部**顶层键（最多 8 个，超出时末尾加 `; …（还有 N 项）`）；`str` 值 ⇒ `key=<经 sanitize_for_display(value, limit=80) 的值>`；`list` / `dict` ⇒ `key=<list: 3>` / `key=<object: 2>`；其余 ⇒ `key=<int>` / `key=<float>` / `key=<bool>` / `key=<null>`。**总长上限 400 字符**，超出即截断并加 `…（已截断）` |
+| S3 | **不得**出现原始 `arguments_json` 的全文或未净化片段；**不得**进入事件流、审计 `detail`、`text`（I8 不变） |
+| S4 | **只供展示**：任何控制流、权限判定、工具选择**不得**读它（`REQ-SEC-03`）；界面**不得**把它当作"已看到全部参数"的凭据——非标量值的形态由 `<list: 3>` 一类标注**显式**给出，不静默略去 |
+| S5 | 参数映射为空 ⇒ `None`（**不**编造 `{}` 一类占位） |
+
+> **为什么由 `harness` 生成而不是把结构化参数整体交给界面**：后者要求**每一个**界面实现都记得
+> "先净化再显示"，属**纪律**；前者把"不可信内容不被原样递给界面"变成 `ApprovalRequest` 的
+> **结构性质**。与 `prompts.build_system_message` 拒收外部内容参数是同一取向（结构性优先于纪律）。
+
+#### 2.5.4 回传机制：**采纳"构造时注入 `ApprovalGate`"**
+
+```python
+class Session(Protocol): ...
+
+
+# Session / TaskLoop 的构造签名见 §3.1：approval: ApprovalGate | None = None
+```
+
+| 候选 | 内容 | 结论与理由 |
 | --- | --- | --- |
-| A1 | `ApprovalGate` 的**实现**归 `cli/approval.py`（在 `cli/` 装配时注入）；`contracts/` 只放 Protocol | 依赖倒置：`harness` 只依赖契约，单测可注入 fake（`ADR-0015` §7.3 的"只读契约写出 stub"） |
-| A2 | **阻塞式同步调用**，返回值即用户选择；`harness` 不轮询、不超时 | 与"单会话单线程、事件流串行产出"（ADR §5.1.2）一致 |
-| A3 | **非交互模式（无 TTY）必须返回 `DENY`**，不得阻塞等待 stdin，不得默认放行 | fail-secure 默认值（C6）；`REQ-UX-01` 要求非交互可进 CI ⇒ 一次等待 stdin 会让 CI 挂死 |
-| A4 | 每次调用**必须**先 `emit(AuditEvent(kind=APPROVAL))`，再返回其结果（`audit_id` 即该事件 id） | `REQ-UX-02`"三种选择均被审计"；`audit.md` §2.3 的生产者表把 `APPROVAL` 归 `cli/approval.py` |
-| A5 | `ALLOW_ALWAYS` **在本轮等价于 `ALLOW_ONCE`**（持久授权未实现，见 `README.md` §6 的 `U3`），但**必须被接受并在事件与审计里如实记录 `allow_always`** | "总是允许"的持久化属 `U3`（未决）。不做持久化而接受该选择，方向上是**收窄**（不会多授予）；**记录**它则不构成静默降级（`ADR-0006` §5.2 规则 `S-2`）。⚠️ **不得**把 `ALLOW_ALWAYS` 当成"本轮已支持持久授权" |
-| A6 | `harness` **不得**自行决定"要不要问"：唯一依据是 `decision.requires_confirmation` | 决策归 `PolicyEngine`，呈现归 `cli/`；`harness` 只做路由（`REQ-SEC-01` 的 100% 拦截率不能由界面层保证） |
+| **(a) `ApprovalGate.request()`（**采纳**)** | 同步方法，直接返回 `ApprovalResult` | ① 与"单会话单线程、串行产出"一致（ADR §5.1.2）；② `Protocol` 可注入 fake ⇒ 单测不需要 TTY；③ 返回值携带 `audit_id`，让"这次确认"与审计**显式对上**（`REQ-UX-02` / `REQ-SEC-06`）；④ 实现归 `cli/approval.py` ⇒ 提示文案与 TTY 判定留在表现层 |
+| (b) `Callable[[ApprovalRequest], ApprovalResult]` | 注入裸函数 | **否决（等价但更弱）**：裸 `Callable` 只能靠参数名与注释传达语义，`Protocol` 能写明方法名与 docstring；且两者并存即"同一事实两处表述"。功能上不优于 (a) |
+| (c) 事件流 + `Session.respond_approval(result)` | loop 产出事件后**暂停**，由 CLI 在迭代中途回传应答 | **否决**：`run()` 是**单个迭代器**，中途回传要求把迭代器改成协程（`send`）或引入线程；两者都破坏"串行、无并发"的假设，并把"暂停中的会话"变成一种要管理的新状态。当前没有必须异步的理由（§2.9 同源） |
+| (d) `loop` 内直接 `input()` | 交互内联在编排层 | **否决**：违反 `R1`（`harness` 依赖终端）、不可单测、非交互模式下会挂死（`REQ-UX-01`） |
+
+#### 2.5.5 fail-secure 规定（**没有答复 ⇒ 拒绝，不得降级为放行**）
+
+| # | 情形 | 规定行为 |
+| --- | --- | --- |
+| R1 | `approval is None`（CLI 未提供交互通路，典型是非交互运行） | `requires_confirmation=True` 的调用**一律不执行**：`TOOL_RESULT(result=None, text="未提供人工确认通路，按默认拒绝处置")`；审计记 `TOOL_CALL` / `DENY` / `detail["denied_reason"]="approval_denied"`。**且不产生** `APPROVAL_RESULT` 事件——没有人被问过，伪造一条"用户拒绝"会让审计撒谎（I2 已按此措辞）。**禁止**放行 |
+| R2 | 无 TTY（gate 自己知道） | 属 **gate 实现的义务**：**必须**返回 `DENY`，不得阻塞等 stdin。harness **不**检测 TTY（那是表现层的事），也**不得**代它决定 |
+| R3 | gate **抛异常** | 该调用**不执行** + 记 `ERROR(INTERNAL, text="人工确认通路故障")` + **终止任务**（`TASK_FINISHED(FAILED)`）。理由：审批通路坏掉 = 权限判定的**输入面**不可用；继续跑等于在未知权限语义下继续。**不得**吞掉异常后当成一次普通拒绝（那会把基础设施故障伪装成默认拒绝，`policy.md` §2.5 的同一取舍） |
+| R4 | 应答**形状非法**（非 `ApprovalResult` 实例 / `outcome` 不是 `ApprovalOutcome` 成员 / `audit_id` 为空） | 同 R3（不执行 + `ERROR(INTERNAL)` + 终止）。形状非法意味着该"允许/拒绝"都不可信 |
+| R5 | **超时** | 由 gate 实现负责（它掌握交互）；契约要求超时后返回 `DENY`（而**不是**抛异常）。harness **不设**超时：单线程模型里给阻塞调用加超时必然引入线程或信号，那是 §2.9 已否决的复杂度 |
+| R6 | `ALLOW_ALWAYS` | **本轮等价于 `ALLOW_ONCE`**（持久授权属未决项 `U3`），但**必须被接受**，并在事件与审计里**如实记录** `allow_always`。方向上是**收窄**（不会多授予）；**记录**它即不构成静默降级（`ADR-0006` §5.2 规则 `S-2`）。⚠️ **不得**表述为"已支持持久授权" |
+
+| # | 规定（编排侧） | 理由 |
+| --- | --- | --- |
+| A1 | `ApprovalGate` 的**实现**归 `cli/approval.py`（`cli/` 装配时注入）；`contracts/` 只放 Protocol | 依赖倒置：`harness` 只依赖契约，单测可注入 fake（`ADR-0015` §7.3 的"只读契约写出 stub"） |
+| A2 | **阻塞式同步调用**，返回值即用户选择；`harness` 不轮询、不超时（见 R5） | 与"单会话单线程、事件流串行产出"（ADR §5.1.2）一致 |
+| A4 | gate 实现每次**必须**先 `emit(AuditEvent(kind=APPROVAL))` 再返回，`audit_id` 即该事件 id | `REQ-UX-02`"三种选择均被审计"；`audit.md` §2.3 的生产者表把 `APPROVAL` 归 `cli/approval.py` |
+| A6 | `harness` **不得**自行决定"要不要问"：唯一依据是 `decision.requires_confirmation` | 决策归 `PolicyEngine`、呈现归 `cli/`；`harness` 只做路由（`REQ-SEC-01` 的 100% 拦截率不能由界面层保证） |
 
 ### 2.6 序列化口径（`--output-format json` 与终端渲染）
 
@@ -358,12 +429,12 @@ class Session(Protocol):
 | `AsyncIterator` + `asyncio.to_thread` 包住同步实现 | 否决。**伪异步**：底层仍阻塞，却把执行挪到线程池 ⇒ 与"`ModelClient` 非线程安全"直接冲突，并引入第二个执行上下文（`seq` 分配、审计串行化都要重新论证） |
 | 同时提供 `run()` 与 `arun()`（双接口） | 否决。两个实现面、两倍测试面，且"哪个是权威"立刻成为分叉源（`README.md` C10 的教训：同一事实两处表述必然漂移）。**需要时再新增**，不做预埋 |
 
-**据此需要更新的两处引用（本文件是权威，正文不改）**：
+**据此需要更新的两处引用（本文件是权威，旧正文不改）**：
 
 | 位置 | 现状 | 处理 |
 | --- | --- | --- |
-| `ADR-0015` §5.1.2 的 `UX ↔ HARNESS` 行 | `AsyncIterator[SessionEvent]` | **只允许在「修订记录」追加**一条（本契约已登记，见该 ADR 修订记录 2026-09-19）。ADR 正文**不改** |
-| `architecture.md` §2.4 表首行 / §5.2 时序图 | 同上（两处） | **本文档不动**：`architecture.md` 不在本轮产出白名单内 ⇒ 由领导指派（记录员或下一轮架构工作）同步；**同步前该两处与 ADR-0015 的修订记录不一致，以修订记录与本契约为准** |
+| `ADR-0015` §5.1.2 的 `UX ↔ HARNESS` 行 | `AsyncIterator[SessionEvent]` | **只允许在「修订记录」追加**（本契约已登记，见该 ADR 修订记录 2026-09-19）。ADR **正文不改** |
+| `architecture.md` §2.4 表首行 / §5.2 时序图 | 同上（两处） | **已同步**（2026-09-19，本轮白名单扩展至该文件）：§2.4 表首行改为同步 `Iterator`、§5.2 的装配说明同步、§12 修订记录登记。此后三处（本契约、ADR 修订记录、`architecture.md`）**口径一致** |
 
 > **若所有者认为"同步 / 异步"属决策级变更**（而非本契约的形态细化），则正确处置是
 > **另开一篇 ADR 声明取代 `ADR-0015` §5.1.2 的该行**，本裁决随之失效——
@@ -476,13 +547,17 @@ class TaskLoop:
         model: ModelClient,
         exposed: tuple[ToolSpec, ...],  # 由 session 用 trimming 算好后传入
         policy: PolicyEngine,
-        approval: ApprovalGate,
+        approval: ApprovalGate | None = None,  # None ⇒ 需确认即拒绝（§2.5.5 的 R1）
         sink: AuditSink,
         validator: ArgumentValidator,
         pack: DomainPack | None,
     ) -> None: ...
 
     def run(self, task: str) -> Iterator[SessionEvent]: ...
+
+
+def summarize_arguments(args: Mapping[str, object]) -> str | None:
+    """按 §2.5.3 的口径生成确认界面用的**参数摘要**（仅供展示，不得用于控制流）。"""
 ```
 
 ```python
@@ -496,7 +571,7 @@ class Session(SessionContract):  # contracts/harness.py 的 Protocol
         model: ModelClient,
         registry: ToolRegistry,
         policy: PolicyEngine,
-        approval: ApprovalGate,
+        approval: ApprovalGate | None = None,  # None ⇒ 需确认即拒绝（§2.5.5 的 R1）
         sink: AuditSink,
         validator: ArgumentValidator,
         pack: DomainPack | None = None,
@@ -587,7 +662,7 @@ sequenceDiagram
 | 1 | **解析域判定**：`call.name` 是否属于 `exposed` 的名字集合 | `str` | `bool` | 不在 `exposed`：若该名字在 `registry.specs()` 里 ⇒ `denied_reason="not_exposed"`，否则 `"unknown_tool"` ⇒ **跳至步 6b**（**不**构造 `PolicyRequest`、**不**调 `decide()`、**不**调 `invoke()`）。⚠️ 若在 `exposed` 内却 `registry.resolve(name) is None` ⇒ **不变量被破** ⇒ `ERROR(INTERNAL)` + 终止（**不得**静默跳过） |
 | 2 | **严格校验**：`validator.validate(spec=spec, arguments_json=call.arguments_json)` | `str`（不可信） | `Mapping[str, object]`（已校验的结构化参数） | 失败（`ToolArgumentsInvalidError`）⇒ `denied_reason="invalid_arguments"` ⇒ 步 6b。**不**构造 `PolicyRequest`（`architecture.md` §5.3 的 `VALID` 分支）；回喂内容 = 校验器的中文说明（**不得**回显原始 JSON） |
 | 3 | `PolicyRequest(session_id, call_id=call.call_id, tool_name=spec.name, arguments=<步 2 出参>, requested=spec.capabilities, domain_pack=pack.name if pack else None)` ⇒ `policy.decide(request)` ⇒ `emit(SessionEvent(kind=POLICY_DECISION, decision=..., audit_id=decision.audit_id))` | `Mapping[str, object]` | `PolicyDecision` | ⚠️ **`spec.capabilities` 为空集 ⇒ 属工具声明缺陷**：视为 `denied_reason="invalid_arguments"`（**不得**构造空集请求——`policy.md` §2.3 的前置条件）；工具名必须用 `spec.name`（**不**用 `call.name`，两者在步 1 已确认一致，用 `spec.name` 可让审计的可信来源明确）。`decide()` 自身失败收敛为拒绝（`policy.md` §2.5），其异常**不**在 harness 侧被捕获 |
-| 4 | 执行判定：① `decision.requires_confirmation` ⇒ `approval.request(ApprovalRequest(session_id, call_id, tool_name=spec.name, risk_level=decision.risk_level, reason=decision.reason))` ⇒ `emit(SessionEvent(kind=APPROVAL_RESULT, approval=..., audit_id=approval.audit_id))`；② 否则看 `decision.allow` | `PolicyDecision` | `ApprovalResult \| None` | ①`outcome is DENY` ⇒ `denied_reason="approval_denied"` ⇒ 步 6b；②`allow=False`（且不用确认）⇒ `denied_reason="policy_denied"` ⇒ 步 6b。**注意**：`requires_confirmation=True` **不论 `allow`** 都要问（`policy.md` §2.4 的四格：`False/True` 是"可升级拒绝"） |
+| 4 | 执行判定：① `decision.requires_confirmation` ⇒ **先看通路**：`approval is None` ⇒ **跳至步 6b**（`denied_reason="approval_denied"`，**不产** `APPROVAL_RESULT`，§2.5.5 的 `R1`）；否则 `approval.request(ApprovalRequest(session_id, call_id, tool_name=spec.name, risk_level=decision.risk_level, reason=decision.reason, arguments_summary=summarize_arguments(<步 2 出参>)))` ⇒ 形状非法或抛异常 ⇒ **`R3`/`R4`**（`ERROR(INTERNAL)` + 终止）；否则 `emit(SessionEvent(kind=APPROVAL_RESULT, approval=<结果>, audit_id=<结果>.audit_id))`；② 不带确认的路径看 `decision.allow` | `PolicyDecision` | `ApprovalResult \| None` | ①`outcome is DENY` ⇒ `denied_reason="approval_denied"` ⇒ 步 6b；②`approval is None` ⇒ 同 ①（**不得**放行）；③`allow=False`（且不用确认）⇒ `denied_reason="policy_denied"` ⇒ 步 6b。**注意**：`requires_confirmation=True` **不论 `allow`** 都要问（`policy.md` §2.4 的四格：`False/True` 是"可升级拒绝"）；`arguments_summary` 的生成口径见 §2.5.3（**不得**回显原始 JSON） |
 | 5 | `ctx = ExecutionContext(session_id, call_id, working_dir=config.working_dir, allowed_roots=config.allowed_roots, timeout_s=config.tool_timeout_s, network_allowed=False)` ⇒ `tool.invoke(args=<步 2 出参>, ctx=ctx)` | `Mapping[str, object]` + `ExecutionContext` | `ToolResult` | 工具抛**未预期异常** ⇒ 不当成 `ERROR` 事件了事：记一条 `TOOL_CALL` 审计（`outcome=ERROR`，`detail["failed_reason"]="tool_exception"`）+ 合成 `ToolResult(ok=False, content="", error="工具内部错误：<异常类型名>", truncated=False, audit_id=<该审计 id>)`。**不回显异常消息内容**（可能携带路径 / 不可信串）。⚠️ **`network_allowed` 本轮恒为 `False`**：出站白名单与云端客户端**均未实现**，`NETWORK_OUTBOUND` 已授予**不等于**可以出站（把它当"已可出站"是 fail-open，`T-10` 保持**未缓解**） |
 | 6a | 已执行 ⇒ `emit(TOOL_RESULT, result=result, audit_id=result.audit_id, text=None)`；观察内容 = `result.content`（成功）或 `result.error`（失败）——**不可信，按数据装配** | `ToolResult` | — | `result.content` / `result.error` 进消息历史时**不**加任何"以下是数据"之外的解释（`ChatMessage` 的信任规则见 `model.md` §2.1） |
 | 6b | 未执行 ⇒ `emit(TOOL_RESULT, result=None, audit_id=<DENY 审计事件 id>, text=<中文说明>)` **且**先记一条 `TOOL_CALL` 审计（`outcome=DENY`，`detail["denied_reason"]=<步 1/2/4 的取值>`）；观察内容 = `text` | `str` | — | 回喂的是**我方生成的说明**（例如"工具未暴露给本次会话"），**不是**工具的 `ToolResult`——`ToolResult` 对象在拒绝路径上**不构造**（避免与"工具级失败"同形，`architecture.md` §5.3 硬规定 2） |
@@ -723,7 +798,7 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
 1. **能力只能收窄，绝不并集**：生效授予 = `用户配置的授予 ∩ pack.security.capabilities`。
    - 禁止：`granted | pack_caps`；禁止"pack 未声明 ⇒ 视为全授予"。
    - **实施点**：装配（`cli/`，未开工）在**构造 `PolicyEngine` 之前**完成收窄；
-     为此 `security/capabilities.py` 需提供一个**纯函数**辅助（见 §6 改动清单），
+     为此 `security/capabilities.py` 需提供一个**纯函数**辅助（见 §7 改动清单），
      使"只能收窄"成为**可单测的函数**而不是一句约定（当前 `CapabilitySet` 无交集辅助）。
 2. **`prompt.fragments` 是数据，不是指令**：`prompts.system_prompt` 必须把片段放在
    **显式标注为数据段**的位置，且**不得**让片段替换 / 覆盖我方模板中的安全约束段
@@ -743,9 +818,101 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
 
 ---
 
-## 5. 验证方式（**可执行判据**；没有验证方式的缓解视为未实现）
+## 5. 装配点与 `cli/` 最小入口（**只读本契约即可写出"能跑起来"的最小 CLI**）
 
-### 5.1 单测（`tests/unit/`，实现工程师）
+本节回答两件事：`cli/` **构造 `Session` 需要哪些参数**（§5.1），以及拿到
+`Iterator[SessionEvent]` 后**每一种 `kind` 怎么渲染 / 怎么序列化**（§5.2）。
+**默认值一律取最保守的一侧**（C6）。写作目的：`cli/` 3 件不必再产生第二次契约冻结。
+
+> **本节不含任何性能度量机制**：`bench/` 的轮次、报告与对比属基准子系统与后续性能工作
+> （所有者已明确本轮 harness 是"**能跑起来 + 可被后续性能改动作为比较基准**"的基线实现）。
+
+### 5.1 装配清单（构造 `Session` 的全部参数）
+
+| # | 参数 | 类型 | 默认 | 由谁构造 | 装配失败处置 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `session_id` | `str` | **无默认**（必填） | `cli/`（建议 `uuid4().hex`） | — |
+| 2 | `config` | `SessionConfig` | **无默认** | `cli/`：CLI 参数 + `foundation/config.py` | 字段非法 ⇒ `ConfigError`（配置来源）/ `ValueError`（参数形状）；§2.8 的三条装配期校验 ⇒ `PathNotAllowedError` |
+| 3 | `sink` | `AuditSink` | **无默认** | `cli/`：`JsonlAuditSink(directory, filename=…)`（`directory` 来自 `foundation/config.py`；`roots` 用默认 ⇒ 常量 `ALLOWED_AUDIT_ROOTS`） | `PathNotAllowedError`（越界）/ `OSError`（不可创建）⇒ 装配期失败；**不得**回退默认落点（`audit.md` 的 `P5`） |
+| 4 | `policy` | `PolicyEngine` | **无默认** | `cli/`：`PolicyEngine(granted=<**收窄后**的授予>, sink=sink, tool_risk=<见下>)` | 风险等级非法 ⇒ 构造期 `TypeError`（`__post_init__` 校验）⇒ 装配期失败 |
+| 5 | `registry` | `ToolRegistry` | **无默认** | `cli/`：`ToolRegistry([ReadFileTool(sink), WriteFileTool(sink), ListDirTool(sink), ShellCommandTool(sink)])`（4 个内置工具的构造签名都是 `(sink)`） | `ToolRegistrationError`（重名 / 外部来源摘要缺失或不一致）⇒ 装配期失败，**不得**静默剔除该工具 |
+| 6 | `model` | `ModelClient` | **无默认** | `cli/`：`LocalLlamaClient(binary=…, model_path=…, log_path=…)`（云端客户端**未开工**） | `ModelUnavailableError`（起不来 / 未就绪）⇒ 装配期失败，非零退出 |
+| 7 | `approval` | `ApprovalGate \| None` | **`None`** | `cli/approval.py`（交互模式）；非交互模式**显式传 `None`** | `None` ⇒ 需确认的调用**一律拒绝**（§2.5.5 `R1`）；**不得**为"图方便"传一个恒放行的 gate |
+| 8 | `validator` | `ArgumentValidator` | **无默认** | `cli/`（实现选型见 §3.4，**未定 ⇒ 实现者停下上报**） | 选型未定即无法装配 ⇒ 属**待解阻塞**；**不得**以"临时不校验"绕过 |
+| 9 | `pack` | `DomainPack \| None` | **`None`** | `cli/`：`load_pack(directory, roots=<**显式给出**>, known_tools=frozenset(spec.name for spec in registry.specs()))` | `DomainPackError` / `PathNotAllowedError` ⇒ 装配期失败；**不得**降级为"无 pack 继续跑" |
+
+**`tool_risk` 的组装（`REQ-HARNESS-08` 的落点）**：把 pack 的 `security.risk_overrides`
+转成**带包前缀**的键（`f"{pack.name}:{tool_name}"`），与 `PolicyEngine` 的既有约定一致
+（带包前缀的键**优先**，未声明的工具取 `DEFAULT_TOOL_RISK`）。pack 为 `None` ⇒ 传空映射。
+
+**装配顺序（有依赖，不可调换）**：
+`config` → `sink` → `pack`（若启用）→ **能力收窄**
+（`granted = 配置授予 ∩ pack.capabilities`，§4.4 第 1 条）→ `policy` → `registry`（需 `sink`）→
+`model` → `Session`。⚠️ **收窄必须早于 `policy`**：`PolicyEngine` 构造后其 `granted` 是只读视图，
+再收窄也不会生效。
+
+**用法（最小闭环）**：
+
+```python
+with Session(
+    session_id=session_id,
+    config=config,
+    sink=sink,
+    policy=policy,
+    registry=registry,
+    model=model,
+    approval=gate_or_none,
+    validator=validator,
+    pack=pack,
+) as session:
+    for event in session.run(task):
+        render_or_serialize(event)
+```
+
+### 5.2 每种 `kind` 的渲染与序列化（CLI 的完整分支表）
+
+| `kind` | 交互渲染（Rich） | 序列化 | 备注 |
+| --- | --- | --- | --- |
+| `MODEL_RESPONSE` | 显示 `response.content`；`finish_reason is LENGTH` ⇒ 附"输出被截断"；`content is None`（纯工具调用）⇒ 不打印空行 | §2.6 全字段 | `content` 是**不可信**模型输出 ⇒ 净化后显示 |
+| `TOOL_CALL` | `→ 调用 <tool_name>` | 全字段 | `tool_name` 不可信 ⇒ 净化 |
+| `POLICY_DECISION` | `requires_confirmation` ⇒ `需确认：<tool_name>（风险 <risk_level>）— <reason>`；`allow` ⇒ 一行放行；否则 一行拒绝 + `reason` | 全字段 | `reason` 是**我方生成**的中文，可直接显示；`REQ-SEC-02` 的风险说明必须出现 |
+| `APPROVAL_RESULT` | 一行用户选择（`allow_once` / `allow_always` / `deny`） | 全字段 | 三种选择都可见（`REQ-UX-02`）；未提供 gate 时该 kind 不出现（I2） |
+| `TOOL_RESULT` | `result is None` ⇒ `✗ 未执行：<text>`；`result.ok` ⇒ `✓ <tool_name>`（`truncated` 时注明"已截断"）；否则 `✗ <tool_name>：<result.error>` | 全字段 | `result.content` / `error` 不可信 ⇒ 净化；**"未执行"与"执行失败"必须在显示上可区分**（§1 第 4 条） |
+| `ERROR` | `! <error_kind>：<text>` | 全字段 | 是否终止看其后是否有 `TASK_FINISHED` 与 `status`（I7） |
+| `TASK_FINISHED` | `<status>：<text>` | 全字段 | **决定退出码**（下表）；必须是最后一个事件（I6） |
+
+**退出码（`REQ-UX-01`：非交互可进 CI ⇒ 故障类别必须可区分）**：
+
+| 情形 | 退出码 |
+| --- | --- |
+| `TASK_FINISHED.status is COMPLETED` | `0` |
+| `TASK_FINISHED.status is FAILED` | `1` |
+| `TASK_FINISHED.status is LIMIT_REACHED` | `2` |
+| 装配期 `BenchError`（`ConfigError` / `PathNotAllowedError` / `DomainPackError` / `ModelUnavailableError` / `ToolRegistrationError`） | `3` |
+| 审计写入失败（`emit` / `flush` 的异常冒泡） | `4` |
+| 其它未预期异常 | `5` |
+
+> 退出码的**具体数值**属 CLI 入口细节，但**必须**在 `cli/` 与集成用例之间一致，且**必须**
+> 让"**任务失败**"与"**环境 / 配置故障**"可区分——两者都返回 `1` 会让 CI 无法判断该重试还是该修环境。
+
+**输出通道的两条硬规定**（否则非交互模式无法被脚本消费）：
+
+1. **`--output-format json` 时 stdout 只出 JSONL**（一行一个 `event_to_payload(event)` 的 JSON）；
+   进度条 / 提示 / 诊断一律走 **stderr**，**不得**在 stdout 混入非 JSON 行；
+2. **所有来自模型、工具、用户的字符串**（`response.content` / `result.content` / `result.error` /
+   `tool_name`）写入终端前**必须**经 `foundation.logging.sanitize_for_display`
+   （防 ANSI 转义序列伪造显示）；JSON 模式由 `json.dumps` 负责转义，**不得**手工拼接。
+
+**最小入口的步骤清单**（照着写即可）：
+参数解析（Typer）→ `load_config()` → `JsonlAuditSink` → `load_pack()`（若启用）→ 能力收窄 →
+`PolicyEngine` → 工具 + `ToolRegistry` → `LocalLlamaClient` → 构造 `Session`（§5.1）→
+`for event in session.run(task)` 按 §5.2 渲染或序列化 → 按退出码表返回。
+
+---
+
+## 6. 验证方式（**可执行判据**；没有验证方式的缓解视为未实现）
+
+### 6.1 单测（`tests/unit/`，实现工程师）
 
 | # | 判据 |
 | --- | --- |
@@ -759,7 +926,7 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
 | `H-8` | 装配期校验：`working_dir` 不在 `allowed_roots` 内 / `max_steps=0` / `tool_timeout_s=inf` ⇒ 构造期拒绝（§2.8） |
 | `H-9` | `Session.close()` 幂等；`with` 退出后按序 teardown（用 fake 记录调用顺序） |
 
-### 5.2 对抗性用例（`tests/security/`，验证工程师；**不得由实现者自证**）
+### 6.2 对抗性用例（`tests/security/`，验证工程师；**不得由实现者自证**）
 
 | # | 攻击场景 → 期望行为 | 验收标准 |
 | --- | --- | --- |
@@ -767,43 +934,58 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
 | `S1-b`（本契约新增） | ① 模型**幻觉**一个不存在的工具名；② 模型调用一个**存在但未暴露**的工具（被裁剪 / 不在 pack 白名单） | 两者都**未执行**，且审计 `detail["denied_reason"]` 分别为 `unknown_tool` / `not_exposed` —— 这两条是 `tools.md` §2.6 与 `REQ-HARNESS-03` 的行为面，**此前无任何用例覆盖** |
 | `S1-c`（本契约新增） | `arguments_json` 携带唯一 sentinel 值（如 `SENTINEL-7f3a…`）的超长 / 非法 / 未知键载荷 | 事件流、`text`、审计文件三者中**均不出现**该 sentinel（I8/V4） |
 | `S3`（`ADR-0015` §7.2） | 领域包目录内放置一个**带副作用**的 `.py`（写标志文件 / 打印） | ① `load_pack` 抛 `DomainPackError`；② 标志文件**不存在**；③ 该模块名**不在** `sys.modules`（"不导入"是行为断言，不能只看返回值） |
-| `S-new-1` | 需人工确认的调用，`ApprovalGate` 为"非交互 ⇒ 拒绝"的实现 | 未执行；`APPROVAL_RESULT.outcome is DENY`；审计有 `kind=APPROVAL` 事件（A3/A4） |
+| `S-new-1` | 需人工确认的调用，`ApprovalGate` 为"非交互 ⇒ 拒绝"的实现 | 未执行；`APPROVAL_RESULT.outcome is DENY`；审计有 `kind=APPROVAL` 事件（§2.5.5 的 `R2`/`A4`） |
+| `S-new-4`（本契约新增） | **不提供**确认通路（`approval=None`），而模型发起一个 `requires_confirmation` 的调用 | 调用**未执行**（`Tool.invoke` 未被调用）；`TOOL_RESULT(result=None, text=…)`；审计有 `TOOL_CALL/DENY` + `detail["denied_reason"]=="approval_denied"`；**且断言事件流中不出现 `APPROVAL_RESULT`**（没有人被问过，§2.5.5 `R1`+I2） |
+| `S-new-5`（本契约新增） | 确认通路**故障**：gate 抛异常 ／ 返回形状非法（非 `ApprovalResult`、未知 `outcome`、空 `audit_id`） | 该调用**不执行**；出现 `ERROR(error_kind=INTERNAL)` 且 `TASK_FINISHED.status is FAILED`；**断言异常没有被吞成"一次普通拒绝"**（§2.5.5 `R3`/`R4`） |
 | `S-new-2` | `NETWORK_OUTBOUND` 已授予，工具尝试出站 | `ExecutionContext.network_allowed is False`（构造出的 ctx 逐次断言）——防"授予即放行"的 fail-open 回归（`T-10` 保持未缓解） |
 | `S-new-3` | 审计 sink 的 `emit` 抛异常 | **异常从 `run()` 冒泡**，**不得**被转成 `ERROR` 事件后继续（`audit.md` §2.4 的"失败必须冒泡"与 `policy.md` §2.5 的相反处置必须分清） |
 
 ---
 
-## 6. 对 `src/` 的改动清单（**实现侧动作**；`src/` 不是架构师的文件域）
+## 7. 对 `src/` 的改动清单（**实现侧动作**；`src/` 不是架构师的文件域）
 
 | 文件 | 动作 |
 | --- | --- |
 | `contracts/harness.py` | **新建**（唯一实现本文件）：7 个 `StrEnum`（`SessionEventKind` / `TaskStatus` / `SessionErrorKind` / `ApprovalOutcome` / `ErrorDisposition`↔见 `harness/errors.py`）+ 6 个 `frozen dataclass`（`SessionEvent` / `ApprovalRequest` / `ApprovalResult` / `SessionConfig`）+ 3 个 `Protocol`（`Session` / `ApprovalGate` / `ArgumentValidator`）。**零行为**：`Protocol` 方法体为 `...`，不写 `__post_init__` |
 | `contracts/__init__.py` | 如有再导出清单，补 `harness`（按现有写法） |
-| `harness/errors.py` | `HarnessError` / `HarnessInternalError` / `DomainPackError` / `ErrorPlan` / `plan_for`（`ErrorDisposition` 可放这里，也可放契约——**放契约**，它出现在 `ErrorPlan` 的字段类型里） |
+| `harness/errors.py` | `HarnessError` / `HarnessInternalError` / `DomainPackError` / `ErrorPlan` / `plan_for`（`ErrorDisposition` 放**契约**：它出现在 `ErrorPlan` 的字段类型里）。⚠️ 与已提交实现（`{RETRY, FEEDBACK, ABORT}` + `classify_error`/`resolve_disposition`）的差异见 §8 的 **`R-3`**，**待裁决** |
 | `harness/{session,loop,prompts,trimming,checkpoint,domain_pack}.py`、`harness/context/` | 按 §3.1 的签名落地；遵守 H1/H2 |
 | `foundation/errors.py` | **新增** `ToolArgumentsInvalidError(BenchError)`（信任边界校验失败；与 `tools/registry.py::ToolArgumentError` **不合并**，分工见 §3.4） |
 | `security/capabilities.py` | **新增**一个纯函数（建议 `narrow_granted(granted: CapabilitySet, allowlist: frozenset[Capability]) -> CapabilitySet`）实现"只能收窄"的交集；装配点必须经它 |
-| `tests/unit/test_harness_*.py` | §5.1 的 `H-1`~`H-9` |
-| `tests/security/test_harness_*.py` | §5.2 的 `S1` / `S1-b` / `S1-c` / `S3` / `S-new-1`~`3` |
-| `docs/design/interfaces/audit.md` | **待同步**（不在本轮白名单）：§2.2 的 kind→outcome 表补 `TOOL_CALL: DENY`，§4 补修订记录行（见 §2.7 的修订请求 / `README.md` §6 `U8`） |
-| `docs/design/architecture.md` | **待同步**：§2.4 表首行与 §5.2 时序图的 `AsyncIterator` → 同步 `Iterator`（见 §2.9 末表；不在本轮白名单） |
+| `tests/unit/test_harness_*.py` | §6.1 的 `H-1`~`H-9`（另需覆盖 §5.2 的渲染分支与退出码表：每一 `kind` 至少一条用例） |
+| `tests/security/test_harness_*.py` | §6.2 的 `S1` / `S1-b` / `S1-c` / `S3` / `S-new-1`~`5` |
+| `docs/design/interfaces/audit.md` | **已落**（2026-09-19，`be63b31`）：§2.2 的 kind→outcome 表把 `TOOL_CALL` 的允许集放宽为 `{OK, ERROR, DENY}` + `D1~D4` + 修订记录。**下游联动**：`contracts/audit.py` 与 `observability/audit.py` **均无需改动**（已读源码核实：成员本就存在；读取侧只校验枚举取值，不校验 kind×outcome 组合）；**0 处测试会因此翻红**（全仓无 kind→outcome 允许集断言） |
+| `docs/design/architecture.md` | **已落**（2026-09-19）：§2.4 表首行与 §5.2 同步为同步 `Iterator`，§12 登记修订 |
 
 **不变量**：`contracts/` 仍是**零行为**（只有类型、`Protocol`、常量），
 `tests/unit/test_architecture_layers.py` 的 `V1`（契约层不引第三方）必须继续通过。
 
 ---
 
-## 7. 本文件的修订记录与待同步项
+## 8. 本文件的修订记录与待同步项
 
 | 日期 | 修订 | 依据 |
 | --- | --- | --- |
 | 2026-09-19 | **初版**：定义 `SessionEvent`（7 kind / 14 字段 / I1~I10）、`TaskStatus`、`SessionErrorKind`、审批门四类型、`SessionConfig`、`Session` Protocol；**裁决 `Session.run` 用同步 `Iterator`**（并给出 `ADR-0015` §5.1.2 与 `architecture.md` 两处引用的处置）；冻结 `harness/` 8 件的签名、调用方向与禁止项；把工具调用决策序列的每步入参/出参写死；定义 `ArgumentValidator` 的契约语义（选型待上报）；给出领域包最小 schema 与 fail-secure 失败模式表 | 领导核实的契约缺口（`SessionEvent` 未定义）；`ADR-0015` §5.1.2 / §5.3 / §5.4.1 / §7.2 / §7.3；`interfaces/{model,tools,policy,audit}.md`；`architecture.md` §2.4 / §5.2 / §5.3 / §11；`src/agent_sec_perf/`（读代码核实现状） |
+| 2026-09-19 | **第二版（按领导追加指令）**：① §2.5 扩为**完整审批通路**——`arguments_summary` 字段与生成口径（`S1`~`S5`）、"确认请求由 `POLICY_DECISION` 承载"的位置规定（§2.5.2，**不新增 kind**）、回传机制四候选的对比与采纳理由（§2.5.4）、**fail-secure 六条**（`R1`~`R6`：无通路 / 无 TTY / 抛异常 / 形状非法 / 超时 / `ALLOW_ALWAYS`）；I2 同步改写为"存在 ⇔ `requires_confirmation` **且**配置了 gate"；② **新增 §5「装配点与 `cli/` 最小入口」**——`Session` 的 9 项装配清单（类型 / 默认 / 构造方 / 失败处置 / 装配顺序）、每种 `kind` 的渲染与序列化分支表、退出码表、输出通道两条硬规定；③ §3.1 补 `summarize_arguments`、`approval` 默认 `None`；§3.3 步 4 补三条 fail-secure 分支；④ §6.2 补 `S-new-4`/`S-new-5`；⑤ 登记实现侧差异 `R-1`~`R-4` 与本文中 `AsyncIterator` 字样的解读规则 | 所有者把本轮定位明确为"**基线实现（base project）**：能跑起来 + 可作后续性能改动的比较基准"（**不追求功能完备，但必须闭环可跑**）；`architecture.md` §5.2 的审批路径原来没有承载类型 ⇒ `loop` 与 `cli` 无法并行。**不含任何性能度量机制**（明确排除） |
 
-**待同步项**（本文件已给规范，但对应文件不在本轮产出白名单内）：
+**待同步项**（本文件已给规范；逐项状态如下）：
 
-| # | 待同步 | 处置 |
+| # | 待同步 | 状态与处置 |
 | --- | --- | --- |
-| T1 | `interfaces/audit.md` §2.2：`TOOL_CALL` 增加 `DENY` | `README.md` §6 的 `U8`；由领导指派（一行表 + 一行修订记录） |
-| T2 | `architecture.md` §2.4 / §5.2：`AsyncIterator` → 同步 `Iterator` | 同上（不在白名单） |
-| T3 | `ADR-0015` §5.1.2 的 `AsyncIterator` 表述 | **已在本轮完成**：仅追加「修订记录」一条（正文不改） |
-| T4 | 威胁模型：§2.7 / §4.4 引用了 `T-03` / `T-04` / `T-10` / `T-11` / `T-12` | 本轮**不改**任何威胁条目与计数；映射与新增用例（§5.2）由领导指派后在 `threat-model/` 登记 |
+| T1 | `interfaces/audit.md` §2.2：`TOOL_CALL` 的允许集放宽为 `{OK, ERROR, DENY}` | **已完成（2026-09-19，`be63b31`）**。措辞按领导更正：**放宽 kind→outcome 约束表的一格，不新增 `AuditOutcome` 成员**（`DENY` 本就存在）。下游联动：`contracts/audit.py` / `observability/audit.py` **无需改动**；**0 处测试翻红** |
+| T2 | `architecture.md` §2.4 / §5.2：`AsyncIterator` → 同步 `Iterator` | **已完成（2026-09-19）**：两处表述 + §12 修订记录 |
+| T3 | `ADR-0015` §5.1.2 的 `AsyncIterator` 表述 | **已完成**：只追加「修订记录」（正文不改），并与 `harness.md` §2.9、`architecture.md` §12 **三处对上** |
+| T4 | 威胁模型：§2.7 / §4.4 引用了 `T-03` / `T-04` / `T-10` / `T-11` / `T-12` | 本轮**不改**任何威胁条目与计数；映射与 §6.2 的新增用例由领导指派后在 `threat-model/` 登记 |
+| T5 | `interfaces/README.md` §6 的 `U9`：本文引入的四项未决（校验器选型 / `ALLOW_ALWAYS` 持久授权 / 检查点落点 / 领域包根） | 已登记；逐项解除走 `README.md` §7 的变更流程 |
+
+**实现侧差异登记（`R-1`~`R-4`，2026-09-19）**：`implementer-harness-leaf` 在本契约撰写**同期**
+提交了三个叶子模块（`fe82cce` 分级错误 / `83835af` 提示分级 / `68ce680` 工具裁剪），与本契约有四处
+不一致。**已上报领导裁决，裁决前以本契约为准**（实现侧不得自行取舍，评审时按本节核对）：
+
+| # | 不一致 | 证据 | 处理 |
+| --- | --- | --- | --- |
+| `R-1` | **裁剪 / 提示分级用了 `HardwareTier`（S/M/L）作输入轴**，本契约（依 `model.md` §2.3.1/§2.3.2、`ADR-0010` §5.2/§5.3、`SRS §14`）要求 **`CapabilityTier`**（模型能力档位） | `harness/trimming.py` 的 `select_tools(specs, tier: HardwareTier)`、`harness/prompts.py` 的 `build_system_prompt(tier: HardwareTier)` | **待裁决**。用硬件档位会让"同一模型换更强硬件 ⇒ 多给工具"，与"同一模型在不同硬件上能力档位不变"冲突；若判保留实现，则属**决策级合并两条轴 ⇒ 须新增 ADR** |
+| `R-2` | 提示模板**拒收任何外部内容参数**（`build_system_message` 无外部参数），本契约原写"pack 片段进 SYSTEM 并标注为数据段" | `harness/prompts.py` | **待裁决**；架构侧倾向**采纳实现**（"SYSTEM 只来自本模块常量"比"标注为数据段"更强），并把 pack 片段改为装配进一条 `role=USER` 数据消息 —— 属本契约的收紧 |
+| `R-3` | `ErrorDisposition` 成员名与落点：实现为 `{RETRY, FEEDBACK, ABORT}` 落在 `harness/errors.py`（另有 `classify_error` / `resolve_disposition`），本契约写 `FATAL` + `ErrorPlan` / `plan_for` | `harness/errors.py` | **待裁决**；架构侧倾向采纳实现（命名与 API 合理且已测），由本契约改 `FATAL`→`ABORT` 并去掉 `ErrorPlan` |
+| `R-4` | 未暴露工具与未知工具**未区分**（实现统一按"未知工具"处置），本契约要求 `denied_reason` 分 `not_exposed` / `unknown_tool` | `harness/trimming.py` 的 `exposed_tool_names` | **待裁决**；架构侧倾向保留区分（`REQ-HARNESS-03` 的裁剪要可审计），代价仅一个短码 |
