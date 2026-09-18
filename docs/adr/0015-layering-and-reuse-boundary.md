@@ -601,7 +601,7 @@ src/agent_sec_perf/
 | **D4** | 是否引入 structlog 作为结构化日志与脱敏管线 | **通过** | 零依赖、typed、与现有 stdlib `logging` 共存 |
 | **D5** | 是否引入 tree-sitter（+ Python 语法包）作为仓库索引的解析层 | **通过** | SRS §9 已列为关键依赖；备选标准库 `ast`（仅 Python） |
 | **D6** | 是否引入 platformdirs | **通过** | 零依赖，消除手写 XDG/Windows 路径分支；覆盖 `REQ-PLAT-01` |
-| **D7** | 构建后端选哪个（hatchling / setuptools / uv_build） | **暂缓**（待 V-a 核验 `hatchling` 的许可证与依赖后决定） | 阻塞 `REQ-UX-03`（一条命令安装）与 `REQ-OPS-04`（可复现构建）；核验完成前不写入 `pyproject.toml` |
+| **D7** | 构建后端选哪个（hatchling / setuptools / uv_build） | **已决（2026-09-19，所有者批准）：采用 `hatchling`** —— `V-a` 核验通过（MIT / 纯 Python / 依赖全为成熟纯 Python 包，见 §8.2.1），已写入 `pyproject.toml` 的 `[build-system]`。**否决另两个候选**：`setuptools` 需更多显式配置、历史上更易出现"文件包含/排除"歧义；`uv_build` 绑定 uv 单一构建器，与其他 PEP 517 工具链的互操作性**未核验**（未核验 ⇒ 不采用） | 原阻塞 `REQ-UX-03`（一条命令安装）与 `REQ-OPS-04`（可复现构建）**随之解除**：`uv build` 实测产出 `py3-none-any` wheel（含 `py.typed` 与 `bench/tasks/*.txt` 夹具，共 35 个文件） |
 | **D8** | 是否同意目录结构照 §5.4 落地（新增 `contracts/ foundation/ security/ observability/ model/ tools/ harness/ cli/` 8 个目录） | **通过**（按 §5.4 落 8 个目录） | **已启动**（见 §9）；新增目录按规则须由 ADR 说明理由，本文即该 ADR |
 | **D9** | 是否同意把 `bench/{proc,paths,errors}.py` 提升为 `foundation/`（一次跨模块重构 + AST 测试白名单同步） | **通过** | **已启动**（见 §9）；单独一个 `refactor` 提交，不改行为；同步 import 与 AST 测试白名单 |
 | **D10** | 是否同意 §5.2.6 的"本期不引入"清单（含"不引入任何 agent 编排框架"） | **通过** | 含"**不引入任何 agent 编排框架**"（LangChain / LlamaIndex / LangGraph / Semantic Kernel）；框架化会稀释核心论点 |
@@ -764,3 +764,10 @@ src/agent_sec_perf/
   **`D7`（构建后端）仍未决** ⇒ `[build-system]` 保持不动，项目仍不打包安装。
   本节**不改任何结论**：它只是把"已批准的选型"落到依赖声明上。
   配套落点：`sdlc.md` §3.1 的 `G2`/`G3` 状态同步为已完成（M0 出口准则）。
+- **2026-09-19**：**`D7` 由「暂缓」转为「已决」**——所有者批准采用 **`hatchling`**（`V-a` 已核验：MIT / 纯 Python）。
+  已写入 `pyproject.toml` 的 `[build-system]`（`requires = ["hatchling>=1.32"]`，
+  `build-backend = "hatchling.build"`，并显式声明 `packages = ["src/agent_sec_perf"]` 以避免名称推断）。
+  `uv build` 实测通过（wheel `py3-none-any`，含 `py.typed` 与 `bench/tasks/*.txt`）⇒
+  `REQ-UX-03` 与 `REQ-OPS-04` 的阻塞解除。
+  **本节不改任何其它结论**；§8.1 的 `D7` 单元格已就地标注最终决定（唯一被改的决策格，
+  属"该 ADR 自身待决项的收口"，**不构成新决策、故不另开 ADR**）。

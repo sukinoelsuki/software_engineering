@@ -197,7 +197,8 @@ Refs: #<issue>
       2026-09-18 批准**）；**§8.2 的 14 项核验已于 2026-09-19 完成**
       （证据：[`docs/research/2026-09-19-dependency-verification.md`](docs/research/2026-09-19-dependency-verification.md)）；
       **运行期 `dependencies` 已填装 8 个组件并锁定**（`uv.lock`；`make check` 全绿）
-      ⇒ 本项**已完成**。⚠️ **例外仍开着**：**`D7` 构建后端**待所有者拍板（`[build-system]` 未动）
+      ⇒ 本项**已完成**（`D7` 构建后端亦已于 2026-09-19 拍板为 `hatchling` 并写入 `[build-system]`，
+      `uv build` 实测通过 ⇒ `REQ-UX-03`/`REQ-OPS-04` 的阻塞解除）
 - [ ] **M0 出口（框架就绪 = Harness 可开工）**：判据已定义于
       [`docs/engineering/sdlc.md`](docs/engineering/sdlc.md) **§3.1**（`G1`~`G9`）；
       当前 `G1`~`G3` / `G9` 已满足，**`G4`~`G8`（最小骨架 9 件模块）未满足**
