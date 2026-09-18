@@ -2,11 +2,15 @@
 
 刻意**手写**记录而不调用生产代码来构造：测试要能发现"生产代码写出来的结构与
 schema 不一致"，用生产代码构造就等于让被测对象自己出题。
+
+另有一个进程边界替身（``popen_spy``）：证明"传给常驻子进程的环境到底是什么"
+——本环境没有 ``llama-server`` 二进制与模型，只能在**调用边界**上取证。
 """
 
 from __future__ import annotations
 
 import statistics
+import subprocess
 from typing import Any
 
 import pytest
@@ -123,3 +127,35 @@ def make_record(
 def valid_record() -> dict[str, Any]:
     """一条干净的轮次记录。"""
     return make_record()
+
+
+@pytest.fixture
+def popen_spy(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """替换 ``subprocess.Popen``：记录每次启动的 argv 与 ``env``，不真的起进程。
+
+    返回的列表按启动顺序累积；``entry["env"]`` 就是**将要交给子进程**的环境
+    （T-08 的取证点：凭据是否进入了子进程环境）。
+    """
+    captured: list[dict[str, Any]] = []
+
+    class _Spy:
+        """``Popen`` 的最小替身：只保留 :class:`BackgroundProcess` 用到的方法。"""
+
+        def __init__(self, argv: list[str], **kwargs: object) -> None:
+            captured.append({"argv": argv, "env": kwargs.get("env")})
+            self.pid = 4242
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            return None
+
+    monkeypatch.setattr(subprocess, "Popen", _Spy)
+    return captured

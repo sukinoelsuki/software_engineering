@@ -119,7 +119,15 @@ class LlamaServer:
 
     def __enter__(self) -> LlamaServer:
         argv = [self._binary, *self._params.server_argv(self._model_path)[1:]]
-        self._process = proc.spawn(argv, cwd=self._log_path.parent, log_path=self._log_path)
+        # 显式传最小环境：修复前此调用点未传 env，常驻的 llama-server 会继承含
+        # CNB_TOKEN 的完整父环境（T-08）。显式优于隐式——即便 spawn 的默认值将来
+        # 被改动，这里也不会退化。
+        self._process = proc.spawn(
+            argv,
+            cwd=self._log_path.parent,
+            log_path=self._log_path,
+            env=proc.minimal_env(self._log_path.parent),
+        )
         self.load_seconds = self._wait_ready()
         return self
 

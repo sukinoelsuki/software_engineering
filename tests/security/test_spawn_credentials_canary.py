@@ -12,13 +12,14 @@
 * 以「未传 env」的方式调用 ``proc.spawn``（复刻 ``runner.py:122`` 的调用形态）；
 * 断言子进程环境中**不含**该哨兵。
 
-因为缺陷当前存在（默认全量继承），子进程**会**带上哨兵，断言失败 ⇒
-``xfail(strict=True)`` 把它记为「预期失败」，**不红**。
-一旦缺陷被修复（``runner.py:122`` 显式传最小 env，或 ``spawn`` 默认改最小 env），
-断言将转为通过 ⇒ xfail(strict) 报 XPASS 并**失败**，强制把本用例翻正为普通断言。
+历史与本用例的当前形态：缺陷当时确实存在（``spawn`` 默认全量继承 ``os.environ``，且唯一的
+调用点 ``runner.py:122`` 未传 ``env``），子进程**会**带上哨兵 ⇒ 断言失败 ⇒
+``xfail(strict=True)`` 把它记为「预期失败」，**不红**（**曾以 xfail 钉住**这件事本身就是
+缺陷当时存在的证据）。2026-09-18 随修复（``spawn`` 默认改为最小环境 + ``runner.py:122``
+显式传最小 env）**翻正为常态断言**，`xfail` 标记已移除。
 
-变异验证（开发期手动，仓库保持干净）：临时把 ``spawn`` 默认改为最小环境后，
-该用例会转为 XPASS(strict) 失败，证明它能感知修复——见回报 §变异证据。
+变异验证（修复后手动，仓库保持干净）：把 ``spawn`` 的默认改回继承父环境后，
+子进程会重新拿到哨兵 ⇒ 本用例失败，证明它仍能钉住该缺陷。
 """
 
 from __future__ import annotations
@@ -36,13 +37,6 @@ _SYNTHETIC_TOKEN = "synthetic-canary-CNB_TOKEN-0000000000000000"
 
 
 @pytest.mark.security
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "bench/runner.py:122 未传 env，proc.spawn 默认全量继承 os.environ，"
-        "CI 夜轮 llama-server 继承含 CNB_TOKEN 的完整环境（凭据泄漏缺陷，待修复）"
-    ),
-)
 def test_spawned_child_must_not_inherit_credentials(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -73,7 +67,7 @@ def test_spawned_child_must_not_inherit_credentials(
         child.terminate()
 
     # 关键断言：子进程环境绝不得出现该合成凭据。
-    # 缺陷存在时此断言失败 ⇒ xfail 捕获；修复后通过 ⇒ xfail(strict) 翻红强制翻正。
+    # 修复前此断言失败（由 xfail(strict) 记为预期失败）；修复后为常态断言。
     assert _SYNTHETIC_TOKEN not in output, (
         f"spawn 出的子进程继承了父进程凭据：在输出中发现合成哨兵 {_SYNTHETIC_TOKEN!r}。"
         "bench/runner.py:122 必须显式传最小 env，或 proc.spawn 默认改为最小环境。"

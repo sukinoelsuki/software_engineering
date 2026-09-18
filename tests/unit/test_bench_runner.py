@@ -8,9 +8,18 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
-from agent_sec_perf.bench.runner import parse_model_load_seconds, parse_server_info, parse_timings
+from agent_sec_perf.bench.protocol import RunParams
+from agent_sec_perf.bench.runner import (
+    LlamaServer,
+    parse_model_load_seconds,
+    parse_server_info,
+    parse_timings,
+)
+from agent_sec_perf.foundation import proc
 
 #: 取自 2026-09-16 的实际日志（首条为真实 prefill，后两条为缓存命中）
 REAL_LOG_SNIPPET = """
@@ -60,3 +69,38 @@ def test_parse_server_info_on_log_without_slot_line() -> None:
 def test_parse_model_load_seconds_returns_none_without_line() -> None:
     """加载耗时行缺失时为 None。"""
     assert parse_model_load_seconds("nothing here") is None
+
+
+@pytest.mark.unit
+def test_llama_server_spawn_passes_minimal_env(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    popen_spy: list[dict[str, object]],
+) -> None:
+    """服务端启动时**传给子进程**的环境必须是清洁的最小环境（T-08 的调用点一层）。
+
+    与 ``tests/security/test_spawn_env_explicit.py``（静态守卫：调用点必须写 ``env=``）
+    刻意互补——这里证明"传出去的确实是最小环境"，那里证明"调用点写了 ``env=``"。
+    注意反方向变异：只把调用点的 ``env=`` 删掉**不会**让本用例变红（``spawn`` 的默认
+    已是最小环境），这正是"显式 + 默认"两层并存的意义。
+
+    取证边界：本环境没有 ``llama-server`` 二进制与模型，因此这里看到的是**交给
+    ``Popen`` 的环境**，不是真实服务进程实际看到的环境。
+    """
+    monkeypatch.setenv("CNB_TOKEN", "synthetic-canary-0000000000000000")
+    params = RunParams()
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(LlamaServer, "_wait_ready", lambda _self: 0.0)
+
+    with LlamaServer(
+        params=params,
+        binary="/usr/local/bin/llama-server",
+        model_path=tmp_path / "model.gguf",
+        log_path=log_dir / "server.out",
+    ):
+        pass
+
+    recorded_env = popen_spy[-1]["env"]
+    assert isinstance(recorded_env, dict)
+    assert recorded_env == proc.minimal_env(log_dir)
+    assert "CNB_TOKEN" not in recorded_env

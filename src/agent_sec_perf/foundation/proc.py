@@ -94,11 +94,12 @@ def resolve_binary(name: str) -> str:
     return found
 
 
-def _isolated_env(workdir: pathlib.Path) -> dict[str, str]:
-    """隔离执行用的最小环境变量集合。
+def minimal_env(workdir: pathlib.Path) -> dict[str, str]:
+    """最小环境变量集合：本层**唯一**的环境构造入口（``run`` 与 ``spawn`` 共用）。
 
     刻意**不**继承 ``os.environ``：父进程里的令牌、凭据与网络代理配置都不会
-    传递给执行模型产物的子进程。
+    传递给执行模型产物或第三方二进制的子进程。策略是**默认拒绝**——确需继承
+    父环境者，必须显式传 ``env=dict(os.environ)``（见 :func:`spawn`）。
     """
     return {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
@@ -108,6 +109,11 @@ def _isolated_env(workdir: pathlib.Path) -> dict[str, str]:
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": str(workdir),
     }
+
+
+#: 兼容别名：既有设计与威胁模型文档（``docs/design/**``）仍以旧名引用本策略。
+#: 只是同一个对象的第二个名字，**不是**第二份策略。
+_isolated_env = minimal_env
 
 
 def _apply_limits() -> None:
@@ -139,7 +145,7 @@ def run(
         ProtocolError: 超时或命令无法启动。
     """
     isolated = isolation == "user"
-    env = _isolated_env(cwd) if isolated else dict(os.environ)
+    env = minimal_env(cwd) if isolated else dict(os.environ)
 
     try:
         # 不经 shell、参数为列表；执行前施加非特权 uid + rlimit + 最小环境。
@@ -220,7 +226,13 @@ def spawn(
     """启动常驻子进程，输出重定向到日志文件。
 
     日志文件是性能数据的主证据（``slot print_timing`` 行），因此必须先于进程创建。
+
+    ``env`` 遵循**默认拒绝**：不传时只给子进程 :func:`minimal_env`（``cwd`` 为
+    工作目录），父进程的令牌、凭据与代理配置都不会进入这个常驻进程——它通常是
+    不受本项目控制的第三方二进制（``T-08``）。确需继承父环境者必须**显式**传
+    ``env=dict(os.environ)``（当前无此类调用者）。
     """
+    child_env = minimal_env(cwd) if env is None else dict(env)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handle = log_path.open("wb")
     try:
@@ -232,7 +244,7 @@ def spawn(
             stdout=handle,
             stderr=subprocess.STDOUT,
             start_new_session=True,
-            env=dict(os.environ) if env is None else dict(env),
+            env=child_env,
         )  # nosec B603
     finally:
         handle.close()
@@ -262,6 +274,7 @@ __all__ = [
     "BackgroundProcess",
     "CommandResult",
     "gib",
+    "minimal_env",
     "peak_memory_gib",
     "resolve_binary",
     "run",
