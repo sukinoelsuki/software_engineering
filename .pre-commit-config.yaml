@@ -96,6 +96,11 @@ repos:
     rev: 1.9.4
     hooks:
       - id: bandit
-        args: ["-c", "pyproject.toml", "-q", "-r", "src"]
+        # 2026-09-18：去掉 `-c pyproject.toml`。该参数使本钩子**读配置**（含 `skips = ["B101"]`），
+        # 而 `make check` 的 `security-bandit` 目标执行 `bandit -q -r src`（**不读配置**）
+        # ⇒ 同一份代码在两处门禁下的规则集不同，且配置只在本地钩子生效。
+        # 现统一为"**不读配置文件**"：两处规则集一致，且不保留任何 skips ⇒ 强度不降（B101 重新被检查）。
+        # 详见 pyproject.toml 中 Bandit 段落的说明与探针证据（docs/engineering/ 的 bandit 登记条）。
+        args: ["-q", "-r", "src"]
         files: ^src/.*\.py$
         pass_filenames: false

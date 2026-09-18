@@ -176,10 +176,16 @@ exclude_lines = [
 #      确需豁免的场景：豁免标记行只写规则号（`# nosec B404` / `# noqa: S603`），
 #      理由写在紧邻其上的独立注释行（禁止在标记后追加自由文本——会被当作规则号而静默放宽检查），
 #      并登记到安全豁免登记表（`docs/adr/0014-benchmark-automation.md` §2.9）。
+#
+# 2026-09-18：此处原有 `[tool.bandit]` 段（`targets` / `exclude_dirs` / `skips = ["B101"]`），
+#  **已删除**，且**不保留任何 Bandit 配置**。原因：
+#  `make check` 的 `security-bandit` 目标执行 `bandit -q -r src`（**不读配置**），
+#  而 pre-commit 钩子执行 `bandit -c pyproject.toml …`（**读配置**）
+#  ⇒ 同一份代码在两处门禁下的**规则集不同**，配置里的 `skips` 只在本地钩子生效。
+#  这会造成"钩子绿、make check 红"（或反之）的两套口径，且真实强度取较松的一处。
+#  处置：**两处统一为"不读配置文件"**，规则集一致，且因不再跳过 B101 而**强度不降**。
+#  子进程执行仍是本项目核心能力，因此**不**整体禁用 B603/B607（改为要求所有调用点
+#  显式经过封装层，见 `.codebuddy/rules/security-baseline`）——该立场由代码内豁免标记
+#  与上条登记表承载，**不**依赖本文件的配置。
+#  若将来确需 Bandit 配置，**必须两处门禁同时引用同一份配置**，并在本段说明理由。
 # ============================================================================
-[tool.bandit]
-targets = ["src"]
-exclude_dirs = [".venv", "build", "dist", "tests", "third_party", "vendor"]
-# 子进程执行是本项目的核心能力之一，因此不整体禁用 B603/B607；
-# 改为要求所有调用点显式经过封装层（见 .codebuddy/rules/security-baseline）。
-skips = ["B101"]
