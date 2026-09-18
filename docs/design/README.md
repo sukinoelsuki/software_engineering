@@ -22,6 +22,11 @@ design/
 ```
 
 > 上述结构将在 Phase 1 建立。**新增目录需先在 ADR 中说明理由。**
+>
+> **建立进度（2026-09-18）**：`interfaces/` **已建立** —— 字段级契约见
+> [`interfaces/`](interfaces/README.md)（为 `contracts/` 的 12 个类型定死字段；
+> 依据 ADR-0015 §5.1.2 与 §7.3）。其余子目录（`architecture.md` / `modules/` /
+> `threat-model/` / `security-model.md`）**尚未建立**。
 
 ---
 
