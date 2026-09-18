@@ -111,11 +111,6 @@ def minimal_env(workdir: pathlib.Path) -> dict[str, str]:
     }
 
 
-#: 兼容别名：既有设计与威胁模型文档（``docs/design/**``）仍以旧名引用本策略。
-#: 只是同一个对象的第二个名字，**不是**第二份策略。
-_isolated_env = minimal_env
-
-
 def _apply_limits() -> None:
     """在子进程 exec 之前收紧资源上限。"""
     resource.setrlimit(resource.RLIMIT_CPU, (CPU_LIMIT_S, CPU_LIMIT_S))
