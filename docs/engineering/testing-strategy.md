@@ -32,6 +32,17 @@
 | 安全 | `tests/security/` | 对抗性输入、攻击场景 | 秒级 | 拒绝行为与审计记录同时成立 |
 | 基准 | `tests/benchmark/` | 真实资源 | 分钟级 | 延迟、吞吐、内存 |
 
+> ⚠️ **当前状态（2026-09-18 核查，同日更正）**：上述分层是**目标态**；实际现状如下。
+> - **已建立**：`tests/unit/`（**13** 个测试模块，全部标记 `unit`）；
+>   `tests/security/`（`test_path_traversal_rejected.py` + `test_path_validation_seam.py`，
+>   共 **13 个 `@pytest.mark.security` 用例**——即 `ADR-0015 §7.2` 的 `S2` **拒绝**半），
+>   其中 `tests/security/corpus/traversal_payloads.txt`（**572 B**，路径穿越语料）。
+> - **仍缺**（属 Phase 1 产出）：`tests/integration/`、`tests/benchmark/`。
+> - `make test-security` 现有 13 个用例匹配 ⇒ 正常运行并通过。
+>   **零用例时的行为已由"打印提示并返回 0"改为 fail-secure（`exit 1`）**——依据提交 `a39ad48`
+>   （理由：安全测试层是基线的一部分，**零用例 / 标记丢失必须显式暴露**，不得静默通过）。
+> 依据：[`doc-consistency-report.md`](doc-consistency-report.md) 的 A-9（`a39ad48` 已注明该报告待同步）。
+
 标记：`@pytest.mark.unit` / `integration` / `security` / `benchmark` / `slow`。
 
 ---
@@ -91,8 +102,10 @@
 - **可复现**：固定环境描述、输入规模、随机种子、预热轮次、重复次数。
 - **指标**：P50 / P95 / P99、吞吐、内存峰值；报告方差。
 - **对照组**：必须包含改动前的基线（可用 `git stash` 或上一提交测得）。
-- **归档**：原始数据以结构化文件存入 `reports/bench/<date>-<slug>/`，
-  含 `README.md`（环境与命令）与原始结果文件。
+- **归档**：机器产出走 **`bench/data` 分支**（见 [ADR-0014](../adr/0014-benchmark-automation.md)，
+  由 `make bench-publish` 发布）；人工整理的研究归档进 `docs/research/reports/<date>-<topic>/`。
+  **不使用 `reports/bench/`**——该路径经 2026-09-18 一致性核查确认**不存在**，
+  且与流水线的实际落点不同（依据：[`doc-consistency-report.md`](doc-consistency-report.md) 的 A-5）。
 - 基准**不进入**默认快速回归（`make test` 排除 `benchmark` 标记）。
 
 ---
@@ -113,7 +126,7 @@
 ```bash
 make test              # 快速回归（排除 benchmark）
 make test-cov          # 含覆盖率
-make test-security     # 仅安全测试
+make test-security     # 仅安全测试（现有 13 个用例；零用例会 fail-secure，见 §2 的状态说明）
 make check             # 完整自检（提交 PR 前必须执行）
 uv run pytest -m benchmark    # 性能基准
 ```

@@ -15,7 +15,12 @@
 
 | 编号 | 标题 | 状态 |
 | --- | --- | --- |
-| [0001](0001-base-project-selection.md) | base project 选型分析 | 待决策 |
+| [0001](0001-base-project-selection.md) | base project 选型分析（选型框架后被 0002 / 0003 修正） | 已结案：推荐方案（候选 A）已被 [ADR-0003](../adr/0003-select-base-project.md) §5.2 作废；最终结论见 §5.1 |
+| [0002](0002-project-direction-landscape.md) | 项目方向全景 | 已被 [ADR-0003](../adr/0003-select-base-project.md) 采纳（推荐方向 1 经 0003 细化为最终定义） |
+| [0003](0003-lowspec-coding-agent.md) | 低资源受限环境下的能力感知智能体运行时（产品定义） | **已被 [ADR-0003](../adr/0003-select-base-project.md) 采纳为项目主线（§5.1）** |
+
+> 状态栏以 [ADR-0003](../adr/0003-select-base-project.md)（**已接受**，2026-09-14）为准；
+> 本表于 2026-09-18 逐条与 ADR-0003 §0 / §5.1 / §5.2 核对并同步。
 
 ---
 

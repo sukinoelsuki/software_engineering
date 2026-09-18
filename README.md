@@ -1,38 +1,61 @@
-# 智能体系统 · 安全与加速工程实践
+# 端侧模型能力探索与综合治理
 
 > **项目代号：TBD** —— 待 base project 选型冻结后定名，见 [`docs/proposals/`](docs/proposals/)。
 
-一个围绕**原生智能系统（Native Intelligent Systems）**的软件工程综合实验项目，主线为
-**系统安全（System Security）** 与 **模型/系统加速与优化（Acceleration & Optimization）**。
+一个以**端侧模型能力探索**与**综合治理**为核心的**工程实践**项目：
+
+- **能力探索**回答"**它能做什么**"——能力受限的模型（4B/8B 级、CPU-only、无 GPU）在资源与网络受限的
+  环境中，其**能力边界**在哪、如何**探测**它、如何按边界**适配**（提示分级、工具裁剪、上下文工程）；
+- **综合治理**回答"**如何安全地做**"——用系统手段把它的行为约束在**授权与资源边界**内：
+  能力边界判定、权限与审批门（default-deny）、沙箱执行与最小权限、审计与可回放、资源约束。
+
+**系统安全**与**模型/系统加速与优化**是承载这两条核心问题的两条**主线**（前者是治理机制的载体，
+后者是"受限资源下仍能可用"的前提），二者在设计上必须同时成立。
 项目在既有开源前沿项目之上做增量研发，最终交付一个**完整、规范、便捷、安全、高效**的软件系统。
 
 | 项目信息 | 内容 |
 | --- | --- |
-| 归属 | 华中科技大学 · 计算机科学与技术学院 · 软件工程综合实验 |
+| 归属 | 华中科技大学 · 计算机科学与技术学院（工程实践项目） |
 | 组织形式 | 单人独立开发（决策、实现、评审均由本人完成，AI 作为实现与决策辅助） |
 | 周期 | 2026-09 ~ 2026-12（约 2~3 个月，多迭代） |
 | 仓库 | <https://cnb.cool/Mybase_Le0n3rd/software_engineering> |
-| 当前阶段 | **Phase 0 · 工程初始化**（详见 [里程碑](docs/engineering/sdlc.md)） |
+| 当前阶段 | **Phase 0 · 工程初始化（进行中）**：工程骨架与流程规范已完成；base project 的**复用组件清单**、SRS v0.2、威胁模型与模块划分 ADR **尚未完成**。详见 [里程碑](docs/engineering/sdlc.md) 与 [`CODEBUDDY.md`](CODEBUDDY.md) §9 |
+
+> ## 🚧 下一步（开发环境构建后立即执行）
+>
+> 镜像构建完成后，请按 **[构建后待办清单](docs/engineering/post-build-checklist.md)** 顺序执行：
+>
+> **① 确认自定义镜像生效 → ② 关键组件自检 → ③ 沙箱可用性 → ④ 工程门禁 `make check` → ⑤ W1 风险验证**
+>
+> ⚠️ 其中 **③ 沙箱可用性** 与 **⑤ W1 风险验证** 的结论会**直接改变后续方案**
+> （沙箱可能需降级；4B 模型能力不足则会触发方向收敛），请务必记录结果。
 
 ---
 
 ## 1. 项目简介
 
-本项目不接受"写一个 demo 交作业"的定位，而是**按工业级软件工程流程**推进：
+本项目按**工业级工程流程**推进，不以"能跑就行"的演示型交付为目标：
 
 - **过程规范**：需求 → 设计 → 实现 → 测试 → 评审 → 发布的完整生命周期，每次决策留痕（ADR）。
 - **版本规范**：SemVer + Conventional Commits + Keep a Changelog，分支模型与合并策略显式定义。
 - **质量规范**：静态检查、类型检查、自动化测试、安全扫描、CI 门禁缺一不可。
 - **安全规范**：威胁建模前置、最小权限、密钥零入库、供应链可追溯。
 
-项目的技术落点（研究方向）将在 base project 选型后冻结，当前候选方向见
-[`docs/proposals/0001-base-project-selection.md`](docs/proposals/0001-base-project-selection.md)。
+当前形态为**低资源受限环境下的能力感知智能体运行时**（单专家调度 + 能力包）：
+**能力探索**决定"它能做什么"，**综合治理**决定"它被允许做什么、以及凭什么被允许"。
+完整需求见 [`docs/requirements/srs.md`](docs/requirements/srs.md)，
+决策与论证过程见 [`docs/adr/`](docs/adr/) 与 [`docs/proposals/`](docs/proposals/)。
 
 ---
 
 ## 2. 研究方向
 
-三条相互支撑的主线：
+**两条核心问题**（本项目要回答的东西）：
+
+1. **端侧模型能力探索**：能力受限的模型在受限环境中，能力边界在哪、怎么探测、怎么按边界适配；
+2. **综合治理**：如何用系统手段（策略、审批、沙箱、审计、资源约束）把它的行为收在授权边界内。
+
+下表的三条主线是承载这两条核心问题的**技术手段**，它们相互支撑：
 
 | 主线 | 关注问题 | 典型产出 |
 | --- | --- | --- |
@@ -71,20 +94,24 @@
 ├── AGENTS.md                # 面向其他 Agent 工具的等价准则
 ├── docs/
 │   ├── adr/                 # 架构决策记录（Architecture Decision Records）
-│   ├── design/              # 设计与架构文档
+│   ├── design/              # 设计与架构文档（Phase 1 建立，当前只有 README）
+│   ├── devlog/              # 开发日志（按议题分篇；**活待办 = 最新篇 §7**）
 │   ├── engineering/         # 工程流程：Git 工作流、生命周期、DoD、测试策略
+│   ├── notes/               # 学习笔记（按主题累积，无证据不成条）
 │   ├── proposals/           # 立项与选型提案
 │   ├── requirements/        # 需求规格与用例
-│   └── research/            # 前沿 AI 生态研究笔记
-├── src/                     # 项目源码（base project 确定后落位）
-├── tests/                   # 测试（单元 / 集成 / 安全 / 性能）
+│   └── research/            # 研究结论与实验记录（含 reports/）
+├── src/agent_sec_perf/      # 项目源码（**当前只有 bench/ 基准子系统**，产品主体待落位）
+├── tests/                   # 测试（**当前只有 unit/ 层**；集成/安全/基准属 Phase 1）
 ├── scripts/                 # 开发与运维脚本
 ├── CONTRIBUTING.md          # 贡献与协作规范
 ├── SECURITY.md              # 安全策略与漏洞披露流程
 └── CHANGELOG.md             # 变更日志（Keep a Changelog）
 ```
 
-> `src/` 与 `tests/` 的具体分层结构将在 base project 选型确定后，通过新的 ADR 定义。
+> `src/` 的模块划分将在 base project 的**复用组件清单**确定后，通过新的 ADR 定义
+> （当前只有 `agent_sec_perf/bench/` 基准子系统）；`tests/` 目前只有 `unit/` 层，
+> 集成 / 安全 / 基准三层属 Phase 1 产出（见 [`docs/engineering/testing-strategy.md`](docs/engineering/testing-strategy.md) §2）。
 
 ---
 
@@ -137,6 +164,8 @@ make help        # 查看全部可用命令
 | [`docs/design/`](docs/design/) | 架构设计、模块设计、威胁模型、接口契约 |
 | [`docs/engineering/`](docs/engineering/) | 过程规范（工作流、生命周期、DoD、测试） |
 | [`docs/research/`](docs/research/) | 前沿 AI 生态调研与论文笔记 |
+| [`docs/devlog/`](docs/devlog/) | **开发日志**（按议题/阶段分篇，过程记录） |
+| [`docs/engineering/post-build-checklist.md`](docs/engineering/post-build-checklist.md) | **构建后待办清单**（下一步行动） |
 
 ---
 

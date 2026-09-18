@@ -1,0 +1,44 @@
+```python
+import pytest
+from t3_pure import merge_intervals
+
+def test_merge_intervals_normal_case():
+    intervals = [(1, 3), (2, 5), (6, 8), (7, 10)]
+    expected = [(1, 5), (6, 10)]
+    assert merge_intervals(intervals) == expected
+
+def test_merge_intervals_no_overlap():
+    intervals = [(1, 2), (3, 4), (5, 6)]
+    expected = [(1, 2), (3, 4), (5, 6)]
+    assert merge_intervals(intervals) == expected
+
+def test_merge_intervals_single_interval():
+    intervals = [(1, 1)]
+    expected = [(1, 1)]
+    assert merge_intervals(intervals) == expected
+
+def test_merge_intervals_empty_list():
+    intervals = []
+    expected = []
+    assert merge_intervals(intervals) == expected
+
+def test_merge_intervals_all_overlap():
+    intervals = [(1, 10), (2, 5), (3, 8)]
+    expected = [(1, 10)]
+    assert merge_intervals(intervals) == expected
+
+def test_merge_intervals_with_same_start():
+    intervals = [(1, 5), (1, 7), (2, 3)]
+    expected = [(1, 7)]
+    assert merge_intervals(intervals) == expected
+
+def test_merge_intervals_with_same_end():
+    intervals = [(1, 5), (3, 5), (4, 5)]
+    expected = [(1, 5)]
+    assert merge_intervals(intervals) == expected
+
+def test_merge_intervals_with_negative_numbers():
+    intervals = [(-5, -2), (-3, 0), (-1, 1)]
+    expected = [(-5, 1)]
+    assert merge_intervals(intervals) == expected
+```

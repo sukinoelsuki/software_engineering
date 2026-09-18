@@ -42,6 +42,8 @@
 
 7. **供应链可信（Supply Chain Integrity）**
    依赖、模型权重、二进制产物需固定版本/摘要，来源可追溯。
+   **镜像内新增第三方代码（CLI / Skill）必须记录来源、精确版本与 commit/摘要**；
+   **Skill 文本进入指令面**（`description` 常驻上下文、`SKILL.md` 触发时加载），必须**固定 commit**。
 
 ---
 
@@ -49,12 +51,37 @@
 
 | 编号 | 规则 | 检查方式 |
 | --- | --- | --- |
-| S-1 | 禁止提交任何密钥、令牌、私钥、真实凭证 | `pre-commit` 的 `detect-private-key`、CI 密钥扫描 |
+| S-1 | 禁止提交任何密钥、令牌、私钥、真实凭证 | 三处同时生效：① 提交时本地 `detect-private-key` 钩子；② `make check` 的 `security-secrets`（`pre-commit run detect-private-key --all-files`）；③ CI 的具名 `secret-scan` stage（同一目标） |
 | S-2 | 禁止硬编码内部地址、账号、生产环境信息 | 自评审清单 + CI 关键词扫描 |
 | S-3 | 依赖必须锁定版本并记录来源 | 锁文件（`uv.lock` 等）+ `make security` |
 | S-4 | 禁止引入来源不明的权重/二进制/脚本 | PR 模板中的"依赖与来源"必填项 |
 | S-5 | 不可信事件（PR 等）触发的 CI 不得访问密钥 | `.cnb.yml` 中密钥操作仅置于可信事件 |
 | S-6 | 安全相关检查不得被静默绕过 | 绕过必须附 ADR 说明 |
+| S-7 | 豁免标记（`# nosec` / `# noqa`）**标记行只写规则号**（标记行上不写理由）；理由写在**紧邻其上的独立注释行**，且**理由中不得出现其它规则号** | `make check` 的 `bandit` 段无 `Test in comment` 告警；`tests/unit/test_bench_encapsulation.py` 的 E4 断言（`# nosec` 后的 id 集合**恰等于**预期） |
+| S-8 | **声称已生效的缓解措施必须能被实测**：钩子 / CI stage / 探针必须可验证"确实在运行"；**只有文档描述不算缓解措施** | `make hooks-check`（本地钩子层存在性断言，含"是 pre-commit 生成的、指向本仓库配置、钩子类型正确"）+ `tests/unit/test_local_gates.py`（用临时 git 仓库证明该检查**非恒过**）+ CI 具名 `secret-scan` stage + `tests/unit/test_cnb_config.py`（计数断言：门禁流水线数 == 具名密钥扫描阶段数） |
+| S-9 | **不可回退的操作必须事先拦截**：凭据类改动 / 改写已推送历史 / 强推 / 删远端分支 / 直接写 `main` / 人手写 `bench/data` | 授权分级表见 [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §4（C/D/B/E 类保持事先批准或禁止）；对应拦截点：`.pre-commit-config.yaml` 的 `no-commit-to-branch --branch=main`、数据分支只由 CI 写（`bench/data` 白名单）；分级集合在 5 处口径一致性自查（见该节） |
+
+> **S-9 与 S-1 的关系**（两者的把关位置不同，**不得互相替代**）：
+> `S-1` 管"**凭据不许入库**"（结果性禁令，检查在提交/推送前）；
+> `S-9` 管"**不得把不可回退操作的把关降级为事后**"（程序性禁令）——
+> 凭据入库只是它的一个子项，它还覆盖改写已推送历史 / 强推 / 删远端分支 / 直接写 `main` /
+> 人手写 `bench/data`。**仅有 `S-1` 不足以覆盖 S-9 的其余子项**，反之亦然。
+> 依据与分级判据见 [`docs/adr/0016-cnb-platform-integration-and-remote-write-authorization.md`](docs/adr/0016-cnb-platform-integration-and-remote-write-authorization.md) §5.1/§5.2。
+
+> **为什么 S-8 是硬性要求**（2026-09-18 实测，一致性报告 A-11 / 新增 A-15，见
+> [`devlog 0014`](docs/devlog/0014-2026-09-18-威胁模型与安全修复.md) §3/§6）：
+> 文档与配置长期声称"本地 `pre-commit` 提供密钥扫描与提交信息校验"，而 `.git/hooks/`
+> 实质**长期为空**——`make setup` 用 `$CI` 的**存在性**推断"要不要装钩子"，
+> 而云开发工作区恰好带着 `CI=true`。于是"声称的保护"与"真正运行的保护"之间是空的，
+> **且没有任何检查会因"钩子不存在"而失败**，问题因此活了很久才被发现。
+> 处置：钩子安装改为**显式开关** `LOCAL_HOOKS`（不再从 `$CI` 推断），
+> 并把"钩子真的装了"做成可执行检查 `make hooks-check`（`make check` 的第一步）；
+> CI 侧补具名 `secret-scan` stage。**凡"缺失应失败"的约束，必须把"缺失"本身做成失败条件。**
+
+> **为什么 S-7 是硬性格式**（2026-09-18 实测，依据 [`ADR-0014`](docs/adr/0014-benchmark-automation.md) §2.9）：
+> 扫描器会把 `# nosec` / `# noqa` **之后**的文本当作**规则号候选**——理由里只要出现某个规则 ID，
+> **那条规则就会被静默豁免**（实测 `# nosec NOPE —— …提到 B101…` ⇒ bandit `exit 0`、`B101` 被放过）。
+> 凡「**能悄悄放宽检查**」的写法一律禁止；这不是排版偏好，而是防止**静默削弱检查**。
 
 > 关于 CNB 平台上"不可信事件"的定义与风险，见
 > [触发规则文档](https://docs.cnb.cool/zh/build/trigger-rule.md)：`pull_request` 系列事件属于不可信事件，
@@ -72,6 +99,13 @@
   Agentic AI Top 10** 等框架对智能体特有风险（提示注入、工具滥用、越权执行、上下文污染、
   供应链投毒）单列条目。
 - 每个威胁条目必须给出：**资产 → 攻击面 → 攻击路径 → 影响 → 缓解措施 → 验证方式**。
+
+**当前状态（2026-09-18）**：威胁模型**初稿已建立**——`docs/design/threat-model/`，共 **13 条**
+（`T-01`~`T-13`）。状态分布：**已缓解并验证 0 条 / 部分缓解 8 条 / 未缓解 5 条**。
+⇒ 它是「**待办清单式的威胁模型**」，**不构成"安全已做到位"的结论**；未缓解项与"缺行为层验证"
+清单见该目录 `README.md`。**判定口径**（防"部分缓解"成为万能挡箭牌）：*已缓解并验证* = 缓解已实现
+且有可执行证据；*部分缓解* = 缓解已实现或在跑但覆盖面不全，**或缓解本身只是流程纪律而非机制**；
+*未缓解* = 缓解只存在于设计/契约/计划、无实现载体。
 - 缓解措施的"验证方式"必须是可执行的测试（安全测试用例或对抗性输入集），
   否则视为设计未闭环。
 
@@ -88,6 +122,14 @@
    完成修复与回归测试后，通过 `hotfix/*` 流程发布。
 4. 修复发布后，在 `CHANGELOG.md` 的 `### Security` 小节中公开披露（可在披露前附加缓冲期）。
 5. 严重漏洞的修复需同步更新威胁模型与安全测试用例，防止回归。
+
+> **提交信息里怎么标"这是安全改动"（2026-09-18，A-16 更正）**：`security` **不是**合法 `type`
+> ——门禁（`.pre-commit-config.yaml` 的 `cz check`）用的 commitizen 插件，其类型集是**硬编码**的，
+> 既不包含 `security`、也无法通过 `pyproject.toml` 扩展。因此安全改动写成
+> **`fix(security): …`**（加固既有实现）或 **`feat(security): …`**（新增安全能力），
+> 即把 `security` 放在 **scope** 上；**分支名仍为 `security/<issue>-<slug>`**（不受影响），
+> 披露仍写 `CHANGELOG.md` 的 `### Security` 段落。
+> 依据与门禁实测见 [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §3 表注。
 
 ---
 

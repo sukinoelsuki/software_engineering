@@ -1,0 +1,19 @@
+{
+  "tier": "M",
+  "model": "Qwen3-4B-Q4_K_M.gguf",
+  "size_gb": 2.5,
+  "ctx": 4096,
+  "threads": 8,
+  "load_s": 1.78,
+  "vmhwm_gib": 4.63,
+  "prefill_tok_per_s": 66.65,
+  "gen_tok_per_s": 16.78,
+  "tasks": [
+    {
+      "task": "t3",
+      "elapsed_s": 17.41,
+      "prompt_tokens": 274,
+      "completion_tokens": 224
+    }
+  ]
+}

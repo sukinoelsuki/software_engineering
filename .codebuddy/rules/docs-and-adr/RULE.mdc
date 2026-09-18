@@ -56,6 +56,11 @@ provider:
 - 引用上游内容必须给出**出处**（文件路径 + 版本/提交哈希，或 URL + 访问日期）。
 - 禁止把未经核实的推测写成结论；不确定处标注 **【待验证】** 并说明验证方式。
 - 文档中不得出现密钥、内部地址、真实个人数据。
+- **代码块会被门禁格式化**：`make check` 的 `format-check` 执行 `ruff format --check .`，**覆盖 `docs/`**；
+  `ruff format` 会**重排 Markdown 中标注为 `python` 的代码块**（按 `line-length = 100`）。
+  ⇒ ① 有意保留原样的示意片段请用 `text` 而非 `python` 标注；
+  ② 写完先跑 `uv run ruff format docs/`，**不要手工调整缩进与换行**（手改会被门禁再次改写）。
+  （2026-09-18 实测：`ruff 0.16.7` 把 `.md` 内的 `python` 代码块报为 `unformatted` 并输出重排结果。）
 
 ## CHANGELOG 规范
 

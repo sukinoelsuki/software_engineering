@@ -1,0 +1,31 @@
+{
+  "tier": "L",
+  "model": "Qwen3-8B-Q4_K_M.gguf",
+  "size_gb": 5.03,
+  "ctx": 4096,
+  "threads": 8,
+  "load_s": 3.57,
+  "vmhwm_gib": 8.7,
+  "prefill_tok_per_s": 35.83,
+  "gen_tok_per_s": 9.43,
+  "tasks": [
+    {
+      "task": "t1",
+      "elapsed_s": 60.12,
+      "prompt_tokens": 448,
+      "completion_tokens": 445
+    },
+    {
+      "task": "t2",
+      "elapsed_s": 21.56,
+      "prompt_tokens": 445,
+      "completion_tokens": 88
+    },
+    {
+      "task": "t3",
+      "elapsed_s": 50.62,
+      "prompt_tokens": 228,
+      "completion_tokens": 418
+    }
+  ]
+}

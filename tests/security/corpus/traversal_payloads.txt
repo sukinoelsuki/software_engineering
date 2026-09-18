@@ -1,0 +1,11 @@
+# 路径穿越对抗语料（tests/security/ 使用）。
+# 每行作为一个「子片段」拼到允许根目录之下，由 resolve_within 做规范化与白名单校验。
+# 以 # 开头的行是注释，被测试忽略。
+# 注意：编码型载荷（如 ..%2f）不在此列——路径层把 %2f 当字面量，解码是上层工具的职责；
+#       本语料只覆盖「文件系统层面确实能逃出根目录」的载荷。
+../../etc/passwd
+../etc/passwd
+a/../../etc/passwd
+sub/../../../../etc/shadow
+../../../../etc/cron.d/backdoor
+foo/bar/../../../secret

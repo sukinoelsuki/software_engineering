@@ -1,0 +1,168 @@
+{
+  // ==========================================================================
+  // CNB 云原生开发环境 · VS Code 设置
+  //
+  // 本文件由 .ide/Dockerfile 在构建时 COPY 进镜像，并在 .cnb.yml 的
+  // vscode 事件中通过 build.by 声明为构建期依赖。
+  // 修改后需：销毁开发环境 → 重新启动（否则不会生效）。
+  //
+  // 说明：VS Code 的 settings.json 支持 JSONC（注释与尾逗号），故此处带注释。
+  // ==========================================================================
+
+  // --------------------------------------------------------------------------
+  // 主题与外观（默认使用深色主题）
+  // --------------------------------------------------------------------------
+  // 注意：主题 ID 在本版本 code-server（1.137.0）中是 "Dark Modern"，
+  // 没有 "Default " 前缀；写成 "Default Dark Modern" 会被忽略并静默回退默认主题。
+  // 依据：镜像内 theme-defaults/package.json 的 themes[].id 实测（见 docs/devlog/0007）。
+  "workbench.colorTheme": "Dark Modern",
+  // 备选（同版本内确认存在）："Dark+"（旧版默认深色）、"Dark 2026"。
+  "workbench.preferredDarkColorTheme": "Dark Modern",
+  "workbench.iconTheme": "vs-seti",
+  "workbench.startupEditor": "none",
+  "workbench.tree.indent": 16,
+
+  // --------------------------------------------------------------------------
+  // 编辑器
+  // --------------------------------------------------------------------------
+  "editor.fontSize": 14,
+  "editor.lineHeight": 1.6,
+  "editor.fontFamily": "'JetBrains Mono', 'Cascadia Code', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', Consolas, 'Courier New', monospace",
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+  "editor.rulers": [100],
+  "editor.renderWhitespace": "boundary",
+  "editor.cursorBlinking": "smooth",
+  "editor.minimap.enabled": false,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active",
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": false,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  "editor.suggestSelection": "first",
+  "editor.stickyScroll.enabled": true,
+
+  // --------------------------------------------------------------------------
+  // 文件
+  // --------------------------------------------------------------------------
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.autoSave": "onFocusChange",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    "**/*.egg-info": true
+  },
+  "files.associations": {
+    "*.mdc": "markdown",
+    "AGENTS.md": "markdown",
+    "CODEBUDDY.md": "markdown"
+  },
+
+  // --------------------------------------------------------------------------
+  // Python（与 pyproject.toml / Makefile 的约定保持一致）
+  // --------------------------------------------------------------------------
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "yzhang.markdown-all-in-one",
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "off",
+      "strings": "off",
+      "other": "off"
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // CNB 配置文件语法校验（schema 来自 CNB 官方文档，见 custom-dev-env 文档）
+  // --------------------------------------------------------------------------
+  "yaml.schemas": {
+    "https://docs.cnb.cool/conf-schema-zh.json": ".cnb.yml",
+    "https://docs.cnb.cool/settings-schema-zh.json": ".cnb/settings.yml",
+    "https://docs.cnb.cool/tag-deploy-schema-zh.json": ".cnb/tag_deploy.yml",
+    "https://docs.cnb.cool/web-trigger-schema-zh.json": ".cnb/web_trigger.yml"
+  },
+  "yaml.validate": true,
+  "yaml.format.enable": true,
+
+  // --------------------------------------------------------------------------
+  // 终端
+  // --------------------------------------------------------------------------
+  "terminal.integrated.defaultProfile.linux": "zsh",
+  "terminal.integrated.scrollback": 20000,
+  "terminal.integrated.fontSize": 13,
+  "terminal.integrated.copyOnSelection": true,
+  "terminal.integrated.cursorBlinking": true,
+
+  // --------------------------------------------------------------------------
+  // Git
+  // --------------------------------------------------------------------------
+  "git.autofetch": true,
+  "git.autofetchPeriod": 180,
+  "git.confirmSync": false,
+  "git.enableSmartCommit": true,
+  "git.openRepositoryInParentFolders": "always",
+  // 说明：本项目未安装 GitLens（决策见 docs/devlog/0006 §2.4.2），
+  // 故不在此保留任何 gitlens.* 设置项，避免出现指向已卸载扩展的死配置。
+  // 单人单作者仓库用内置 Source Control（含 Source Control Graph）+ Git Graph 已足够。
+
+  // --------------------------------------------------------------------------
+  // Docker（配合 .cnb.yml 中的 services: [docker] 使用）
+  // --------------------------------------------------------------------------
+  "docker.showStartPage": false,
+  "docker.commands.attach": "docker exec -it ${containerId} /bin/bash",
+
+  // --------------------------------------------------------------------------
+  // 其他
+  // --------------------------------------------------------------------------
+  "telemetry.telemetryLevel": "off",
+  "update.mode": "none",
+  "extensions.autoUpdate": false,
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  "explorer.compactFolders": false,
+  "search.exclude": {
+    "**/.venv": true,
+    "**/node_modules": true,
+    "**/reports": true
+  },
+  // 本项目工作区即自己的仓库、且运行于一次性容器中，故关闭工作区信任提示，
+  // 避免每次启动都被打断。（该判断已记录在 .ide/Dockerfile 注释中）
+  "security.workspace.trust.enabled": false,
+  "problems.showCurrentInStatus": true,
+  "errorLens.enabledDiagnosticLevels": ["error", "warning"]
+}

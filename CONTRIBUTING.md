@@ -30,7 +30,7 @@ Pull Request
    ↓  使用 PR 模板，关联 Issue，逐条勾选检查清单
 评审（CI 门禁 + 自评审 + AI 辅助评审）
    ↓  不允许自评自合时绕过门禁
-合并（Squash 合入 develop；发布时合入 main 并打标签）
+合并（**merge commit** 合入 develop；发布时合入 main 并打标签）
    ↓
 CHANGELOG 更新 + 版本标签
 ```
@@ -52,7 +52,11 @@ CHANGELOG 更新 + 版本标签
 <footer>
 ```
 
-- **type**：`feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `revert` `security`
+- **type**：`feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `revert`
+  （**`security` 不是 type**：安全类改动用 `fix(security): …` / `feat(security): …`，
+  `security` 放在 **scope** 上；分支名仍为 `security/<issue>-<slug>`。理由与依据见
+  [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §3 的表注——
+  type 的合法集合**由门禁实际接受者决定**，而那是 commitizen 插件里硬编码的）
 - **scope**：模块名，如 `kernel` `sandbox` `policy` `bench` `ci` `docs`
 - **subject**：祈使句、小写开头、结尾不加句号、≤ 72 字符
 - **破坏性变更**：`feat!:` 或在 footer 写 `BREAKING CHANGE: ...`
@@ -77,7 +81,7 @@ Refs: #7
 | 分支 | 用途 | 生命周期 |
 | --- | --- | --- |
 | `main` | 稳定发布线，任何提交都应是可发布状态 | 永久 |
-| `develop` | 集成分支，下一版本的内容汇聚于此 | 永久 |
+| `develop` | **工作主干**：下一版本的内容汇聚于此，**允许直接提交**（仅 `main` 受保护，见 [ADR-0013](docs/adr/0013-branch-model-for-solo-dev.md)） | 永久 |
 | `feat/<issue>-<slug>` | 新功能 | 短期 |
 | `fix/<issue>-<slug>` | 缺陷修复 | 短期 |
 | `perf/<issue>-<slug>` | 性能优化 | 短期 |
@@ -117,7 +121,10 @@ Refs: #7
 
 ### 合并策略
 
-- 功能分支 → `develop`：**Squash merge**（保持线性、可读的历史）。
+- 功能分支 → `develop`：**merge commit**（**不用 squash**）——devlog 与 CHANGELOG 逐条引用
+  具体提交哈希，squash 会让这些引用指向不存在的对象，**证据链断裂**。
+  只有"该分支仅一个提交、且其哈希未被任何文档引用"时才可 squash。
+  依据：[`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §3.3、【ADR-0013】。
 - `develop` → `main`：**Merge commit**（保留发布节点，便于回溯）。
 - 合并后立即删除已合并的源分支。
 
@@ -154,4 +161,12 @@ Refs: #7
 
 - 代理**不得**在未经确认的情况下引入新依赖、新服务或扩大权限。
 - 代理产出的**每一个非平凡改动都必须有据可查**（引用文档/上游代码/基准数据），禁止臆测。
-- 代理不得自行执行 `git push`、`git reset --hard`、改写历史等破坏性操作。
+- **远端写入按「可回退性分级」授权**（权威定义见
+  [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §4），分级集合 **A~F**：
+  - **A 类**：`develop` / 短期分支上的**代码·文档·测试·配置** ⇒ **推送后立即报告**
+  - **B 类**：`main` ⇒ **事先批准**
+  - **C 类**：**凭据入库**（`*.env` / `*.key` / token / 证书）⇒ **事先拦截 + 禁止**
+  - **D 类**：**强推 / 改写已推送历史 / 删远端分支** ⇒ **禁止**
+  - **E 类**：`bench/data` ⇒ **只由 CI 写**（人手不得直接提交）
+  - **F 类**：**新增依赖 / 改 CI 门禁强度 / 规则本身** ⇒ **事先确认**
+- 代理不得自行执行 `git reset --hard`、改写已推送历史、强推或删除远端分支等破坏性操作。

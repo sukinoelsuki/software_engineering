@@ -2,7 +2,7 @@
 description: Git 分支模型、提交规范、PR 与发布流程（始终生效）
 alwaysApply: true
 enabled: true
-updatedAt: 2026-09-14T00:00:00.000Z
+updatedAt: 2026-09-18T00:00:00.000Z
 provider:
 ---
 
@@ -14,7 +14,7 @@ provider:
 
 ```text
 main        稳定发布线（保护分支，只能通过 PR 合入）
- └─ develop 集成分支（保护分支，下一版本的内容汇聚于此）
+ └─ develop 工作主干（**可直推**，见 ADR-0013）
      ├─ feat/<issue>-<slug>      新功能
      ├─ fix/<issue>-<slug>       缺陷修复
      ├─ perf/<issue>-<slug>      性能优化
@@ -26,7 +26,17 @@ main        稳定发布线（保护分支，只能通过 PR 合入）
 
 - 命名：全小写，单词用 `-` 连接，禁止中文与空格；必须带 Issue 编号（`docs`/`chore` 可省略）。
 - 发布相关：`release/<version>`、`hotfix/<version>`。
-- **禁止**直接向 `main` / `develop` 提交（已由 pre-commit 的 `no-commit-to-branch` 拦截）。
+- ⚠️ **例外（长驻：不合回、不得删除、只由 CI 写）**：`bench/nightly`、`bench/data`
+  ——基准自动化专用，理由见 [ADR-0014 §2.1](../../../docs/adr/0014-benchmark-automation.md)、
+  例外条件见 [ADR-0013 §9](../../../docs/adr/0013-branch-model-for-solo-dev.md)。
+  **这一行不能省**：上面的默认规则是"短期分支合回 `develop`"，
+  省略它就会推出相反的错误动作。
+- 完整分支矩阵与合并策略以 [`docs/engineering/git-workflow.md`](../../../docs/engineering/git-workflow.md)
+  与 [ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md) 为准；
+  本摘要只写"**日常会用到 + 省略会误导**"的内容（分工口径见该文 §2）。
+- **禁止**直接向 `main` 提交（已由 pre-commit 的 `no-commit-to-branch --branch=main` 拦截）；
+  `develop` 是**工作主干、允许直推**
+  （[ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md)）。
 
 ## 提交规范（Conventional Commits，强制）
 
@@ -38,7 +48,9 @@ main        稳定发布线（保护分支，只能通过 PR 合入）
 Refs: #<issue>
 ```
 
-- `type` ∈ `feat fix docs refactor perf test build ci chore revert security`
+- `type` ∈ `feat fix docs refactor perf test build ci chore revert`
+  （**`security` 不是 type**：安全类改动写成 `fix(security): …` / `feat(security): …`，
+  分支名仍用 `security/<issue>-<slug>`；理由见 `docs/engineering/git-workflow.md` §3 表注）
 - `subject`：祈使句、小写开头、结尾不加句号、≤ 72 字符。
 - 破坏性变更：`feat!:` 或 footer 中 `BREAKING CHANGE: <说明>`。
 - 一次提交只做一件事；禁止"顺便改了别的"。
@@ -50,7 +62,8 @@ Refs: #<issue>
 
 | 方向 | 策略 | 理由 |
 | --- | --- | --- |
-| 短期分支 → `develop` | **Squash merge** | 保持线性、可读的历史 |
+| 短期分支 → `develop` | **Merge commit**（默认） | devlog / CHANGELOG 会引用提交哈希，squash 会让引用指向不存在的对象 |
+| 单提交且无文档引用的分支 → `develop` | 可 Squash merge | 无哈希引用时，线性历史更整洁 |
 | `develop` → `main` | **Merge commit** | 保留发布节点，便于回溯 |
 | `hotfix/*` → `main` | Merge commit + 回合 `develop` | 保证修复不丢失 |
 
@@ -65,9 +78,40 @@ Refs: #<issue>
 
 ## Agent 硬性限制
 
-- ❌ 禁止执行 `git push`（包括 `--force`）、`git reset --hard`、改写已推送历史、删除已有分支。
+### 远端操作授权（**按可回退性分级**，最高优先级）
+
+**A 与 B~F 的界线必须记住**（完整定义与判据见
+[`docs/engineering/git-workflow.md`](../../../docs/engineering/git-workflow.md) §4）：
+
+| 类 | 范围 | 规则 |
+| --- | --- | --- |
+| **A** | `develop` / 短期分支上的**代码·文档·测试·配置** | **推送后立即报告** |
+| **B** | `main` | **事先批准** |
+| **C** | **凭据入库**（`*.env` / `*.key` / token / 证书） | **事先拦截 + 禁止** |
+| **D** | **强推 / 改写已推送历史 / 删远端分支** | **禁止** |
+| **E** | `bench/data` | **只由 CI 写**（人手不得直接提交） |
+| **F** | **新增依赖 / 改 CI 门禁强度 / 规则本身** | **事先确认** |
+
+- ⚠️ **不得把 A 类做法外推到 B~F**：这是一条**分级**规则，不是"取消远端审查"。
+  省略分级会让默认推导落到"任何远端写入都需事先批准"或反向的"都用不着批准"，两者都是错的。
+- ⚠️ **A 类不是"免审"**：`make check` 全绿是推送前必要条件；**事后报告不得替代门禁**。
+  A 类报告含四项：**分支名 / 提交列表（`A..B`）/ 文件清单 / 验证方式**，
+  落 `docs/devlog/` 当前篇（**由记录员落盘**，见 `CODEBUDDY.md` §10.1）；
+  **报告与仓库不一致即视为未报告**。
+- ⚠️ **本分级不可由 CI 强制**（CI 看不到"是否事先批准 / 是否事后报告"）⇒ 唯一护栏是
+  事后可核对 ⇒ 按威胁模型口径只能记为**部分缓解**，**不得**表述为机制。
+- ❌ 禁止 `--force` / `--force-with-lease` 强推、`git reset --hard`、
+  `git rebase` 改写已推送历史、删除远端分支。
 - ❌ 禁止 `git commit --amend` 已推送的提交。
-- ✅ 本地 `git add` / `git commit` **仅在人类明确要求时**执行。
+
+### 本地操作
+
+- ✅ 本地 `git add` / `git commit` 可在当前任务范围内进行，需满足：提交粒度单一、可回滚。
+- ✅ **`develop` 是工作主干，允许直推、无需事先批准**（仍需 Conventional Commits、
+  pre-commit 与 `make check` 全绿）；**`main` 受保护，写入需事先批准**
+  （[ADR-0013](../../../docs/adr/0013-branch-model-for-solo-dev.md)）。
+- ⚠️ 短期分支只用于两类场景：`exp/*` 隔离实验、需要评审的大改动；
+  且**必须在同一次会话内合回 `develop`**。
 - ✅ 提交前必须确认 `make check` 全绿。
 - ✅ 每次提交都必须符合 Conventional Commits，否则先修正信息再提交。
 - ⚠️ 禁止使用 `--no-verify` 跳过钩子；确需跳过必须有 ADR 记录。

@@ -6,6 +6,22 @@
 #      全面对齐，届时通过 ADR 记录变更。
 # ============================================================================
 
+[build-system]
+# D7 已决（2026-09-19，所有者批准）：采用 `hatchling`。
+# 依据：ADR-0015 §8.2.1 的 `V-a` —— **MIT**、**纯 Python**（`py3-none-any`）、
+#      运行期依赖均为成熟纯 Python 包（packaging / pathspec / pluggy / tomlkit / trove-classifiers）。
+# 否决另两个候选的理由（ADR-0015 §8.1 的 D7 原候选）：`setuptools` 需更多显式配置、
+#      历史上更易出现"文件包含/排除"歧义；`uv_build` 绑定 uv 单一构建器，
+#      与其他 PEP 517 工具链的互操作性未核验（**未核验 ⇒ 不采用**）。
+# 影响：项目自本次起**可被打包安装**（`uv build`），解除 `REQ-UX-03`（一条命令安装）
+#      与 `REQ-OPS-04`（可复现构建）的阻塞。
+requires = ["hatchling>=1.32"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# 显式声明包位置（仓库为 src 布局），避免依赖 hatchling 的名称推断。
+packages = ["src/agent_sec_perf"]
+
 [project]
 name = "agent-sec-perf"
 version = "0.1.0"
@@ -23,8 +39,23 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
 ]
 
-# 运行期依赖：待 base project 选定后填充，当前保持为空以避免过早锁定技术栈。
-dependencies = []
+# 运行期依赖：依据 ADR-0015 §5.2 的组件清单（所有者于 2026-09-18 批准 D1~D10）
+#            + §8.2.1 的核验结果（2026-09-19，14 项核验完成、§7.4 的可安装性与类型兼容已过）
+#            ⇒ 此处只填"已批准且已核验"的组件，**精确版本以 uv.lock 为准**。
+# 注意：本项目的 `[build-system]`（D7 构建后端）**尚未决定**，故此处不动构建配置；
+#       不在此列出：openai SDK / httpx / Textual / llama-cpp-python / MCP SDK /
+#       LLM Guard / 向量库 / 任何 agent 编排框架（理由见 ADR-0015 §5.2.6）。
+#       `tomllib` 属标准库，不写入依赖。
+dependencies = [
+    "typer>=0.27",               # A1 · CLI 框架（REQ-UX-01）；0.26+ 内嵌 Click，无 click 依赖
+    "rich>=15.0",                # A2 · 终端渲染（Typer 的传递依赖，独立声明以便显式使用）
+    "pydantic>=2.13",            # B1 · **仅两处用途**：信任边界校验 + 工具参数 JSON Schema（D2）
+    "platformdirs>=4.11",        # C2 · 跨平台用户目录（REQ-PLAT-01）
+    "urllib3>=2.8",              # HTTP-1 · 云端模型薄客户端（D3）
+    "structlog>=26.1",           # E1 · 结构化日志与脱敏管线（REQ-OBS-01 / REQ-SEC-07）
+    "tree-sitter>=0.26",         # F1 · 语法层（REQ-PERF-02/03）
+    "tree-sitter-python>=0.25",  # F1 · Python 语法包（与主包 0.26 运行期实测兼容）
+]
 
 [project.optional-dependencies]
 # 开发依赖（`make setup` 会安装）
@@ -80,6 +111,16 @@ select = [
 ignore = [
     "E501", # 行宽由 formatter 保证
     "S101", # 允许在测试中使用 assert
+]
+# 中文标点不属于「歧义字符」：RUF001/RUF002/RUF003 默认会把全角括号、逗号、冒号、
+# 分号、问号、叹号与中文引号视为「疑似误输入的全角字符」，但本项目的文档与注释
+# 使用中文，这些恰是正确的全角用法。此处按**字符白名单**放行，而不是关闭整条规则，
+# 以保留对真正同形字的检测——例如西里尔字母 а (U+0430) 冒充拉丁 a、全角拉丁字母 Ａ。
+# 依据：2026-09-15 的 RUF 探针实测，见 docs/devlog/0006 §4.3。
+allowed-confusables = [
+    "，", "。", "、", "：", "；", "？", "！",
+    "（", "）", "《", "》", "“", "”", "‘", "’",
+    "…", "—", "～",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -163,11 +204,19 @@ exclude_lines = [
 # ============================================================================
 # 安全静态扫描：Bandit
 # 说明：本项目为安全方向项目，Bandit 规则整体保持严格；
-#      确需豁免的场景必须在该行标注 `# nosec <理由>` 并登记到 SECURITY.md。
+#      确需豁免的场景：豁免标记行只写规则号（`# nosec B404` / `# noqa: S603`），
+#      理由写在紧邻其上的独立注释行（禁止在标记后追加自由文本——会被当作规则号而静默放宽检查），
+#      并登记到安全豁免登记表（`docs/adr/0014-benchmark-automation.md` §2.9）。
+#
+# 2026-09-18：此处原有 `[tool.bandit]` 段（`targets` / `exclude_dirs` / `skips = ["B101"]`），
+#  **已删除**，且**不保留任何 Bandit 配置**。原因：
+#  `make check` 的 `security-bandit` 目标执行 `bandit -q -r src`（**不读配置**），
+#  而 pre-commit 钩子执行 `bandit -c pyproject.toml …`（**读配置**）
+#  ⇒ 同一份代码在两处门禁下的**规则集不同**，配置里的 `skips` 只在本地钩子生效。
+#  这会造成"钩子绿、make check 红"（或反之）的两套口径，且真实强度取较松的一处。
+#  处置：**两处统一为"不读配置文件"**，规则集一致，且因不再跳过 B101 而**强度不降**。
+#  子进程执行仍是本项目核心能力，因此**不**整体禁用 B603/B607（改为要求所有调用点
+#  显式经过封装层，见 `.codebuddy/rules/security-baseline`）——该立场由代码内豁免标记
+#  与上条登记表承载，**不**依赖本文件的配置。
+#  若将来确需 Bandit 配置，**必须两处门禁同时引用同一份配置**，并在本段说明理由。
 # ============================================================================
-[tool.bandit]
-targets = ["src"]
-exclude_dirs = [".venv", "build", "dist", "tests", "third_party", "vendor"]
-# 子进程执行是本项目的核心能力之一，因此不整体禁用 B603/B607；
-# 改为要求所有调用点显式经过封装层（见 .codebuddy/rules/security-baseline）。
-skips = ["B101"]

@@ -14,7 +14,7 @@
 - [ ] 遵守 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) 与 `.codebuddy/rules/` 中的规范
 - [ ] 公开接口有类型标注，`mypy --strict` 通过
 - [ ] 无遗留调试代码（`print`、`breakpoint()`、注释掉的死代码、`TODO` 未开 Issue）
-- [ ] 无新增的 `# noqa` / `# nosec` / `# type: ignore`，或已写明理由并登记
+- [ ] 无新增的 `# noqa` / `# nosec` / `# type: ignore`；如有豁免，**标记行只写规则号、理由写在紧邻其上的独立注释行**（标记行上不写理由），且**理由中不得出现其它规则号**——见 [`SECURITY.md` **S-7**](../../SECURITY.md)；并登记到 ADR 或 `SECURITY.md`（登记表见 [`ADR-0014`](../adr/0014-benchmark-automation.md) §2.9）
 
 ### 测试
 
@@ -26,12 +26,13 @@
 
 ### 验证
 
-- [ ] `make check` 全绿（format-check + lint + typecheck + test + security）
+- [ ] `make check` 全绿（hooks-check + format-check + lint + typecheck + test + security）
 - [ ] 在本地实际运行过改动涉及的功能，而非"看代码觉得对"
 - [ ] 报告中给出的命令与输出是**真实执行过的**
 
 ### 文档
 
+- [ ] **开发日志已在当前篇追加本次变更**（含提交哈希、内容、验证方式）
 - [ ] `CHANGELOG.md` 的 `[Unreleased]` 已更新
 - [ ] 受影响的文档（`README.md` / `docs/`）已同步
 - [ ] 新增的公共接口/配置项有说明
@@ -55,7 +56,14 @@
 - [ ] 失败路径为 **fail-secure**（失败即拒绝，而非静默放行）
 - [ ] 不引入密钥硬编码；日志不含密钥与个人数据
 - [ ] 新增**对抗性测试用例**（攻击者视角），命名体现安全意图
-- [ ] `docs/design/threat-model/` 中对应威胁条目已更新
+- [ ] 已写明本次改动涉及的**威胁与缓解**，并同步更新
+      [`docs/design/threat-model/`](../design/threat-model/README.md) 中对应的 **`T-<序号>`** 条目
+      —— 该目录**已建立**（2026-09-18，13 条 `T-01`~`T-13`；状态分布：已缓解并验证 **0** /
+      部分缓解 8 / 未缓解 5）。若本次改动的威胁**尚未登记**，先新增条目再实现
+      （编号只增不复用；**状态升级的唯一依据是仓库里可执行的用例**）
+- [ ] 本次新增/依赖的**安全缓解措施**（本地钩子、CI stage、探针）已被**实测确实在运行**，
+      而非只写在文档里（[`SECURITY.md` **S-8**](../../SECURITY.md)：声称的保护必须可实测；
+      本地钩子层由 `make hooks-check` 断言，CI 阶段由 `tests/unit/test_cnb_config.py` 计数断言）
 - [ ] 新增依赖/资产已记录来源、版本与许可证
 
 ---
@@ -69,7 +77,8 @@
 - [ ] 测量方法可被他人复现（命令、输入规模、随机种子、预热轮次）
 - [ ] 说明了优化的原理，而非"试了试快了"
 - [ ] 确认优化未削弱安全性；若有权衡，已显式写出并交人类决策
-- [ ] 原始数据归档到 `reports/bench/`，并在 PR 中引用
+- [ ] 原始数据已归档（机器产出 → `bench/data` 分支；人工研究 → `docs/research/reports/`），
+      并在 PR 中引用
 
 ---
 
