@@ -570,3 +570,11 @@ flowchart TD
   另经核对：§5.3.5 与 ADR-0016 §11 的**事实一致、无分叉**（11 → 5 的取舍、项目内 Skill
   改名 `repo-ci-conventions`、可钉 commit `bcd25870ed100db43c257c3c5feca6c776645914`、
   `skills` 钉 `1.5.0`、`cnb --version` = `1.15.36`）。
+- **2026-09-18**：**改名漏改一处的据实登记（反向搜索的产物）**。§5.3.4 的「不写什么」仍写作
+  "CI 触发配置（属 `cnb-pipeline`）"——该处指的是**项目内** Skill，自 §5.3.2 改名后**应读作
+  `repo-ci-conventions`**；这是改名覆盖不全留下的一处残留，由反向搜索
+  （`git grep -n 'cnb-pipeline'`，排除官方同名）发现。按「只增不改」**不回改 §5.3.4 正文**，
+  **以本条为准**。同批反向搜索还发现两处**不属于本 ADR 域**的残留，一并报出、不代改：
+  ① `ADR-0016` §10 的 `U12` 行仍写"项目内 `cnb-pipeline`"；
+  ② `docs/engineering/post-build-checklist.md` 中的 `cnb-pipeline` 名称口径注
+  （该文已自标"名称口径待核验"）。
