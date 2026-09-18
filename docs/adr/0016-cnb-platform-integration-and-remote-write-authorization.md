@@ -1,8 +1,9 @@
 # 0016. CNB 平台集成（官方 Skills 与 cnb-cli）与远端写入授权分级
 
-- **状态**：**提议中**（待项目所有者拍板；**本文只是决策草案，不含任何落地改动**）
+- **状态**：**已接受**（项目所有者 2026-09-18 拍板采纳**方案 B**；正文结论不再原地修改，
+  事实补充与编排性修订见 §11）
 - **日期**：2026-09-18
-- **决策者**：`Le0n3rd`（待批准）／AI 代理（整理与论证）
+- **决策者**：`Le0n3rd`（2026-09-18 批准）／AI 代理（整理与论证）
 - **相关**：[ADR-0013](0013-branch-model-for-solo-dev.md)（分支模型：`develop` 为工作主干）、
   [ADR-0014](0014-benchmark-automation.md)（基准自动化：`bench/data` 只由 CI 写、凭据残余风险）、
   [ADR-0015](0015-layering-and-reuse-boundary.md)（分层与复用边界：**新增依赖须先确认**）、
@@ -188,7 +189,7 @@ npx skills add https://cnb.cool/cnb/skills/cnb-skill.git -g -y
 **A 类的附加不变量（不变）**：`make check` 全绿是推送前的必要条件；
 **事后报告不得替代门禁**，也不得替代 `git-workflow.md` §4 的"提交粒度单一、可回滚"要求。
 
-**事后报告的载体与格式（建议，需所有者确认）**：
+**事后报告的载体与格式（所有者 2026-09-18 采纳本 ADR 时一并确认）**：
 
 1. **落点**：本次推送所在会话的 `docs/devlog/` **当前篇**新增一条记录，含四项：
    **分支名 / 提交列表（`A..B`）/ 文件清单 / 验证方式（`make check` 结果）**；
@@ -247,16 +248,25 @@ npx skills add https://cnb.cool/cnb/skills/cnb-skill.git -g -y
 
 ### 5.3 接入范围与镜像层序
 
-**接入范围（建议）**：
+**接入范围（建议；版本、许可证与落点已于 2026-09-18 实测核验，见 §10）**：
 
 | 项 | 装什么 | 装在哪 | 理由 |
 | --- | --- | --- | --- |
-| CLI | `@cnbcool/cnb-cli`（**钉精确版本**） | 镜像全局（`npm install -g`） | 提供 `cnb` 命令，是调用平台 OpenAPI 的统一入口 |
-| 官方 Skill | `cnb/skills` 的 `cnb-skill`（**钉 commit 或 pin ref**） | 全局（`skills … -g`，**落点【待验证】**） | 把平台 API 用法结构化，避免每次手写 `curl` |
+| CLI | `@cnbcool/cnb-cli@1.15.36`（**精确版本已核验**；MIT） | 镜像全局（`npm install -g`） | 提供 `cnb` 命令，是调用平台 OpenAPI 的统一入口 |
+| 官方 Skill | `cnb/skills` 的 `cnb-skill` 中的 **5 个子集**（`cnb-api`、`cnb-docs`、`cnb-code-review`、`cnb-pr-analysis`、`cnb-pipeline`），**钉 commit**（落地时按取到时的 SHA 钉死并登记摘要） | 全局：canonical 落点 `~/.agents/skills/<name>/`，并建 `~/.codebuddy/skills/<name>` **符号链接**指向它 | 把平台 API 用法结构化，避免每次手写 `curl` |
 | 项目内 Skill | 本仓库 `.codebuddy/skills/` 下的 4 个 | **仓库内**（随仓库走） | 见 [ADR-0017](0017-project-level-agent-skills.md)；**不依赖镜像** |
 
+> **子集裁决（2026-09-18）**：官方仓库 `cnb/skills/cnb-skill` 实含 **11 个 Skill**
+> （`cnb-api`、`cnb-code-commit`、`cnb-code-review`、`cnb-docs`、`cnb-npc-search`、
+> `cnb-pipeline`、`cnb-pr-analysis`、`cnb-repo-knowledge-base`、`cnb-tapd-resource-fetcher`、
+> `cnb-text-path-converter`、`cnb-upload-attachment`，共 **11 个**，**不是起草时以为的 1 个**）。
+> 本项目**只装 5 个**（见上表）；排除 `cnb-code-commit`（它引导建 PR，与项目 PR 模板 /
+> Conventional Commits 门禁**重叠**，属"两处口径"），其余 5 个本项目用不上。
+> 理由：官方 Skill 的 `description` 是**常驻上下文**，**11→5 可将常驻量减半**。
+
 > **分工（不得重复）**：官方 `cnb-skill` 管"**调平台 API**"；
-> 项目内的 `cnb-pipeline`（ADR-0017）只管"**本仓库 `.cnb.yml` 的约定**"。
+> 项目内的 `repo-ci-conventions`（ADR-0017；**2026-09-18 由 `cnb-pipeline` 改名**——
+> 因官方 Skill 集合中已存在同名 `cnb-pipeline`）只管"**本仓库 `.cnb.yml` 的约定**"。
 > 两者**不得互相复述**，各自在文首放一行指向对方。
 
 **层序安排（本 ADR 对 `.ide/Dockerfile` 的唯一要求）**：
@@ -288,12 +298,20 @@ npx skills add https://cnb.cool/cnb/skills/cnb-skill.git -g -y
 
 | # | 手段 | 可行性 | 建议 |
 | --- | --- | --- | --- |
-| L1 | npm 精确版本：`npm install -g @cnbcool/cnb-cli@<x.y.z> skills@<x.y.z>` | ✅ 标准能力 | **必做**。**具体版本号【待核验】**（取法：`npm view <pkg> versions --json`），**本 ADR 不写未核实的数字** |
-| L2 | 官方 Skill 钉 commit：`npx skills add <url>#<sha>`（或等价参数） | ⚠️ **未验证 `skills` 是否支持 ref/commit** | **优先尝试**；不支持则退 L3 |
-| L3 | 退路：`git clone <url>` → `git checkout <sha>` → 落到 `skills` 的全局目录 | ⚠️ **落点路径未验证** | 作为 L2 的回退，**落点实测后**再定 |
+| L1 | npm 精确版本：`npm install -g @cnbcool/cnb-cli@1.15.36 skills@1.5.0` | ✅ 标准能力 | **必做**。**已核验（2026-09-18）**：`@cnbcool/cnb-cli` = **1.15.36**；`skills` 最新 = **1.7.0**，但受 node 版本约束（见下"新阻塞"）⇒ 实际钉 **`skills@1.5.0`** |
+| L2 | 官方 Skill 钉 commit：`npx skills add <url>#<sha>`（或等价参数） | ❌ **不可行（2026-09-18 实测）**：`skills add` 的 help **无 ref / commit 选项**；`pkg@X` 的 `@` 是**技能名**、不是 ref | **改走 L3** |
+| L3 | 退路：`git clone <url>` → `git checkout <sha>` → 落到 `skills` 的全局目录 | ✅ **落点已实测**：canonical `~/.agents/skills/<name>/` + `~/.codebuddy/skills/<name>` 符号链接 | **采用**；必须**复刻两层结构**（只落一层则代理侧不可见） |
 | L4 | **摘要登记**：把包与 Skill 仓库的摘要记进 `.ide/assets/` 下的清单，构建期校验、失败即中断 | ✅ 项目已有成熟模式（模型 / 基准资产） | **推荐采用**，复用 `.ide/fetch-assets.sh` 的校验机制，**不引入第二个真源** |
 
-⇒ **推荐组合：L1 + L2（或 L3）+ L4。**
+⇒ **推荐组合：L1 + L3 + L4**（L2 已实测不可行）。
+
+> **新阻塞（2026-09-18 实测）**：`skills@1.7.0` / `1.6.0` 要求 **`node ≥ 22.20.0`**，
+> 而镜像实为 **node 20.20.2** ⇒ 安装报 **`EBADENGINE`**。所有者裁决：**钉 `skills@1.5.0`**
+> （engines `>=18`），并**不动 `.ide/Dockerfile` 第 3 阶段**（避免 GB 级模型层缓存失效）。
+
+> **Skill 仓库可钉 commit（2026-09-18 实测）**：`cnb-skill` 在取到时的 HEAD =
+> `bcd25870ed100db43c257c3c5feca6c776645914`。⚠️ **HEAD 会漂** ⇒ 落地时按**取到时的 SHA
+> 钉死**并把摘要登记进 `.ide/assets/` 清单，**不得**把本行的 SHA 当作长期常量。
 
 **若某项无法锁定**：**显式登记为风险**（进本 ADR 的 §10 未验证项与 §6 风险表），
 **不得**以"官方就是这么装的"为由跳过；也不得在未锁定的情况下对外声称"供应链已受控"。
@@ -303,9 +321,9 @@ npx skills add https://cnb.cool/cnb/skills/cnb-skill.git -g -y
 | 要求 | 本项目怎么做 |
 | --- | --- |
 | 来源可追溯 | 记录**来源 URL + 组织**（`cnb.cool` 的官方组织 `cnb/skills`；npm 包 `@cnbcool/cnb-cli`），写进 `.ide/assets/` 清单的注释与 Dockerfile 注释 |
-| 固定版本 / 摘要 | L1 + L4；Skill 仓库钉 commit |
-| 许可证 | **【待核验】**：`cnb/skills` 仓库与 `@cnbcool/cnb-cli` 的许可证**尚未抄录** ⇒ 采纳前必须补（验证方式见 §10）。许可证不合规即**不得进镜像** |
-| 体积 | **【待核验】**：CLI 解包体积与传递依赖数量（`npm ls -g --depth=0`、`du -sh`）。参考：镜像内 CodeBuddy 包解包约 166 MB |
+| 固定版本 / 摘要 | L1 + L3 + L4；Skill 仓库钉 commit（落地时按取到的 SHA） |
+| 许可证 | ✅ **已核验（2026-09-18）**：`cnb/skills` 仓库与 `@cnbcool/cnb-cli` 均为 **MIT**，与本项目 Apache-2.0 兼容 |
+| 体积 | ✅ **已核验（2026-09-18）**：`cnb-cli` 解包 **1,413,046 B ≈ 1.35 MB**、**无传递依赖**；`skills` 解包 **≈578 KB**、传递依赖 `tar ^7.5.20` + `yaml ^2.8.3` |
 | 二次真源 | 校验逻辑**复用** `fetch-assets.sh`；版本号**只在清单里写一次**，Dockerfile 从清单取值（或注释指向清单） |
 
 > **一条容易被忽略的供应链面**：**Skill 内容本身是"指令"**。
@@ -344,14 +362,19 @@ npx skills add https://cnb.cool/cnb/skills/cnb-skill.git -g -y
 > ⇒ **接入 CLI 没有新增一类权限，只是让既有权限更容易被使用**。
 > 因此 T1~T4 应当作为**独立的安全动作**推进，**不应被"是否接入 CLI"这一决策遮盖**。
 
+> **回填（2026-09-18 实测｜只补事实、不改结论）**：接入范围与版本已核验（见 §5.3 / §5.4），
+> 但 `cnb-cli` / `skills` 所需的**最小 scope** 仍未核验 ⇒ `U8` **保持【待核验】**；
+> `U7` / `U9`~`U12` 同样**保持原状**。
+> **不得**由"已确定要装什么"推断"权限已收窄"——`T1`/`T2`/`T3` 仍是**独立且未完成**的安全动作。
+
 ### 5.6 可检查性（`SECURITY.md` `S-8`）
 
 `S-8` 要求"**声称已生效的缓解措施必须能被实测**"。本次要声称三件事，逐条给检查方式：
 
 | 声称 | 可检查方式 | 可否由 CI 断言 |
 | --- | --- | --- |
-| `cnb-cli` 真的可用 | 构建期与运行期 `cnb --help` 退出码 0（文档确认该命令存在；⚠️ **`cnb --version` 是否存在未验证**，故**不用它**作断言） | ✅（构建期自检 + `post-build-checklist`） |
-| 官方 Skill 真的装了 | 落点目录**非空**（路径以实测为准，见 §10）；若 `skills` CLI 提供列表子命令则用它（**子命令名未验证**） | ✅（构建期自检） |
+| `cnb-cli` 真的可用 | 构建期与运行期 `cnb --help` 退出码 0；**`cnb --version` 已实测存在**（返回 `1.15.36`），可一并断言并与清单版本比对 | ✅（构建期自检 + `post-build-checklist`） |
+| 官方 Skill 真的装了 | 落点目录**非空**（路径**已实测**：canonical `~/.agents/skills/<name>/`，见 §10 `U3`）；若 `skills` CLI 提供列表子命令则用它（**子命令名未验证**） | ✅（构建期自检） |
 | **分级授权规则真的在运行** | 下一次 A 类推送后，`docs/devlog/` 当前篇**存在**对应报告，且其提交列表与 `git log` 区间**一致** | ❌ **不能**：CI 无法判定"是否事先批准 / 是否事后报告" ⇒ 只能**事后人工核对**（§5.1 的已知边界） |
 | 项目内 Skill 结构合法 | 建议落 `tests/unit/` 断言：目录 / `SKILL.md` 存在、frontmatter 含 `name` 与 `description`、`name` 与目录名一致 | ✅（见 ADR-0017 §7） |
 
@@ -395,7 +418,7 @@ npx skills add https://cnb.cool/cnb/skills/cnb-skill.git -g -y
 | 11 | `.cnb.yml` | ① `vscode` 事件的 `build.by` **必须**补入任何新增的构建期输入文件（如 `.ide/assets/cnb-skills.lock`）——漏写会**构建报错**（CNB 硬性约束，文件头已载明）；若不新增清单文件则无需改；② **不得**在 `pull_request` 流水线里调用任何使用凭据的 `cnb` 命令（`S-5`：不可信事件不访问密钥）；③ 与基准流水线无关，`bench/*` 分支的 `by` 同步处理 |
 | 12 | `.gitignore` | 若 `npm` / `skills` 在工作区产生 `node_modules/`、`package-lock.json`、`.npm/` 等产物，需补忽略规则（**先实测落点再定**；先例：`.codebuddy/teams/` 曾被漏掉，见 `agent-teams.md` §3） |
 | 13 | `docs/engineering/post-build-checklist.md` | 第 1 步「关键组件自检」表补两行：`cnb --help` 可用、官方 Skill 已安装（含版本）；§6「重启环境后的验证清单」补一项"cnb-cli / Skill 版本与清单一致"——沿用该文既有口径：**凡是"失败不阻断构建"的环节，都必须在此显式校验一次** |
-| 14 | `docs/adr/README.md` | 索引新增本 ADR 行（状态：**提议中**） |
+| 14 | `docs/adr/README.md` | 索引新增本 ADR 行（状态：**已接受**，2026-09-18；ADR-0017 仍为提议中）。⚠️ 该文件**不属本 ADR 的改动域**，由 `README.md` 的写者落笔 |
 | 15 | `docs/devlog/`（记录员域） | 落地时在**当前篇**记一条（含提交哈希、变更内容、验证方式）；若涉及安全（`S-9`、令牌轮换）另在 `CHANGELOG.md` 的 `### Security` 段落登记 |
 | 16 | `.codebuddy/agents/*.md`（五份） | 若"推送后报告"被定为**执行者的义务**，五份定义各补一句职责。⚠️ **待所有者裁决**：本次**不改**（是否由代理承担该义务，属协作机制问题，与 ADR-0018 的候选范围重叠） |
 | 17 | `docs/engineering/benchmark-automation.md` §6.1 | **可选**：把"用 `curl` + `CNB_TOKEN` 直调 `/-/build/logs`"补一句"若已接入 `cnb-cli`，可用 CLI 替代 `curl`（但**不得**用它绕过 §4 的授权分级）"。⚠️ 属"运维便利"而非必需，**建议随同一次落地一并处理**，避免又留下一个"两处口径" |
@@ -429,7 +452,7 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
 | --- | --- | --- |
 | 1 | **A 类"事后 revert" = 坏内容先到远端** | 短窗口内 CI 可能已消费它、另一会话可能已 `git pull` ⇒ 恢复代价不是"一次提交"，而是"一次提交 + 下游已受影响的处置"。**本 ADR 不主张这个窗口可忽略**，只主张它在 A 类上**可接受**（内容不机密、可由后续提交纠正） |
 | 2 | **分级规则不可由 CI 强制** | CI 看不到"是否事先批准 / 是否事后报告"⇒ 唯一护栏是事后核对。按威胁模型口径，这是一条**流程纪律**，只能记为**部分缓解**，**不得**被宣传为机制 |
-| 3 | **新增第三方代码进镜像** | 精确版本、Skill 仓库 commit、许可证、摘要、`skills -g` 落点——**五项全部未核验**。采纳时它们是敞口；§5.3 已把它们设为**落地前置条件** |
+| 3 | **新增第三方代码进镜像** | 精确版本、Skill 仓库 commit、许可证、摘要、`skills -g` 落点——**起草时五项均未核验**；2026-09-18 已实测核验四项（版本 `cnb-cli@1.15.36` / `skills@1.5.0`、许可证 MIT、落点 `~/.agents/skills/`、体积与传递依赖，事实回填 §5.3/§5.4/§10）。仅 **摘要校验（L4）** 尚待落地实现 ⇒ 采纳时它**仍是敞口**；§5.3 已把前置条件写死 |
 | 4 | **Skill 文本进入指令面** | 官方 Skill 的 `description` 常驻、`SKILL.md` 触发时加载 ⇒ 第三方文本成为代理的指令来源。缓解是"钉 commit + 项目内 Skill 不复述规范"，**不是**"来源可信所以无害" |
 | 5 | **联动面大（17 处）** | 任一处漏改就出现"同一事实两份表述"。本项目已有多起同类事故（A-3/A-14/A-16/A-17）⇒ §5.8 的反向搜索是**必需动作**，不是可选动作 |
 | 6 | **首次仍需一次真实重建** | 改动 `.ide/Dockerfile` 与（可能）`build.by` 会触发构建；§5.3 的层序安排只降低**后续**改动成本 |
@@ -453,7 +476,7 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
 
 | # | 验证项 | 怎么验 | 通过判据 |
 | --- | --- | --- | --- |
-| V1 | CLI 可用 | 构建期与 `post-build-checklist` 第 1 步跑 `cnb --help` | 退出码 0（**不使用 `cnb --version`**：该命令存在性未验证） |
+| V1 | CLI 可用 | 构建期与 `post-build-checklist` 第 1 步跑 `cnb --help`；**`cnb --version` 已实测存在**（返回 `1.15.36`），可一并作断言 | 退出码 0，且 `--version`（如使用）与 `.ide/assets/` 清单中钉定的版本一致 |
 | V2 | 官方 Skill 已装 | 构建期断言落点目录**非空**（路径以 `V10` 实测为准） | 存在至少一个 `SKILL.md` |
 | V3 | 版本锁定生效 | 运行期 `npm ls -g --depth=0` 与 `.ide/assets/` 清单比对 | 逐项一致 |
 | V4 | 摘要校验生效 | 构建期校验通过；**变异探针**：故意改清单里的一个摘要 ⇒ 构建必须**中断** | 构建失败（fail-secure） |
@@ -476,11 +499,13 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
 
 ## 8. 后续行动
 
-- [ ] **所有者拍板本 ADR**（状态：提议中 → 已接受 / 已否决；若否决，按方案 A 或 D 落一条新 ADR）
-- [ ] 若采纳：**先完成 §5.3 的落地前置条件**（版本、commit、许可证、摘要、落点、可检查性五项），
-      把结果**只补事实、不改结论**地回填本 ADR 的 §5.4 / §5.5 / §10
-- [ ] 若采纳：按 §5.8 的 17 处联动更新**逐条**落地，并执行末尾的三条反向搜索
-- [ ] 若采纳：`SECURITY.md` 新增 `S-9`（不可回退操作必须事先拦截）
+- [x] **所有者拍板本 ADR**：**2026-09-18 采纳方案 B** ⇒ 状态 **提议中 → 已接受**（见 §11）。
+- [x] 若采纳：完成 §5.3 落地前置条件的**实测核验与回填**——版本 / commit / 许可证 / 落点
+      四项**已核验**，并**只补事实、不改结论**地回填 §5.3 / §5.4 / §5.5 / §7(`V1`) / §10；
+      **摘要校验（L4）** 尚待落地实现（见 §10）
+- [ ] 若采纳：按 §5.8 的**其余**联动条目**逐条**落地，并执行末尾的三条反向搜索
+      （A~F 分级口径的 **5 处**已落地并完成一致性自查，见 §11）
+- [x] 若采纳：`SECURITY.md` 新增 `S-9`（不可回退操作必须事先拦截）——**已落地**
 - [ ] 若采纳：更新 `docs/design/threat-model/`（§5.7 的清单；**由架构师域执行**，
       并重算 `README.md` §4/§5/§6 的状态与计数）
 - [ ] 若采纳：执行 `T3`（**轮换本会话已误显示的令牌**）——**这是所有者动作**，代理不得代办
@@ -489,7 +514,8 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
       断言 `CODEBUDDY.md`、`AGENTS.md`、`.codebuddy/rules/git-workflow/RULE.mdc`、
       `docs/engineering/git-workflow.md` §4、`CONTRIBUTING.md` 五处的**分级集合互相一致**
       （与 `tests/unit/test_commit_message_contract.py` 同一模式：同一事实不得两份真源）
-- [ ] 在 `docs/adr/README.md` 索引登记本 ADR（状态：提议中）
+- [ ] 在 `docs/adr/README.md` 索引登记本 ADR（状态：**已接受**）——**归 `README.md` 的写者**，
+      本 ADR 域内不代改
 
 ---
 
@@ -506,19 +532,20 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
 
 ---
 
-## 10. 未验证项（不得当作事实引用）
+## 10. 未验证项与核验台账
 
-> 纪律（沿用 ADR-0015 §8.2）：本表任何一项在核验完成前**不得**写进 `docs/` 的结论性表述
+> 纪律（沿用 ADR-0015 §8.2）：**未核验**项在核验完成前**不得**写进 `docs/` 的结论性表述
 > 或 `.ide/Dockerfile` 的注释，只能以 **【待核验】** 形式出现。
+> 已核验项在表中以 **✅** 标注并保留（作为核验台账），此后按事实引用。
 
-| # | 待核验 | 影响 | 验证方式 |
+| # | 待核验 / 已核验事实 | 影响 | 验证方式 |
 | --- | --- | --- | --- |
-| U1 | `@cnbcool/cnb-cli` 与 `skills` 的**精确版本号** | L1 锁定的可行性 | `npm view @cnbcool/cnb-cli versions --json`（同理 `skills`） |
-| U2 | `skills add` 是否支持**固定 ref / commit** | L2 的可行性；决定是否走 L3 | `npx skills --help` / `skills add --help`；或读 `skills` 包文档 |
-| U3 | `skills add -g` 的**落点路径** | 构建期断言（`V2`）与 `.gitignore` 判断 | 镜像内实测：`find / -name 'SKILL.md' 2>/dev/null` |
-| U4 | `@cnbcool/cnb-cli` 与 `cnb/skills` 仓库的**许可证** | **合规前置**：不合规则不得进镜像 | 查 npm 包页面的 `License` 字段与仓库根 `LICENSE` 文件 |
-| U5 | 两者的**体积与传递依赖数量** | 镜像体积评估 | `npm ls -g --depth=0`、`du -sh`（参考：镜像内 CodeBuddy 包解包约 166 MB） |
-| U6 | `cnb --version` 是否存在 | `V1` 的断言选型（当前只用 `--help` 绕开） | 运行期实测 |
+| U1 | ✅ **已核验（2026-09-18）**：`@cnbcool/cnb-cli` = **1.15.36**；`skills` 最新 = **1.7.0**（受 node 约束，实际钉 `skills@1.5.0`，见 §5.4） | L1 锁定的可行性 | `npm view @cnbcool/cnb-cli versions --json`（同理 `skills`） |
+| U2 | ✅ **已核验（2026-09-18）**：`skills add` **不支持**固定 ref / commit（help 无该选项；`pkg@X` 的 `@` 是**技能名**）⇒ **L2 不可行，改走 L3** | L2 的可行性；决定是否走 L3 | `npx skills --help` / `skills add --help`；或读 `skills` 包文档 |
+| U3 | ✅ **已核验（2026-09-18）**：落点 = **`~/.agents/skills/<name>/`**（canonical），并在 **`~/.codebuddy/skills/<name>`** 建**符号链接**指向它 ⇒ L3 必须**复刻两层结构** | 构建期断言（`V2`）与 `.gitignore` 判断 | 镜像内实测：`find / -name 'SKILL.md' 2>/dev/null` |
+| U4 | ✅ **已核验（2026-09-18）**：`@cnbcool/cnb-cli` 与 `cnb/skills` 仓库许可证**均为 MIT**（与 Apache-2.0 兼容） | **合规前置**：不合规则不得进镜像 | 查 npm 包页面的 `License` 字段与仓库根 `LICENSE` 文件 |
+| U5 | ✅ **已核验（2026-09-18）**：`cnb-cli` 解包 **1,413,046 B ≈ 1.35 MB**、**无传递依赖**；`skills` 解包 **≈578 KB**、传递依赖 `tar ^7.5.20` + `yaml ^2.8.3` | 镜像体积评估 | `npm ls -g --depth=0`、`du -sh`（参考：镜像内 CodeBuddy 包解包约 166 MB） |
+| U6 | ✅ **已核验（2026-09-18）**：`cnb --version` **存在**，返回 `1.15.36` | `V1` 的断言选型（§7 `V1` 已据此更正） | 运行期实测 |
 | U7 | 令牌**授权项的具体名称**与"只读组合"是否可得 | `T1`/`T2` 的可操作性 | 令牌创建 / 编辑页逐项抄录；或查 CNB CLI 插件文档 / OpenAPI 鉴权章节 |
 | U8 | `cnb-cli` / `skills` 所需的**最小 scope** | 最小权限是否真能收窄 | 用受限令牌分别跑一次只读命令与一次写命令，**作差** |
 | U9 | 令牌**撤销 / 轮换**的操作入口 | `T3` 的可执行性 | 令牌列表页实测（文档页未覆盖） |
@@ -526,11 +553,16 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
 | U11 | 追加新层是否**真的命中**模型层缓存 | §5.3 的层序建议 | 观测一次重建耗时（`V6`） |
 | U12 | 官方 `cnb-skill` 的具体能力清单（接口级） | 项目内 `cnb-pipeline` 与它的边界划分 | 拉取后读其 `SKILL.md`；官方文档只给归类级描述 |
 
+> **新阻塞（U 表原未覆盖，2026-09-18 实测）**：`skills@1.7.0` / `1.6.0` 要求
+> **`node ≥ 22.20.0`**，而镜像实为 **node 20.20.2** ⇒ 安装报 **`EBADENGINE`**；
+> 所有者裁决**钉 `skills@1.5.0`**（engines `>=18`），并**不动 `.ide/Dockerfile` 第 3 阶段**
+> （避免 GB 级模型层缓存失效）。
+
 ---
 
 ## 11. 修订记录
 
-> 本 ADR 尚**未被接受**；接受后正文结论不再原地修改（ADR 只增不改）。
+> 本 ADR 已于 **2026-09-18 接受**；正文结论不再原地修改（ADR 只增不改）。
 > 事实补充与编排性修订在此登记。
 
 - **2026-09-18**：初稿。状态**提议中**。依据：CNB 官方 Skills / CNB CLI / 访问令牌三页文档
@@ -539,3 +571,42 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
   `security-scan-gate-config.md` §7、`benchmark-automation.md` §6.1/§7、`devlog 0013` §3、`devlog 0014` §5。
   **本 ADR 不含任何落地改动**（无 `.ide/Dockerfile`、`.cnb.yml`、规则文件的修改；
   `CNB_TOKEN` 未被读取、打印或写入任何文件）。
+
+- **2026-09-18（第二次）**：**状态：提议中 → 已接受**（项目所有者拍板采纳**方案 B**）。
+  同日回填 §5.3 落地前置条件的实测事实（**只补事实、不改结论**），并同步落地 A~F 分级口径：
+
+  | 项 | 实测结果（2026-09-18） | 回填位置 |
+  | --- | --- | --- |
+  | U1 | `@cnbcool/cnb-cli` = **1.15.36**；`skills` 最新 = **1.7.0** | §5.4 / §10 |
+  | 新阻塞（U 表未覆盖） | `skills@1.7.0`/`1.6.0` 要求 **`node ≥ 22.20.0`**，镜像实为 **node 20.20.2**（`EBADENGINE`）⇒ 裁决**钉 `skills@1.5.0`**（engines `>=18`），**不动 Dockerfile 第 3 阶段**（避免 GB 级模型层缓存失效） | §5.4 / §10 |
+  | U2 | `skills add` **不支持**钉 commit / ref（help 无该选项；`pkg@X` 的 `@` 是**技能名**）⇒ **L2 不可行，改走 L3** | §5.4 / §10 |
+  | U3 | 落点 = **`~/.agents/skills/<name>/`**（canonical）+ **`~/.codebuddy/skills/<name>`** 符号链接 ⇒ L3 必须**复刻两层结构** | §5.3 / §5.4 / §10 |
+  | U4 | 两者许可证均 **MIT**（与 Apache-2.0 兼容） | §5.4 / §10 |
+  | U5 | `cnb-cli` 解包 **1,413,046 B ≈ 1.35 MB**、**无传递依赖**；`skills` 解包 **≈578 KB**、传递依赖 `tar ^7.5.20` + `yaml ^2.8.3` | §5.4 / §10 |
+  | U6 | `cnb --version` **存在**，返回 `1.15.36` ⇒ §7 `V1` 更正为可用它作断言 | §5.6 / §7 / §10 |
+  | 官方仓库内容 | `cnb/skills/cnb-skill` 实含 **11 个 Skill**（不是 1 个） | §5.3 |
+  | 范围裁决 | **只装 5 个**：`cnb-api`、`cnb-docs`、`cnb-code-review`、`cnb-pr-analysis`、`cnb-pipeline`；排除 `cnb-code-commit`（与 PR 模板 / Conventional Commits 门禁重叠，属"两处口径"）与其余 5 个（本项目用不上）；理由：`description` 常驻上下文，11→5 减半 | §5.3 |
+  | 命名冲突 | 官方已有 `cnb-pipeline` ⇒ ADR-0017 原定的项目内同名 Skill **改名为 `repo-ci-conventions`** | §5.3（分工注） |
+  | 可钉 commit | `cnb-skill` HEAD = `bcd25870ed100db43c257c3c5feca6c776645914`（**HEAD 会漂**；落地时按取到时的 SHA 钉死并登记摘要） | §5.4 |
+
+  **编排性修订**（不改变任何结论）：
+
+  - `U1`~`U6` 在 §10 中标注 **✅ 已核验**（该节标题改为"未验证项与核验台账"）并保留，供后续按事实引用；
+    **`U7`~`U12` 保持原状，仍未验证**。
+  - §5.5 补一段"只补事实"的说明：接入范围已核验，但**最小 scope（`U8`）仍未核验**，
+    `T1`/`T2`/`T3` 仍是独立且未完成的安全动作。
+  - §6 负面条目 3 补注"起草时五项均未核验 / 2026-09-18 已核验四项，仅摘要校验（L4）待落地"，
+    该负面结论（**采纳时仍是敞口**）**不变**。
+  - §8 后续行动按当前状态勾选（拍板 / 前置条件核验与回填 / `S-9` 已落地），
+    其余条目（威胁模型、`T3`、反向搜索、`docs/adr/README.md` 索引等）保持未完成。
+  - `docs/adr/README.md` 的索引状态需由该文件的写者从"提议中"改为"已接受"（本 ADR 域内不代改）。
+
+  **同批落地的联动改动**（属 ADR-0016 §5.8 的 1 / 3 / 4 / 6 / 7 / 8 / 9 条）：
+
+  - `CODEBUDDY.md` §2/§5、`AGENTS.md` §2/§5、`.codebuddy/rules/git-workflow/RULE.mdc`、
+    `docs/engineering/git-workflow.md` §4、`CONTRIBUTING.md` §8 —— A~F 分级口径
+    **5 处逐项一致**（自查：把 5 处的 A~F 归一化后取哈希，全部相同）。
+  - `SECURITY.md` §3 新增 `S-9`；§2 供应链段补"镜像内第三方 CLI / Skill 的来源·精确版本·摘要"
+    与"Skill 文本进入指令面须钉 commit"。
+  - **仍未落地**：`.ide/Dockerfile` 新阶段、`.cnb.yml`、`.gitignore`、`post-build-checklist.md`、
+    威胁模型联动（§5.7）、`docs/adr/README.md` 索引等 —— 见 §5.8 其余条目与 §8。
