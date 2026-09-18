@@ -55,7 +55,7 @@
 | S-4 | 禁止引入来源不明的权重/二进制/脚本 | PR 模板中的"依赖与来源"必填项 |
 | S-5 | 不可信事件（PR 等）触发的 CI 不得访问密钥 | `.cnb.yml` 中密钥操作仅置于可信事件 |
 | S-6 | 安全相关检查不得被静默绕过 | 绕过必须附 ADR 说明 |
-| S-7 | 豁免标记（`# nosec` / `# noqa`）**标记行只写规则号**；理由写在标记所在行或**紧邻其上的独立注释行**，且**理由中不得出现其它规则号** | `make check` 的 `bandit` 段无 `Test in comment` 告警；`tests/unit/test_bench_encapsulation.py` 的 E4 断言（`# nosec` 后的 id 集合**恰等于**预期） |
+| S-7 | 豁免标记（`# nosec` / `# noqa`）**标记行只写规则号**（标记行上不写理由）；理由写在**紧邻其上的独立注释行**，且**理由中不得出现其它规则号** | `make check` 的 `bandit` 段无 `Test in comment` 告警；`tests/unit/test_bench_encapsulation.py` 的 E4 断言（`# nosec` 后的 id 集合**恰等于**预期） |
 
 > **为什么 S-7 是硬性格式**（2026-09-18 实测，依据 [`ADR-0014`](docs/adr/0014-benchmark-automation.md) §2.9）：
 > 扫描器会把 `# nosec` / `# noqa` **之后**的文本当作**规则号候选**——理由里只要出现某个规则 ID，
