@@ -784,3 +784,35 @@ src/agent_sec_perf/
   ③ 本地回环客户端用标准库 `http.client`（`urllib3` 的指定用途是**云端**，判读为不冲突）。
   **分层模型、依赖方向 `R1`~`R5`、组件选型、目录结构与全部决策一律不变**；
   上述三处登记**只记录事实**，处置见 `architecture.md` §11。
+- **2026-09-19**：**契约级细化 + 一处表述更正（登记，不改任何决策）**——新增
+  [`design/interfaces/harness.md`](../design/interfaces/harness.md)，即 §9 的
+  "编写 `docs/design/interfaces/*.md`"的延续（§9 该行原文不改）。三项内容：
+
+  1. **定义 §5.1.2 引用但未定义的 `SessionEvent`**（7 个 `kind` + 14 字段 + 不变式 `I1`~`I10`）
+     与 `Session` Protocol，并新增其落地清单 `contracts/harness.py`（零行为契约层，
+     仍是类型 + `Protocol`）。**这个类型在本文 §5.1.2 的 `UX ↔ HARNESS` 行与
+     `architecture.md` §2.4 / §5.2 被引用，却没有任何定义** ⇒ 实现者无法开工
+     （"未落盘 = 不存在"）。同批定义的还有 `SessionConfig`、`ArgumentValidator`
+     与审批门四类型（`ApprovalGate` 是"`harness` 不得依赖 `cli`"这一 `R1` 约束下
+     唯一的接缝形态）。
+  2. **表述更正：`Session.run` 的返回形态由 `AsyncIterator[SessionEvent]` 细化为同步
+     `Iterator[SessionEvent]`。** 依据：§5.1.2 同一格已规定"**单会话单线程**；事件流
+     **串行**产出"，`AsyncIterator` 与之自相矛盾；且 `src/` 下**现有全部实现均为同步阻塞式**
+     （`model/client.py` / `tools/*` / `security/policy.py` / `observability/audit.py` /
+     `foundation/proc.py`，**无任何 `async def`**），并发亦无收益面（`llama-server` 默认
+     `-np 1`，`ModelClient` 契约写明非线程安全）。**该行的「并发假设」「错误语义」
+     「资源生命周期」三列一字不改**；被改的只是返回值的迭代器形态。
+     ⚠️ `architecture.md` §2.4 / §5.2 的两处 `AsyncIterator` **尚未同步**（该文件不在
+     当轮产出白名单内）⇒ **同步前，以本修订记录与 `harness.md` §2.9 为准**。
+  3. 登记两项**契约间缺口**（本文不改，规范落在 `harness.md`）：
+     - `TOOL_CALL` 的 `outcome` 需增加 `DENY`（"未执行"）：§5.1.2 未涉及，但
+       `interfaces/tools.md` §2.6 的"未知工具 ⇒ 拒绝 **+ 审计**"与 `interfaces/audit.md`
+       §2.2 的 `{OK, ERROR}` 合起来**不可满足**，且会让"拒绝"与"执行失败"同形
+       —— 与 `architecture.md` §5.3 硬规定 2"拒绝不等于失败"直接冲突；
+     - `D2`（pydantic 的两处用途）的**校验器选型**仍未定，`harness.md` 只给契约语义并要求
+       实现者**停下上报**（`architecture.md` §11 的 `G-2` 的收敛路径）。
+
+  **§5.1 的分层模型、§5.1.1 的依赖方向 `R1`~`R5`、§5.2 的组件选型、§5.4 的目录结构、
+  §8.1 的全部决策（`D1`~`D10`）一律不变。** 若所有者认为"同步 / 异步"属**决策级变更**
+  （而非上述形态细化），则正确处置是**另开一篇 ADR 声明取代 §5.1.2 的该行**，
+  本登记随之失效——这条路径必须留痕，不得由实现者自行取舍。
