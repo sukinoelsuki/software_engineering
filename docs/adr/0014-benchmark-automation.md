@@ -179,18 +179,68 @@ All checks passed!
 | `subprocess.run`（L187，`run_inherit_env`） | ruff **S603** + bandit **B603** | `—— 仅执行自有工具链静态检查、不执行模型产物；不经 shell、参数为列表（登记：ADR-0014 §2.9）` |
 | `subprocess.Popen`（L223，`spawn`） | ruff **S603** + bandit **B603** | `—— 启动常驻 llama-server（自有二进制、绝对路径）；不经 shell、参数为列表（登记：ADR-0014 §2.9）` |
 
-**放置规则（默认）**：理由**追加在扫描器报告的那一行行尾**——即 `import` 行（L23）与三处调用行
-（L145/L187/L223）；其余标记（`# nosec B603` 仍在右括号行）**保持不动**：
+**放置规则（**已更正**：理由**不得**写进 `# nosec` / `# noqa` 注释内部）**：
+
+> ⚠️ **更正原因（实测，安全相关；见文末「修订记录」）**：把理由文本追加到豁免标记之后**不安全**。
+> bandit 会把 `# nosec` 之后的 **ASCII 词元当成规则号候选**，且**合法规则号会被静默接受**：
+>
+> ```text
+> # 现状（实现者按旧措辞照抄后，导入行变成）：
+> import subprocess  # nosec B404 —— 本模块是全项目唯一子进程封装层，导入 subprocess 即其职责（登记：ADR-0014 §2.9）
+>
+> $ uv run bandit -r src
+> [manager] WARNING Test in comment: subprocess is not a test name or id, ignoring
+> [manager] WARNING Test in comment: ADR is not a test name or id, ignoring
+> [manager] WARNING Test in comment: 0014 is not a test name or id, ignoring
+> ```
+>
+> 上例只是**告警**（词元非法，未被接受）。真正危险的是**静默过度豁免**——探针实测：
+>
+> ```text
+> $ uv run bandit -q /tmp/probe_r.py
+> # 文件内容：assert True  # nosec NOPE —— 说明中提到 B101 与 subprocess
+> [manager] WARNING Test in comment: NOPE is not a test name or id, ignoring
+> [manager] WARNING Test in comment: subprocess is not a test name or id, ignoring
+> bandit_exit=0
+> # ↑ B101（assert_used）因"理由文本里恰好写了 B101"被顺手豁免，且无任何报错、无任何告警
+> ```
+>
+> ⇒ **理由文本可以不知不觉地多豁免一条规则**。这与 `SECURITY.md`「禁止静默削弱安全检查」
+> 直接冲突，故否决"行尾追加"写法。
+
+**正确做法（现行默认，记作 `F1`）**：**标记注释只写规则号**，理由另起**紧随其上的独立注释行**
+——即仓库既有写法（`proc.py` L142~L144 已在覆盖 L145 调用点）：
 
 ```text
-import subprocess  # nosec B404 —— 本模块是全项目唯一子进程封装层，导入 subprocess 即其职责（登记：ADR-0014 §2.9）
+# 本模块是全项目唯一子进程封装层，导入 subprocess 即其职责。
+# 豁免登记：docs/adr/0014-benchmark-automation.md §2.9
+import subprocess  # nosec B404
 
-        completed = subprocess.run(  # noqa: S603 —— 不经 shell、参数为列表；执行前施加非特权 uid + rlimit + 最小环境（登记：ADR-0014 §2.9）
+        # 不经 shell、参数为列表；执行前施加非特权 uid + rlimit + 最小环境。
+        # 豁免登记：docs/adr/0014-benchmark-automation.md §2.9
+        completed = subprocess.run(  # noqa: S603
+            argv,
+            ...
+        )  # nosec B603
 ```
 
-**实测依据（2026-09-18，探针文件）**：豁免标记后**追加中文文本不会破坏解析**——
-`# noqa: S603 —— …` 仍抑制 `S603` 且**不触发** `RUF100`；`# nosec B404 —— …` 仍被计为 1 条 skip。
-（**等价放置**：也可将同一措辞改贴到该语句的 `# nosec B603` 行尾——**二者只留一处，不要重复**。）
+**逐点措辞**：仍用上表「行内理由措辞」列的**文字**，但**去掉行首的 `—— `** 并改为独立注释行
+（登记句可另起一行，如上例）。四点措辞本身不变、仍是**单一来源**。
+
+**已实测的等价备选（`F2`，不推荐）**：`...  # <理由>  # nosec B404`（理由在前、标记放在最后）——
+实测无告警、抑制正常；但自由文本仍留在标记所在的**同一行**，顺序一写反即回到上面的 hazard，故不推荐。
+
+**验证方式（必须可执行；无验证视为未实现）**：
+
+| # | 检查 | 命令 | 通过判据 |
+| --- | --- | --- | --- |
+| E1 | 无"把 prose 当规则号"的告警 | `uv run bandit -r src` | `WARNING ... Test in comment` **计数 = 0** |
+| E2 | 豁免**精确**、不多不少 | `uv run bandit -r src` | `Total potential issues skipped due to ... #nosec` **计数 = 4**（1×`B404` + 3×`B603`） |
+| E3 | 反向验证（无过度豁免） | `uv run bandit -r src --ignore-nosec` | 恰好 4 条：L23 `B404` + L145/L187/L223 `B603` |
+| E4 | 标记注释内无"额外"规则号 | 对 `# nosec` 行做静态检查 | `# nosec` 后的 id 集合**恰好等于**预期集合（建议落成单测，防"理由里写了 `B6xx` 就顺手豁免"） |
+
+> E4 是**防过度豁免**的机器检查；安全断言不得由实现者自证（`CODEBUDDY.md` §10.2 规则 4），
+> 建议由验证工程师落成 `tests/security/` 用例。
 
 **豁免点与承载关系（实测，一一对应、无多无少）**：
 
@@ -293,3 +343,18 @@ B404 @ L23 ; B603 @ L145 / L187 / L223
   3. **证据（实测命令与输出摘要见 §2.9.1）**：`ruff check --select S603 --ignore-noqa` 报
      L145/L187/L223；`bandit --ignore-nosec` 报同 3 行 `B603` + L23 的 `B404`
      ⇒ **3 个调用点 + 1 个 import**，与豁免一一对应、无多无少。
+
+- **2026-09-18（当日第三次；**更正上一条的放置规则**）**：上一条给出的"理由**追加在行尾**"写法
+  **经实测不安全，已作废**。原句（照录）：
+
+  > **实测依据（2026-09-18，探针文件）**：豁免标记后**追加中文文本不会破坏解析**——
+  > `# noqa: S603 —— …` 仍抑制 `S603` 且**不触发** `RUF100`；`# nosec B404 —— …` 仍被计为 1 条 skip。
+
+  该结论**只对纯中文理由成立**：一旦理由里含有 ASCII 词元（如 `subprocess`、`ADR-0014 §2.9`），
+  bandit 会把它们当作**规则号候选**并告警；**若其中恰好是合法规则号（如 `B101`），则被静默接受、
+  使该行多豁免一条规则**——探针 `assert True  # nosec NOPE —— 说明中提到 B101 与 subprocess`
+  下 bandit 退出码 `0`（`assert_used` 被豁免），即**理由文本造成了静默削弱安全检查**。
+
+  故 §2.9.1 的放置规则已更正为 **`F1`：标记注释只写规则号，理由另起紧随其上的独立注释行**，
+  并补充 **E1~E4** 四项**可执行**验证（含"`# nosec` 后的 id 集合恰好等于预期集合"的防过度豁免检查）。
+  **豁免范围、理由实质与影响面均不变**；仅"理由放在哪里"这一条被更正。

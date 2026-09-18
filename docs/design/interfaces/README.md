@@ -96,10 +96,11 @@
 
 | # | 未决项 | 卡在哪 | 解除方式 |
 | --- | --- | --- | --- |
-| U1 | `CapabilityTier` 的**档数与成员名** | SRS `Q-3` 未决；档数（3 还是 4）与判定口径（探针任务集 + 阈值）未定 | `REQ-MODEL-06` 落地时定，变更走 ADR |
+| U1 | `CapabilityTier`（**模型能力档位**）的档数与成员名 | **经查证：无任何文档定义其成员** —— `SRS Q-3` 仍是**开放问题**（"建议…档位暂定 3 档"只是建议）；`REQ-MODEL-06` 只要求"估计档位"、不给集合。**注意 `S/M/L` 是"硬件档位"（`ADR-0011 §5.1` / `SRS §6.3` / `SRS §14`），属另一条轴，不可用于填充**（见 [`model.md`](model.md) §2.3.1 自查结论） | `REQ-MODEL-06` 落地时定，变更走 ADR |
 | U2 | `ToolSpec.description_digest` 的**规范化口径**（`REQ-TOOL-03` 防 rug-pull） | 摘要应覆盖哪些字段、如何规范化尚未定 | 与 MCP 接入（`REQ-TOOL-02`，Should）同期定；本目录给**可用的初始口径** |
 | U3 | **"本次 / 总是 / 拒绝"的持久授权**表示（`REQ-UX-02`） | 不在本轮 9 条问题内；属 `security/` 的审批门 + 配置存储 | 审批门设计时定义（**本目录不扩写**） |
 | U4 | 审计事件的 `detail` **脱敏规则** | 依赖 `REQ-SEC-07` 的脱敏处理器（`observability/` + structlog 管线，D4） | `observability/` 设计时定；契约只强制"必须已脱敏" |
+| U5 | **硬件档位 `S/M/L` 在 `contracts/` 中无对应类型** | `REQ-PERF-06` 要求"映射到固定 3 档（`S/M/L`）预设配置"，但 `ADR-0015 §5.4.1` 的 `contracts/model.py` 只列了 `CapabilityTier`（模型能力档位）——**两条轴各需一个类型**（见 [`model.md`](model.md) §2.3.1 第 (4) 条） | 建议新增 `HardwareTier(StrEnum)` = `S/M/L`；属**新增契约类型**（决策级），需领导确认后落 ADR；本目录**不擅自新增** |
 
 ---
 
