@@ -14,7 +14,7 @@
 - [ ] 遵守 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) 与 `.codebuddy/rules/` 中的规范
 - [ ] 公开接口有类型标注，`mypy --strict` 通过
 - [ ] 无遗留调试代码（`print`、`breakpoint()`、注释掉的死代码、`TODO` 未开 Issue）
-- [ ] 无新增的 `# noqa` / `# nosec` / `# type: ignore`，或已写明理由并登记
+- [ ] 无新增的 `# noqa` / `# nosec` / `# type: ignore`；确需豁免时按 [两步写法](../../SECURITY.md)（**豁免标记行只写规则号**、**理由写在紧邻其上的独立注释行**、**理由中不得出现其它规则号**），并登记到 ADR 或 `SECURITY.md`（登记表见 [`ADR-0014`](../adr/0014-benchmark-automation.md) §2.9）
 
 ### 测试
 
