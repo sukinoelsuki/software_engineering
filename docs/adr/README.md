@@ -83,8 +83,9 @@
 | [0013](0013-branch-model-for-solo-dev.md) | 分支模型：develop 改为工作主干（取消直推限制），以分支卫生自检兜底 | 已接受 |
 | [0014](0014-benchmark-automation.md) | 基准自动化：可比时间序列、数据分支与测量纪律 | 已接受 |
 | [0015](0015-layering-and-reuse-boundary.md) | 分层模型、复用组件清单与自研边界（**D1~D10 已于 2026-09-18 批准**：D2 限定 pydantic 用途、D3 改选 urllib3、D7 暂缓；并登记 ADR-0003 §6~§8 为历史残留） | 已接受（2026-09-18） |
-| [0016](0016-cnb-platform-integration-and-remote-write-authorization.md) | CNB 平台集成（官方 Skills 与 `cnb-cli`）与远端写入授权分级：A 类改事后报告，B~F 保持事先批准/禁止 | **提议中**（待所有者拍板） |
-| [0017](0017-project-level-agent-skills.md) | 建立项目级 Agent Skills 目录（`.codebuddy/skills/`）与其产出域归属：只放流程型 Skill、一律指向权威源 | **提议中**（待所有者拍板） |
+| [0016](0016-cnb-platform-integration-and-remote-write-authorization.md) | CNB 平台集成（官方 Skills 与 `cnb-cli`）与远端写入授权分级：A 类改事后报告，B~F 保持事先批准/禁止 | 已接受（2026-09-18，方案 B） |
+| [0017](0017-project-level-agent-skills.md) | 建立项目级 Agent Skills 目录（`.codebuddy/skills/`）与其产出域归属：只放流程型 Skill、一律指向权威源 | 已接受（2026-09-18） |
+| [0018](0018-agent-team-collaboration-mechanism.md) | Agent 团队的协作机制：主 Agent 恒为领导、角色文件域独占、回报通道三条机制、成本纪律 | 已接受（2026-09-18） |
 
 > 新增 ADR 后请同步更新本表。
 > ⚠️ 索引缺项会导致读者（与代理）以为文档不存在、进而重复决策——2026-09-18 的一致性核查已发现一次（0014 缺登记）。
