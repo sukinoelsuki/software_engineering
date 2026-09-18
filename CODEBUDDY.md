@@ -121,7 +121,7 @@ Refs: #<issue>
 **版本号只表达"到达了哪个里程碑"，不由提交历史推导**（[ADR-0019](docs/adr/0019-release-and-version-policy.md)）：
 只能取 `pyproject.toml` 的 `[tool.lowspec.releases]` 台账里列出的值，
 由 **`make release VERSION=x.y.z`** 落定（**`make bump` 已废除**，会拒绝执行）。
-`main` 写入与打标签是**所有者动作**（B 类）。
+**合并到 `main` 恒为所有者动作**（B 类）；开 PR、打标签、回合 `develop` **可由代理代执行**。
 
 ---
 

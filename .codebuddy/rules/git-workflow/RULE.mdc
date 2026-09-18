@@ -78,7 +78,8 @@ Refs: #<issue>
   一致性由 `tests/unit/test_release_policy.py` 检查。
 - 流程：`make release` → PR `develop`→`main`（Merge commit）→ CI 全绿后合并 →
   在 `main` 上打**带注释标签** `v<version>` → 把 `main` 回合 `develop`。
-- **打标签与 `main` 写入是所有者动作**（B 类）。
+- **合并到 `main` 恒为所有者动作**（B 类）；**开 PR、打标签、回合 `develop` 可由代理代执行**
+  （`ADR-0019` §5.7）；⚠️ 放开的只是"谁执行已获准的发布动作"，**不是**"代理可自行决定发布"。
 - `release/<version>` 分支**不再强制**（单人项目里只多一次往返；确需冻结发布候选时仍可用）。
 - 理由见 [ADR-0019](../../../docs/adr/0019-release-and-version-policy.md)。
 
