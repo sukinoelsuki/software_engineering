@@ -68,6 +68,24 @@ class CapabilityTier(StrEnum):
     ADVANCED = "advanced"
 
 
+class HardwareTier(StrEnum):
+    """**硬件档位**（可用硬件预算的分级）。
+
+    成员与语义由 ``ADR-0011 §5.1`` 定义（**非本契约新造**）；``REQ-PERF-06`` 要求会话启动时
+    探测一次并映射到固定 3 档预设配置（决定模型规模与量化档、上下文长度、线程数与批量）。
+
+    与 :class:`CapabilityTier`（**模型能力**档位）是**两条正交的轴**
+    （``ADR-0010 §5.2`` / ``SRS §14``）：**同一模型换到更强硬件，能力档位不变，但配置必须变**。
+
+    **硬禁令**：任何代码不得把 ``HardwareTier`` 与 ``CapabilityTier`` 相互转换；
+    ``S`` / ``M`` / ``L`` **只属于**本类型，``CapabilityTier`` 的成员**不得**取名为它们。
+    """
+
+    S = "s"  # ≤ 4 GiB：移动端代表性验证（MiniCPM5-2B-Q4_K_M）
+    M = "m"  # 8 GiB：目标设备下限 / 通用基线（Qwen3-4B-Q4_K_M）
+    L = "l"  # 16 GiB：笔记本 / 个人 PC（Qwen3-8B-Q4_K_M）
+
+
 class FinishReason(StrEnum):
     """生成终止原因。
 

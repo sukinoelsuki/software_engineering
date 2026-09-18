@@ -19,6 +19,7 @@ from agent_sec_perf.contracts.model import (
     CapabilityTier,
     ChatMessage,
     FinishReason,
+    HardwareTier,
     ModelClient,
     Role,
 )
@@ -82,8 +83,37 @@ def test_enums_are_lowercase_and_json_serializable() -> None:
         AuditEventKind.POLICY_DECISION: "policy_decision",
         FinishReason.LENGTH: "length",
         CapabilityTier.ADVANCED: "advanced",
+        HardwareTier.S: "s",
     }
 
     for member, expected in samples.items():
         assert member.value == expected
         assert json.dumps(member) == f'"{expected}"'
+
+
+@pytest.mark.unit
+def test_hardware_tier_members_are_exactly_sml() -> None:
+    """``HardwareTier`` 的成员**恰好**是 S/M/L（成员与语义由 ``ADR-0011 §5.1`` 定义）。
+
+    用"恰好相等"而不是"存在"：多一个或少一个档位都会让"映射到固定 3 档"（``REQ-PERF-06``）
+    失去可验证性。
+    """
+    assert {tier.value for tier in HardwareTier} == {"s", "m", "l"}
+    assert set(HardwareTier.__members__) == {"S", "M", "L"}
+
+
+@pytest.mark.unit
+def test_capability_and_hardware_tiers_are_disjoint_axes() -> None:
+    """两条轴正交：成员名与取值都不得相交（``CapabilityTier`` 不得取名为 ``S``/``M``/``L``）。
+
+    依据 ``docs/design/interfaces/model.md`` §2.3.2 的硬禁令：``S``/``M``/``L`` **只属于**
+    ``HardwareTier``；两轴混用会让"同一模型换硬件后能力档位不变"无法成立。
+    """
+    capability_names = set(CapabilityTier.__members__)
+    hardware_names = set(HardwareTier.__members__)
+    capability_values = {tier.value for tier in CapabilityTier}
+    hardware_values = {tier.value for tier in HardwareTier}
+
+    assert capability_names & hardware_names == set(), "两条轴的成员名不得相交"
+    assert capability_names & {"S", "M", "L"} == set(), "CapabilityTier 不得取名为 S/M/L"
+    assert capability_values & hardware_values == set(), "两条轴的取值不得相交"
