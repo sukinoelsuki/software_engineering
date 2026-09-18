@@ -195,7 +195,7 @@ flowchart LR
 
 | 边界 | 接口形态 | 错误语义 | 并发假设 | 资源生命周期 |
 | --- | --- | --- | --- | --- |
-| `cli` ↔ `harness` | `Session.run(task: str) -> AsyncIterator[SessionEvent]` | 业务失败以 `SessionEvent(kind="error")` 表达，**不抛异常到 CLI**；只有 `ConfigError` 会冒泡 | 单会话单线程；事件流串行产出 | `with Session(...) as s:`；退出按序：工具 → 模型客户端 → `llama-server` 进程 → `flush` 审计 |
+| `cli` ↔ `harness` | `Session.run(task: str) -> Iterator[SessionEvent]`（**同步迭代器**；`ADR-0015` §5.1.2 原文的 `AsyncIterator` 已由 [`interfaces/harness.md`](interfaces/harness.md) §2.9 裁决更正，理由见该节） | 业务失败以 `SessionEvent(kind="error")` 表达，**不抛异常到 CLI**；逃逸的只有三类：`ConfigError`、**审计写入失败必须冒泡**（`interfaces/audit.md` §2.4，不得被收敛成 `error` 事件）、以及编程缺陷（`interfaces/harness.md` §2.9） | 单会话单线程；事件流串行产出 | `with Session(...) as s:`；退出按序：工具 → 模型客户端 → `llama-server` 进程 → `flush` 审计 |
 | `harness` ↔ L2 | `ToolRegistry.resolve(name) -> Tool \| None`、`Tool.invoke(args, *, ctx) -> ToolResult`、`ModelClient.chat(messages, *, tools, ...) -> ModelResponse` | `ToolResult.ok=False` 表达**工具级失败**（可回喂）；`ModelUnavailableError` ⇒ 路由降级；`ModelProtocolError` ⇒ 重试一次后回喂 | `ModelClient` **非线程安全**，一个会话一个实例 | `close()` **幂等**；进程型后端由 `ExitStack` 托管 |
 | L3/L2 ↔ SEC | `PolicyEngine.decide(PolicyRequest) -> PolicyDecision` | **fail-secure**：求值阶段任何异常都**不得**逃逸为 allow；审计 `emit()` 失败**必须冒泡** | 无状态、纯函数式，可多线程调用 | 无 |
 | 任意位置 ↔ OBS | `AuditSink.emit(AuditEvent) -> None` / `flush()` | **写入失败必须冒泡**（静默丢事件 = `REQ-SEC-06` 验收失败） | 实现内部串行化写入 | 进程退出前**必须** `flush()` |
@@ -425,6 +425,13 @@ sequenceDiagram
     CLI->>SINK: flush()（退出路径，fsync）
 ```
 
+> **事件流的形态（2026-09-19 同步）**：`Session.run(task)` 返回**同步** `Iterator[SessionEvent]`
+> （不是 `AsyncIterator`）——全流程串行，无并发任务可等待，理由与替代方案的否决记录见
+> [`interfaces/harness.md`](interfaces/harness.md) §2.9。上图第 6 步（"需人工确认"）的**回传通路**
+> 也由该契约 §2.5 定死：`harness` 在构造期注入 `ApprovalGate`（实现归 `cli/approval.py`，
+> `R1` 禁止 `harness` 依赖 `cli`），确认请求由 `POLICY_DECISION` 事件承载，
+> **未提供通路 / 无 TTY / 通路故障 ⇒ 一律不放行**。
+
 **路径上的四类数据结构及其算法**：
 
 | 数据结构 | 形状 | 作用与算法 |
@@ -630,3 +637,4 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | 日期 | 修订 | 依据 |
 | --- | --- | --- |
 | 2026-09-19 | **初稿（成稿）**：分层与依赖方向（`R1`~`R5` + 机器检查九条断言 + 逐层白名单）、组件与自研边界（含"不写什么"与不引入清单）、被否决方案、`模块 × 状态 × 依据` 表、关键路径的数据结构与算法（含 `default-deny` 拒绝路径）、并发与资源生命周期、部署形态、威胁与需求落位、缺口登记 | `ADR-0015`（§5.1/§5.1.2/§5.1.3/§5.2/§5.3/§5.3.1/§5.4/§7.1~§7.5/§8.2.1/§9）、`interfaces/`（5 份）、`threat-model/README.md`、`sdlc.md` §3/§3.1、`SECURITY.md`、`src/agent_sec_perf/`（读代码得出的实现状态）、`tests/unit/test_architecture_layers.py` |
+| 2026-09-19 | **表述同步（`async` → 同步）**：§2.4 表首行 `AsyncIterator[SessionEvent]` → **同步 `Iterator[SessionEvent]`**，并补全该行的错误语义（"逃逸的三类"含**审计写入失败必须冒泡**）；§5.2 在时序图后补"事件流的形态"说明（同步迭代器 + 审批回传通路的落点）。**不改任何决策**：§2.3 的依赖白名单、`R1`~`R5`、§4 的实现状态表、§7 的威胁落位一律不变 | `ADR-0015` §5.1.2 同一格已规定"单会话单线程；事件流**串行**产出"，`AsyncIterator` 与之自相矛盾且 `src/` 下**无任何 `async def`** ⇒ 由 [`interfaces/harness.md`](interfaces/harness.md) §2.9 裁决为同步（含被否决方案）；`ADR-0015` 已以「修订记录」登记同一更正。获批记录：领导于 2026-09-19 批准两处待同步并扩展本轮产出白名单至本文件 |
