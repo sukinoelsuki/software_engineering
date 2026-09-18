@@ -15,18 +15,28 @@ design/
 │   └── <interface>.md
 ├── diagrams/               架构图、时序图（源码形式，如 Mermaid / PlantUML）
 ├── threat-model/           威胁模型（见下）
-│   ├── README.md           方法与资产清单
+│   ├── README.md           怎么用 + 方法 + 范围 + 条目总览 + 缺验证/未缓解清单
 │   ├── assets.md           资产与信任边界
-│   └── T-<序号>.md         单条威胁记录
+│   ├── execution-and-isolation.md     条目组 A：T-01 / T-02 / T-10 / T-13
+│   ├── untrusted-input-and-agentic.md 条目组 B：T-03 / T-04 / T-05 / T-11 / T-12
+│   └── supply-chain-and-process.md    条目组 C：T-06 / T-07 / T-08 / T-09
 └── security-model.md       权限/能力模型设计
 ```
 
 > 上述结构将在 Phase 1 建立。**新增目录需先在 ADR 中说明理由。**
 >
-> **建立进度（2026-09-18）**：`interfaces/` **已建立** —— 字段级契约见
-> [`interfaces/`](interfaces/README.md)（为 `contracts/` 的 12 个类型定死字段；
-> 依据 ADR-0015 §5.1.2 与 §7.3）。其余子目录（`architecture.md` / `modules/` /
-> `threat-model/` / `security-model.md`）**尚未建立**。
+> **建立进度（2026-09-18）**：
+>
+> - `interfaces/` **已建立** —— 字段级契约见 [`interfaces/`](interfaces/README.md)
+>   （为 `contracts/` 的 12 个类型定死字段；依据 ADR-0015 §5.1.2 与 §7.3）。
+> - `threat-model/` **已建立（初稿）** —— 见 [`threat-model/`](threat-model/README.md)：
+>   **13 条**威胁（`T-01`~`T-13`），含状态分布、缺验证清单与未缓解项清单。
+>   **条目文件的组织方式与本节原计划不同**：原计划"每条威胁一份 `T-<序号>.md`"，
+>   实际按**域分 3 个文件**——理由：13 个碎片文件不便通读（本项目要求威胁模型
+>   **给人读**，见 `SECURITY.md` §4），且同域条目共享同一组前提与缓解，
+>   合并后**重复叙述更少**；`T-<序号>` 仍作为**跨文件稳定的引用键**保留
+>   （编号只增不复用，规则见该目录 `README.md` §1）。
+> - 其余（`architecture.md` / `modules/` / `security-model.md`）**尚未建立**。
 
 ---
 
@@ -68,3 +78,11 @@ T-<序号>：<威胁名称>
 ```
 
 **没有"验证方式"的缓解措施视为未实现**——它是纸面防护，无法证明有效。
+
+> **已落地（2026-09-18）**：上述要求已落成
+> [`threat-model/`](threat-model/README.md)（13 条）。实际条目在必填字段之外
+> **另加三个字段**，把"纸面防护"与"已生效防护"区分开：
+> **`状态`**（已缓解并验证 / 部分缓解 / 未缓解，定义见该目录 `README.md` §4.1）、
+> **`攻击者与前提`**（谁能做什么才有机会——没有前提的攻击路径是幻想）、
+> **`缺验证`**（该条目当前**没有**对应用例这一事实本身）。
+> ⇒ 读威胁模型时**先看状态列**：本项目当前是 **0 条"已缓解并验证"**。
