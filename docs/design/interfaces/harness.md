@@ -655,8 +655,14 @@ class Session(SessionContract):  # contracts/harness.py 的 Protocol
 1. **装配期校验**（§2.8 三条，失败即拒绝启动）；
 2. `exposed = trimming.select_tools(registry.specs(), tier=config.capability_tier,
    allowlist=pack.tool_allowlist if pack else all_names)`；
-3. `system = prompts.system_prompt(tier=config.capability_tier,
-   fragments=pack.prompt_fragments if pack else (), tool_names=<exposed 的名字，升序>)`。
+3. `system = prompts.build_system_message(tier=config.capability_tier)`；
+   **pack 片段不进 SYSTEM** —— 由 `prompts.pack_context_message(pack_name=pack.name,
+   fragments=pack.prompt_fragments)` 装配成**一条独立的 `role=USER` 数据消息**
+   （**空片段 / 仅空白 ⇒ `None`，不产消息**），经 `context.assemble` 的 `data_context` 形参接收
+   （`context/` 侧有 `role is USER` 的结构性守卫）。
+   ⚠️ **本行于 2026-09-19 更正**：原写法 `prompts.system_prompt(tier=…, fragments=…, tool_names=…)`
+   与**本节 §3.1 的 `prompts` 签名**（`build_*` 三个 builder + `pack_context_message`）以及
+   **§7.1 第 2 项**矛盾，是第二版 `R-2` 收口时的**旧措辞残留**。权威签名以本节 §3.1 的 `prompts` 段与 §7.1 第 2 项为准。
    **`exposed` 在会话内固定**（启动时算一次）：与 `REQ-PERF-06`"运行中不调整"一致，
    也让"解析域"（§3.3 步 1）成为稳定集合，可被单测钉住。
 
@@ -1063,6 +1069,8 @@ with Session(
 | 2026-09-19 | **初版**：定义 `SessionEvent`（7 kind / 14 字段 / I1~I10）、`TaskStatus`、`SessionErrorKind`、审批门四类型、`SessionConfig`、`Session` Protocol；**裁决 `Session.run` 用同步 `Iterator`**（并给出 `ADR-0015` §5.1.2 与 `architecture.md` 两处引用的处置）；冻结 `harness/` 8 件的签名、调用方向与禁止项；把工具调用决策序列的每步入参/出参写死；定义 `ArgumentValidator` 的契约语义（选型待上报）；给出领域包最小 schema 与 fail-secure 失败模式表 | 领导核实的契约缺口（`SessionEvent` 未定义）；`ADR-0015` §5.1.2 / §5.3 / §5.4.1 / §7.2 / §7.3；`interfaces/{model,tools,policy,audit}.md`；`architecture.md` §2.4 / §5.2 / §5.3 / §11；`src/agent_sec_perf/`（读代码核实现状） |
 | 2026-09-19 | **第二版（按领导追加指令）**：① §2.5 扩为**完整审批通路**——`arguments_summary` 字段与生成口径（`S1`~`S5`）、"确认请求由 `POLICY_DECISION` 承载"的位置规定（§2.5.2，**不新增 kind**）、回传机制四候选的对比与采纳理由（§2.5.4）、**fail-secure 六条**（`R1`~`R6`：无通路 / 无 TTY / 抛异常 / 形状非法 / 超时 / `ALLOW_ALWAYS`）；I2 同步改写为"存在 ⇔ `requires_confirmation` **且**配置了 gate"；② **新增 §5「装配点与 `cli/` 最小入口」**——`Session` 的 9 项装配清单（类型 / 默认 / 构造方 / 失败处置 / 装配顺序）、每种 `kind` 的渲染与序列化分支表、退出码表、输出通道两条硬规定；③ §3.1 补 `summarize_arguments`、`approval` 默认 `None`；§3.3 步 4 补三条 fail-secure 分支；④ §6.2 补 `S-new-4`/`S-new-5`；⑤ 登记实现侧差异 `R-1`~`R-4` 与本文中 `AsyncIterator` 字样的解读规则 | 所有者把本轮定位明确为"**基线实现（base project）**：能跑起来 + 可作后续性能改动的比较基准"（**不追求功能完备，但必须闭环可跑**）；`architecture.md` §5.2 的审批路径原来没有承载类型 ⇒ `loop` 与 `cli` 无法并行。**不含任何性能度量机制**（明确排除） |
 | 2026-09-19 | **第三版（冻结稿；按领导对 `R-1`~`R-4` 的裁决收口）**：① **`R-2` 落地**——§3.1 的 `prompts` 改为 `build_system_prompt` / `build_system_message` / `build_user_message` / **`pack_context_message`**，`context.assemble` 增 `data_context` 形参与 **`role is USER` 的结构性守卫**，§4.2 字段表与 §4.4 第 2 条同步；② **`R-3` 落地**——`ErrorDisposition` 收敛为 `{RETRY, FEEDBACK, ABORT}` 并**留在 `harness/errors.py`**，删除 `ErrorPlan` / `plan_for`，新增 `error_kind(error, *, disposition)`；**写入"什么进 `contracts/`"的判据**（有跨信任边界的消费者，而非"是不是枚举"）；③ **`R-1`/`R-4` 的裁决结论与依据**写入 §8 的 `R` 表（**本节不再留"待裁决"**），并新增 **§7.1「裁决落地清单」**（7 项可核对动作 + "档位轴必须先于 `loop`"的顺序）；④ §2.4 澄清 `SessionErrorKind` 五个成员的**判定口径**（含 `TRANSIENT` 与 `STALLED` 的产出时机）与"`text` 不得取 `str(exc)`"；⑤ §2.7 的 `D2` 补 `not_exposed` / `unknown_tool` 的**判定点**；⑥ §6.1 补 `H-10`、§6.2 补 `S-new-6`（包片段进 SYSTEM 必须被结构性拒绝） | 领导的四项裁决（`R-1` 以契约为准改实现且不新增 ADR；`R-2`/`R-3` 采纳实现、授权契约修订；`R-4` 保留契约）+ "冻结稿不得留待裁决"的要求 + 契约类型归属判据（`ErrorDisposition` 留 `harness/errors.py`）。**§2 的字段 / 成员 / 不变式一律未改**（已先行落地的 `contracts/harness.py` 无需返工） |
+
+| 2026-09-19 | **第四版（更正一处自相矛盾）**：§3.1「`session.py` 构造期的三件事」第 3 条原写 `prompts.system_prompt(tier=…, fragments=…, tool_names=…)`，与本文件**同一节**的 `prompts` 签名（`build_system_prompt` / `build_system_message` / `build_user_message` / `pack_context_message`）**以及 §7.1 第 2 项**矛盾（第二版 `R-2` 收口时的**旧措辞残留**）。已改为 `build_system_message(tier=…)` + `pack_context_message(pack_name=…, fragments=…)`（**pack 片段走独立 `role=USER` 数据消息**，空片段 ⇒ `None`）。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 实现侧独立核实并上报（`implementer-harness-leaf2` 的 `回报：` 块，`5cd45f1`）；领导裁决「**以本节 §3.1 的 `prompts` 段与 §7.1 第 2 项为准**」 |
 
 **待同步项**（本文件已给规范；逐项状态如下）：
 
