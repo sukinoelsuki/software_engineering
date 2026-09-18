@@ -32,12 +32,16 @@
 | 安全 | `tests/security/` | 对抗性输入、攻击场景 | 秒级 | 拒绝行为与审计记录同时成立 |
 | 基准 | `tests/benchmark/` | 真实资源 | 分钟级 | 延迟、吞吐、内存 |
 
-> ⚠️ **当前状态（2026-09-18 核查）**：上述分层是**目标态**，实际**只有 `tests/unit/`**
-> （9 个测试模块，全部标记 `unit`）。`tests/integration/`、`tests/security/`（含 `corpus/`）、
-> `tests/benchmark/` 均**尚未建立**，属 Phase 1 产出。
-> 因此 `make test-security` 目前不会匹配到任何用例——该目标已显式处理这种情况
-> （打印提示并返回 0，**不会假失败**），测试层建立后提示自动消失。
-> 依据：[`doc-consistency-report.md`](doc-consistency-report.md) 的 A-9。
+> ⚠️ **当前状态（2026-09-18 核查，同日更正）**：上述分层是**目标态**；实际现状如下。
+> - **已建立**：`tests/unit/`（**13** 个测试模块，全部标记 `unit`）；
+>   `tests/security/`（`test_path_traversal_rejected.py` + `test_path_validation_seam.py`，
+>   共 **13 个 `@pytest.mark.security` 用例**——即 `ADR-0015 §7.2` 的 `S2` **拒绝**半），
+>   其中 `tests/security/corpus/traversal_payloads.txt`（**572 B**，路径穿越语料）。
+> - **仍缺**（属 Phase 1 产出）：`tests/integration/`、`tests/benchmark/`。
+> - `make test-security` 现有 13 个用例匹配 ⇒ 正常运行并通过。
+>   **零用例时的行为已由"打印提示并返回 0"改为 fail-secure（`exit 1`）**——依据提交 `a39ad48`
+>   （理由：安全测试层是基线的一部分，**零用例 / 标记丢失必须显式暴露**，不得静默通过）。
+> 依据：[`doc-consistency-report.md`](doc-consistency-report.md) 的 A-9（`a39ad48` 已注明该报告待同步）。
 
 标记：`@pytest.mark.unit` / `integration` / `security` / `benchmark` / `slow`。
 
@@ -122,7 +126,7 @@
 ```bash
 make test              # 快速回归（排除 benchmark）
 make test-cov          # 含覆盖率
-make test-security     # 仅安全测试（当前无该层用例，见 §2 的状态说明）
+make test-security     # 仅安全测试（现有 13 个用例；零用例会 fail-secure，见 §2 的状态说明）
 make check             # 完整自检（提交 PR 前必须执行）
 uv run pytest -m benchmark    # 性能基准
 ```
