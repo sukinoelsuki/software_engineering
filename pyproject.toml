@@ -23,8 +23,23 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
 ]
 
-# 运行期依赖：待 base project 选定后填充，当前保持为空以避免过早锁定技术栈。
-dependencies = []
+# 运行期依赖：依据 ADR-0015 §5.2 的组件清单（所有者于 2026-09-18 批准 D1~D10）
+#            + §8.2.1 的核验结果（2026-09-19，14 项核验完成、§7.4 的可安装性与类型兼容已过）
+#            ⇒ 此处只填"已批准且已核验"的组件，**精确版本以 uv.lock 为准**。
+# 注意：本项目的 `[build-system]`（D7 构建后端）**尚未决定**，故此处不动构建配置；
+#       不在此列出：openai SDK / httpx / Textual / llama-cpp-python / MCP SDK /
+#       LLM Guard / 向量库 / 任何 agent 编排框架（理由见 ADR-0015 §5.2.6）。
+#       `tomllib` 属标准库，不写入依赖。
+dependencies = [
+    "typer>=0.27",               # A1 · CLI 框架（REQ-UX-01）；0.26+ 内嵌 Click，无 click 依赖
+    "rich>=15.0",                # A2 · 终端渲染（Typer 的传递依赖，独立声明以便显式使用）
+    "pydantic>=2.13",            # B1 · **仅两处用途**：信任边界校验 + 工具参数 JSON Schema（D2）
+    "platformdirs>=4.11",        # C2 · 跨平台用户目录（REQ-PLAT-01）
+    "urllib3>=2.8",              # HTTP-1 · 云端模型薄客户端（D3）
+    "structlog>=26.1",           # E1 · 结构化日志与脱敏管线（REQ-OBS-01 / REQ-SEC-07）
+    "tree-sitter>=0.26",         # F1 · 语法层（REQ-PERF-02/03）
+    "tree-sitter-python>=0.25",  # F1 · Python 语法包（与主包 0.26 运行期实测兼容）
+]
 
 [project.optional-dependencies]
 # 开发依赖（`make setup` 会安装）
