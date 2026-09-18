@@ -69,13 +69,27 @@ repos:
   # ---------------------------------------------------------------------------
   # 类型检查
   # ---------------------------------------------------------------------------
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    # 对齐 uv.lock 的 mypy 2.3.1（原为 v1.11.2）
-    rev: v2.3.1
+  # 2026-09-19（`F` 类，所有者批准；登记见 docs/engineering/security-scan-gate-config.md §8）：
+  # **由 `mirrors-mypy` 改为 `repo: local` + `language: system` + `uv run mypy`。**
+  # 原因：`mirrors-mypy` 的钩子环境是**独立 venv**，且 `additional_dependencies: []`
+  # ⇒ **只有 mypy、没有运行期依赖** ⇒ 任何 import 第三方库的 `src/` 模块一律被报
+  # `import-not-found`（**构造性假红**），而 `make check` 的 typecheck 走项目 venv（真绿）
+  # ⇒ **两处门禁口径相反**（同族的第三次实例）。现改为与 `make check` 的 `typecheck`
+  # **同一解释器、同一依赖集合、同一调用形态**（`Makefile` 的 `typecheck` 目标就是 `uv run mypy`）。
+  # **净强度不变**（跑的是同一条命令）。
+  # `pass_filenames: false` 是**刻意的**：`make check` 的 mypy 由 `pyproject.toml` 的
+  # `files = ["src"]` 决定扫描范围；若把改动文件名传给 mypy，模块解析与 `follow-imports`
+  # 行为会与门禁不一致 ⇒ **两处又不一致**。
+  # 新增不变式（`security-scan-gate-config.md` §8.1）：**同一工具的钩子与 `make check`
+  # 必须运行在同一依赖集合下**；只差一处依赖即可产生"假红"或"漏检"。
+  # ---------------------------------------------------------------------------
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies: []
-        args: ["--config-file=pyproject.toml"]
+        name: mypy（与 make check 的 typecheck 同源）
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
         files: ^src/
 
   # ---------------------------------------------------------------------------

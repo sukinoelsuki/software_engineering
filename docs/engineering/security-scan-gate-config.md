@@ -354,7 +354,8 @@ $ mv .git/hooks/pre-commit.disabled .git/hooks/pre-commit
 
 ## 8. 同一家族的第三个实例：mypy 钩子与 `make check` 的**依赖集合不同**（2026-09-19）
 
-- **状态**：**待所有者裁决**（本文只登记问题、证据与候选修法；**改门禁配置属 `F` 类，需所有者事先确认**）
+- **状态**：**已处置**（2026-09-19 所有者批准**候选 A**；处置见 §8.1）——首部这一行由 §8.1 取代，
+  §8.1~§8.5 的问题与证据**保留原样不改写**（历史快照）
 - **发现人**：实现工程师 `implementer-core`（在写 `G4` 的第一个模块时撞上，**正确拒绝**用 `--no-verify` 绕过）
 - **触发**：M0 骨架实现开工（`devlog 0016` §3.6）——**任何 import 第三方依赖的 `src/` 模块都会撞上它**
 
@@ -444,6 +445,50 @@ mypy                                                 → Failed（即上述 6 �
 > **本节的证据性质**：由实现角色提供、**领导复核**（两组对照命令均已实跑）。
 > 命令可从 §8.1 的命令块复现；**未改动任何 `src/` 文件**。
 
+### 8.1 处置与验证（2026-09-19 所有者批准后 · **只增**）
+
+> **阅读提示**：§8 首部的「状态：待所有者裁决」与 §8.3 的"候选"**保留原样、不改写**（历史快照）；
+> 本节记录**裁决结果与处置**，首部「待裁决」这一状态即由本节取代。
+
+**裁决：候选 A**（`repo: local` + `language: system` + `entry: uv run mypy` + `pass_filenames: false`）。
+理由：与 `make check` 的 `typecheck`（`Makefile:85` 的 `uv run mypy`）**同一解释器、同一依赖集合、
+同一调用形态** ⇒ **净强度不变**，只消除构造性假红。
+候选 B（补 `additional_dependencies`）否决：依赖集合要在**两处**维护，且 `pydantic-core` 是编译扩展
+⇒ 钩子环境每次建/升级更慢、更易漂移。候选 C（删钩子）否决：**净强度下降**（少一道本地防线）。
+
+**处置**（提交见 §9 的变更记录）：`.pre-commit-config.yaml` 的类型检查钩子改为 `repo: local`，
+并在原处写明**原因、被否决候选**与 `pass_filenames: false` 的**刻意性**——
+传文件名会让 mypy 的模块解析与 `follow-imports` 行为与门禁不一致 ⇒ **两处又不一致**。
+
+**新增不变式（硬性）**：
+
+> **同一工具的 `pre-commit` 钩子与 `make check` 必须运行在__同一依赖集合__下。
+> 只差一处依赖，就会产生「假红」（缺依赖 ⇒ `import-not-found`）或「漏检」。**
+
+这是 §5.1 的 bandit 不变式（"配置不得存在，除非被 `make check` 与 `pre-commit` 两处同时引用"）
+在**依赖维度**上的同构：前者管"**规则集**是否一致"，本条管"**可见的依赖集**是否一致"。
+
+**验证方式（可执行；下列均已实跑）**：
+
+```text
+# ① 原构造性假红消失（该文件 import structlog）
+$ uv run pre-commit run mypy --files src/agent_sec_perf/foundation/logging.py
+mypy（与 make check 的 typecheck 同源）..................................Passed
+
+# ② 变异探针：证明该钩子**非恒过**（跑完立即删除探针文件）
+$ printf 'x: int = "not-an-int"\n' > src/agent_sec_perf/_probe_hook.py
+$ uv run pre-commit run mypy --files src/agent_sec_perf/_probe_hook.py
+Found 1 error in 1 file (checked 32 source files)    ← 报错；且 `checked 32 source files` 同时证明
+                                                        `pass_filenames: false` 生效
+                                                        （按 `pyproject.toml` 的 `files = ["src"]` 全量扫描）
+$ rm -f src/agent_sec_perf/_probe_hook.py            # 已核对：`git status -- src` 中无该探针
+$ make check                                         # 全绿（含 hooks-check / typecheck / security）
+```
+
+**已知边界（如实标注）**：`language: system` 依赖 `uv` 在 `PATH`（本地与 CI 都有：`make check` 本身即 `uv run`）；
+**不再享受 pre-commit 的钩子环境隔离**——这是**取舍**：换来的是"与门禁同源"，
+而"隔离"正是本缺陷的成因。
+
 ---
 
 ## 9. 变更记录
@@ -463,6 +508,10 @@ mypy                                                 → Failed（即上述 6 �
   五条新不变式与四条已知边界；附三条变异探针的实跑证据。
   **原 §7「变更记录」顺延为 §8：仅编号移动，文字未改**（本文原先只有 §7，为避免在"变更记录"之后
   追加正文章节而顺延）。
+- **2026-09-19（处置与验证，第三个实例）**：**新增 §8.1** 记录所有者裁决（采纳**候选 A**）与处置；
+  **新不变式**（"同一工具的钩子与 `make check` 必须运行在同一依赖集合下"）；验证（假红消失 +
+  **变异探针证明非恒过** + `make check` 全绿）；已知边界（不再享受钩子环境隔离，属取舍）。
+  **§8 的问题、证据与候选一律不改写**（只增）。
 - **2026-09-19（同一家族的第三个实例）**：**新增 §8**——`pre-commit` 的 mypy 钩子跑在
   "只有 mypy、没有运行期依赖"的独立环境里 ⇒ 任何 import 第三方依赖的 `src/` 模块**构造性假红**，
   与 `make check` 的 `typecheck` **口径相反**；附三组对照证据、影响面（`G7`/`G8`/`harness` 全部受阻）
