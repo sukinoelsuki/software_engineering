@@ -1,43 +1,83 @@
 """安全策略契约（横切 SEC 层）。
 
-ADR-0015 §5.4.1 只给出类型名，未规定字段/成员 ⇒ ``Capability`` / ``RiskLevel`` 与
-``PolicyRequest`` 以占位形式落定；``PolicyDecision`` 的两个字段取自 §5.1.2 明确写出的
-``allow=False, requires_confirmation=True``（fail-secure 错误语义）。
-
-``PolicyEngine.decide()`` 属 ``security/`` 的实现，不在本零行为契约层。
+字段级定义见 ``docs/design/interfaces/policy.md``（本模块是它的唯一实现）；
+``PolicyEngine.decide()`` 的**实现**仍在 ``security/policy.py``，本零行为契约层只放 Protocol。
+本模块只依赖标准库（ADR-0015 §7.1 R3）。
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
+from typing import Protocol
 
 
-class Capability(Enum):
+class Capability(StrEnum):
     """能力（权限模型的原子单位，default-deny）。
 
-    **成员待澄清**：ADR-0015 §7.2 提及 ``WRITE_FILE`` 等能力，但未给出完整成员集合。
+    刻意的**粗粒度**：能力回答"这类操作是否被授权"，细粒度危险度由 :class:`RiskLevel`
+    表达。扩展成员改变权限模型面积，需 ADR。
     """
 
+    READ_FILE = "read_file"
+    WRITE_FILE = "write_file"
+    EXECUTE_COMMAND = "execute_command"
+    NETWORK_OUTBOUND = "network_outbound"
 
-class RiskLevel(Enum):
-    """风险分级。**成员待澄清**（ADR-0015 未规定）。"""
+
+class RiskLevel(StrEnum):
+    """风险等级；等级 → 处置的映射见 ``docs/design/interfaces/policy.md`` §2.2。
+
+    由 ``PolicyEngine`` **逐次求值**得出，不是静态挂在工具上的属性。
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
 @dataclass(frozen=True)
 class PolicyRequest:
-    """一次策略求值的输入。**字段待澄清**（ADR-0015 未规定）。"""
+    """一次策略求值的输入（由 HARNESS 在完成参数校验后构造）。
+
+    ``arguments`` 是**已校验**的结构化参数，但仍按**数据**处理：策略不得把它们拼接进
+    命令、路径、正则或表达式求值（``REQ-SEC-03``）；需要路径时经
+    ``foundation.paths.resolve_within`` 再比较。
+    """
+
+    session_id: str
+    call_id: str
+    tool_name: str
+    arguments: Mapping[str, object]
+    requested: frozenset[Capability]
+    domain_pack: str | None = None
 
 
 @dataclass(frozen=True)
 class PolicyDecision:
-    """一次策略求值的输出。
+    """一次策略求值的输出（决策是**返回值**，不是异常）。
 
-    错误语义（ADR-0015 §5.1.2，fail-secure）：``decide()`` 内部任何异常都**不得**逃逸为
-    allow；失败时返回 ``allow=False`` 且 ``requires_confirmation=True``。字段名即取自该表。
-
-    **是否还有其它字段（如拒绝理由、审计关联）待澄清**。
+    四种 ``allow`` 与 ``requires_confirmation`` 的组合（自动放行 / 须人工确认 / 可升级拒绝 /
+    硬拒绝）的含义见 ``docs/design/interfaces/policy.md`` §2.4，实现与测试必须逐一覆盖。
+    三个非布尔字段均**无默认值**，强制调用点显式给出（避免"忘了填理由"通过）。
     """
 
     allow: bool
     requires_confirmation: bool
+    risk_level: RiskLevel
+    reason: str
+    audit_id: str
+
+
+class PolicyEngine(Protocol):
+    """策略引擎（被 ``harness/`` 消费；实现见 ``security/policy.py``）。
+
+    并发：无状态、纯函数式，可多线程调用。
+    fail-secure：**求值阶段**任何异常都收敛为
+    ``allow=False, requires_confirmation=True, risk_level=CRITICAL``，**禁止**逃逸为 allow；
+    而 ``AuditSink.emit()`` 的异常**必须原样冒泡**，不得被上述收敛吞掉（二者处置相反）。
+    """
+
+    def decide(self, request: PolicyRequest) -> PolicyDecision: ...
