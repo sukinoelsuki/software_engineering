@@ -192,14 +192,17 @@ Refs: #<issue>
 
 - [x] 工程骨架与流程规范
 - [ ] **base project 选型冻结**：方向已定（[ADR-0003](docs/adr/0003-select-base-project.md) §5.1
-      "组装开源组件 + 5 个自研模块"）；"复用哪些组件 + 自研边界"的清单**已产出并经所有者批准**
+      "组装开源组件 + 5 个自研模块"）；清单**已产出并经所有者批准**
       （[ADR-0015](docs/adr/0015-layering-and-reuse-boundary.md) §5.2/§5.3；**D1~D10 已于
-      2026-09-18 批准**，D7 暂缓待 V-a）
-      ⇒ 本项**仍未完成**，但**未完成的原因已变**：卡点不在决策，而在**组件尚未落装**——
-      ADR-0015 §8.2 的 V-a~V-o（**14 项**，V-e 随 D3 改选关闭）未核验，
-      `pyproject.toml` 的运行期 `dependencies` 仍为 `[]`
+      2026-09-18 批准**）；**§8.2 的 14 项核验已于 2026-09-19 完成**
+      （证据：[`docs/research/2026-09-19-dependency-verification.md`](docs/research/2026-09-19-dependency-verification.md)）
+      ⇒ 本项**仍未完成**，**卡点只剩"组件落装"**：`pyproject.toml` 的运行期 `dependencies`
+      仍为 `[]`（另：**D7 构建后端**的核验阻塞已解除，采用与否待拍板）
       ⇒ **`cli/`（Typer）、`model/`（urllib3）、`harness/context/`（tree-sitter）、
       `foundation/logging.py`（structlog）等无依赖可用，无法开工**
+- [ ] **M0 出口（框架就绪 = Harness 可开工）**：判据已定义于
+      [`docs/engineering/sdlc.md`](docs/engineering/sdlc.md) **§3.1**（`G1`~`G9`）；
+      当前 `G1` / `G9` 已满足，**`G2` / `G3`（依赖落装）与 `G4`~`G8`（最小骨架）未满足**
 - [ ] **需求规格 v0.2**：SRS 已有 v0.1.3（49 条；2026-09-18 修正 `REQ-PERF-04`
       验收入口与编号规范），但与 `devlog 0002~0004` 的讨论结果已分叉（见 0004 §4）；
       另待所有者确认 `devlog 0005` 的 S-1~S-10 / Q-1~Q-8
