@@ -260,3 +260,28 @@ ADR-0007 §4.2 明确"档位选择是**逐维度**的"，且不同后端 / 参�
   `run(isolation="user")` 四条）与 `tests/unit/test_bench_runner.py::test_llama_server_spawn_passes_minimal_env`。
   **未覆盖（残余）**：`run(isolation="root")` **仍继承**父环境，且**无机器检查**禁止 CI 使用
   （见威胁模型 `T-08` 残余风险 3）。
+
+- **2026-09-18 · 私有别名 `_isolated_env` 已删除（本目录留痕收尾；**不是**契约变更）**：
+  上一条末段所述"实现侧**暂留**同名私有别名 `_isolated_env = minimal_env`（`proc.py:116`）、
+  该别名待领导派一笔独立提交删除"——**已由 `98cd203` 执行完毕**
+  （`refactor(proc): 删除 _isolated_env 兼容别名（文档已指向 minimal_env）`，同日）：
+  删除别名赋值与其两行说明注释（`proc.py` **-5 行**）。删除的**前提**正是上一条已写明的
+  "文档一律指向公开名"，前提成立故保留理由消失。
+  **核实（本目录自行复跑，非转述他人结论）**：
+  `grep -rn "_isolated_env" src/ tests/` ⇒ **0 命中**（exit 1）；
+  全仓 `grep -rn "_isolated_env" --include="*.md" --include="*.py" --include="*.txt"`（排除
+  `docs/devlog/` 与 `.git/`）**只剩本文件 §5 的 3 处历史留痕**（第 250 / 254 / 255 行，
+  记述改名与暂留过程，按"只增不改"保留），**无其它命中**。
+  ⇒ **文档与代码现状一致**：`minimal_env(workdir)` 是 `foundation.proc` 中执行不可信产物的两条
+  路径（`run(isolation="user")` 与 `spawn`）**共用**的**唯一**环境构造入口；`__all__` 内只有
+  `minimal_env`，**已无任何别名**（旧名不可再被导入）。
+  **顺带只读核对（§5 内的符号 / 行号指针是否因删除而失效）**：删除位置在 `minimal_env` **之后**、
+  `run()` **之前** ⇒ **其上**的 `proc.py:97-111`（`minimal_env`）不受影响、仍然精确；
+  **其下**的指针已按删除后的新行号书写、与当前文件一致——
+  `run()` 的 `subprocess.run` = `:148`（删除前 `:153`）、`spawn()` 的 `subprocess.Popen` = `:236`
+  （删除前 `:241`；上一条所引 `:235` 落在同一区块内的豁免注释行，指代仍在该区块，未形成失效符号引用）。
+  据此：§5 内**无**其它关于**别名 / 符号名**的"待办"式残留。唯一仍开着的相关事项是
+  **安全残余风险**（`run(isolation="root")` 仍继承父环境、无机器检查禁止 CI 使用），
+  它是上一条已登记的未覆盖项、**不是别名待办**，本次未关闭（见威胁模型 `T-08` 残余风险 3）。
+  **证据**：`98cd203`（其提交信息记录 `make check` 全绿 110 passed / 0 xfailed、
+  `make test-security` 18 passed）；本条的 grep 结果与行号由本目录于 2026-09-18 **独立复跑**。
