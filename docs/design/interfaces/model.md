@@ -2,7 +2,7 @@
 
 - 对应模块：`src/agent_sec_perf/model/`（L2 能力层，本地 `llama-server` 与云端 OpenAI 兼容端点统一抽象）
 - 上游决策：ADR-0015 §5.1.2（`HARNESS ↔ CAPABILITY` 行）、§5.3 自研模块 1、ADR-0011（档位）
-- 依赖：`contracts/tools.py`（`ToolSpec`）——契约层内部引用，允许（R3）
+- 依赖：`contracts/tools.py`（`ToolSpec`、`ToolCallRequest`）——契约层内部引用，允许（R3）
 
 本文件回答 Q1（`ChatMessage` / `ModelResponse` / `CapabilityTier`）与 Q2（`chat` 参数）。
 
@@ -273,4 +273,6 @@ ADR-0015 §5.1.2 写作 `chat(messages, tools, ...)`，其中 `...` 的**其余�
 4. `CapabilityTier` 补 3 个**占位**成员并注明【待定】（U1）；
 5. `chat` 补 `tools`（可选）/ `temperature` / `max_tokens` / `timeout_s` 四个 keyword-only 参数
    （`messages` 保持位置参数）；
-6. `close` 不变。
+6. `close` 不变；
+7. import 需含 `ToolCallRequest`（与 `ToolSpec` 同来自 `contracts/tools.py`）——`ChatMessage.tool_calls`
+   与 `ModelResponse.tool_calls` 均引用它。

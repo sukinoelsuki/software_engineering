@@ -3,7 +3,9 @@
 - 对应模块：`src/agent_sec_perf/tools/`（L2 能力层；工具是信任边界的**执行侧**）
 - 上游决策：ADR-0015 §5.1.2（`HARNESS ↔ CAPABILITY` 行 + "关键约定"）、§5.3 自研模块 3、
   §5.4.1（实现落 `tools/registry.py`）
-- 依赖：`contracts/policy.py`（`Capability`）、`contracts/audit.py`（`AuditSink`）——契约层内部引用，允许（R3）
+- 依赖：`contracts/policy.py`（`Capability`）——契约层内部引用，允许（R3）。
+  **不依赖** `contracts/audit.py`：工具经 `ToolResult.audit_id`（`str`）回指审计事件，
+  **不**直接持有 `AuditSink`（见 [README](README.md) §2 的 C10）
 
 本文件回答 Q8（`ToolSpec` / `ExecutionContext` 字段）与 Q3（`ToolRegistry` 是否入契约）。
 
@@ -174,6 +176,6 @@ class ToolRegistry(Protocol):
 1. `ToolSpec`：由空 Protocol 改为 `frozen dataclass`，补 6 个字段；
 2. `ExecutionContext`：由空 Protocol 改为 `frozen dataclass`，补 6 个字段；
 3. 新增 `ToolRegistry` Protocol（`specs` / `resolve`）；
-4. import 补 `Path`（`pathlib`，标准库）、`Capability`（`contracts/policy.py`）；
+4. import 补 `Path`（`pathlib`，标准库）、`Capability`（`contracts/policy.py`）；**不得** import `AuditSink`（未使用 ⇒ `ruff F401`）；
 5. `ToolCallRequest` / `ToolResult` / `Tool` **保持不变**；
 6. 模块 docstring 删除"形状待澄清"表述，改为指向本文件。
