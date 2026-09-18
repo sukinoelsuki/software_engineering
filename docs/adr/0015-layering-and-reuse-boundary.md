@@ -656,3 +656,23 @@ src/agent_sec_perf/
   理由与核验项见 §5.2.4（行 `HTTP-1` / `HTTP-2`）、§5.2.6、§8.2 V-m / V-n / V-o。
 - **2026-09-18**：§5.2.4 表内行标识由 `D1/D2/D3` 改为 **`HTTP-1/HTTP-2/HTTP-3`**，
   与 §8.1 的决策编号 `D1~D10` 区分（消除同名异义；约定见 §5.2 表头）。
+- **2026-09-18**：**事实补充——"现状盘点"类表述的时效说明（只补事实，不改任何结论）**。
+  D8/D9 已落地：`bench/{proc,paths,errors}.py` 经 `git mv` **提升**为 `foundation/`
+  （提交 `617f564`）；8 个目录骨架与 `contracts/` 最小契约已建立（`33cf6b8`）；
+  §7.1 的 V1~V6 已落成 `tests/unit/test_architecture_layers.py`（`bf1eda0`）。
+  因此 **§1 表中**以下两句是**撰写时的事实快照**，现状已变（**结论不变**）：
+
+  - "`src/agent_sec_perf/` 下**唯一有实现的子系统是 `bench/`**" ⇒ 现状：`foundation/`
+    亦已有实现（3 个被提升模块），且 `bench/` 不再保留 `proc.py` / `paths.py` / `errors.py`
+    的独立实现（由 §7.1 V6 的机器检查强制）；
+  - "可直接复用的产品地基只有 3 处 `bench/proc.py` / `bench/paths.py` / `bench/errors.py`"
+    ⇒ 现状：这三者已是 `foundation/` 的模块，§5.4.1 的"提升"已完成。
+
+  §5.4.1 目录树中"由 `bench/xxx.py` 提升"的注释**保留原样**——它们是**来源标注**（说明模块来历），
+  仍然准确，不属于失效引用。另登记一条事实：**`docs/design/interfaces/` 已建立**，
+  为 §5.1.2 表引用但未定义的 12 个类型定死字段（`ChatMessage` / `ModelResponse` /
+  `CapabilityTier` / `Capability` / `RiskLevel` / `PolicyRequest` / `AuditEvent` /
+  `SandboxRequest` / `SandboxResult` / `IsolationMatrix` / `ToolSpec` / `ExecutionContext`），
+  即 §9 的"编写 `docs/design/interfaces/*.md`"一项**已开始**（§9 该行原文不改；
+  `architecture.md` 仍未编写）。
+  **分层模型、依赖方向 R1~R5、组件选型、目录结构与全部决策一律不变。**
