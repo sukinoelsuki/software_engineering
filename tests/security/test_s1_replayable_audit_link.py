@@ -29,6 +29,7 @@ import pytest
 from agent_sec_perf.contracts.audit import AuditEventKind
 from agent_sec_perf.contracts.tools import ExecutionContext, ToolResult
 from agent_sec_perf.observability.audit import JsonlAuditSink
+from agent_sec_perf.tools import files as files_module
 from agent_sec_perf.tools.files import ReadFileTool
 
 
@@ -108,3 +109,66 @@ def test_denied_tool_call_is_audited_and_replayable(tmp_path: pathlib.Path) -> N
     assert event.event_id == result.audit_id
     assert event.kind is AuditEventKind.TOOL_CALL
     assert event.call_id == "call-2"
+
+
+# ---------------------------------------------------------------------------
+# 变异探针（证明上述两条用例非恒过：移除真实保护后，原本应绿的行为会翻红）
+#
+# 每个探针通过 ``monkeypatch`` 在测试结束时自动还原实现，不留在共享工作树。
+# 对照组即上方 2 条正常用例（未变异时全绿）；探针只断言"变异确实命中"，
+# 从而证明这些用例抓住的是真实回归、而非恒过。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.security
+def test_authorized_call_audit_id_wired_depends_on_audit_tool_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """变异探针：若 ``audit_tool_call`` 未把 event_id 写回 ``ToolResult.audit_id``（返回 None）
+
+    ⇒ 授权调用的可回放链路断裂 ⇒ 证明 ``test_authorized_tool_call_audit_is_replayable`` 非恒过。
+    """
+    monkeypatch.setattr(files_module, "audit_tool_call", lambda *a, **k: None)
+
+    sink = JsonlAuditSink(tmp_path, roots=(tmp_path,))
+    tool = ReadFileTool(sink=sink)
+    work = tmp_path / "work"
+    work.mkdir()
+    secret = work / "hello.txt"
+    secret.write_text("WORKDIR_CONTENT", encoding="utf-8")
+    ctx = ExecutionContext(
+        session_id="sess-1",
+        call_id="call-probe-1",
+        working_dir=work,
+        allowed_roots=(work,),
+        timeout_s=5.0,
+    )
+    result = tool.invoke({"path": "hello.txt"}, ctx=ctx)
+    # 保护缺失 ⇒ audit_id 未写入（原本用例期望非 None 且可 query_by_id 还原）。
+    assert result.audit_id is None
+
+
+@pytest.mark.security
+def test_denied_call_audit_id_wired_depends_on_audit_tool_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """变异探针：若 ``audit_tool_call`` 未把 event_id 写回 ``ToolResult.audit_id``（返回 None）
+
+    ⇒ 失败调用也失去可回放审计 ⇒ 证明 ``test_denied_tool_call_is_audited_and_replayable`` 非恒过。
+    """
+    monkeypatch.setattr(files_module, "audit_tool_call", lambda *a, **k: None)
+
+    sink = JsonlAuditSink(tmp_path, roots=(tmp_path,))
+    tool = ReadFileTool(sink=sink)
+    work = tmp_path / "work"
+    work.mkdir()
+    ctx = ExecutionContext(
+        session_id="sess-1",
+        call_id="call-probe-2",
+        working_dir=work,
+        allowed_roots=(work,),
+        timeout_s=5.0,
+    )
+    result = tool.invoke({"path": "../forbidden.txt"}, ctx=ctx)
+    # 保护缺失 ⇒ 失败调用同样没有可回放的 audit_id（原本用例期望非 None）。
+    assert result.audit_id is None
