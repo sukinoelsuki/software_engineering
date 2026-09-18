@@ -63,7 +63,7 @@
 
 | # | 问题 | 结论 | 落点 |
 | --- | --- | --- | --- |
-| Q1 | 12 个类型的字段/成员 | 全部给定（含 2 个新增枚举支撑字段） | 各模块文件 §「类型」 |
+| Q1 | 12 个类型的字段/成员 | 全部给定（含 2 个新增枚举支撑字段）；**另按 `REQ-PERF-06` 新增 `HardwareTier`**（见 [`model.md`](model.md) §2.3.2） | 各模块文件 §「类型」 |
 | Q2 | `ModelClient.chat(...)` 省略的参数；`tools` 是否可选 | 「否」——5 个参数见下；`tools` **可选，默认 `None`（不暴露任何工具）** | [`model.md`](model.md) §2.1 |
 | Q3 | `PolicyEngine` / `ToolRegistry` 是否也在 `contracts/` 定义 Protocol | **是**——两者都在 | [`policy.md`](policy.md) §2.6、[`tools.md`](tools.md) §2.6 |
 | Q4 | `ModelUnavailableError` / `ModelProtocolError` 归属 | **`foundation/errors.py`**（单一异常层次） | [`model.md`](model.md) §3 |
@@ -82,7 +82,7 @@
 
 | 文件 | 动作 |
 | --- | --- |
-| `contracts/model.py` | 新增 `Role` / `FinishReason` / `TokenUsage`；`ChatMessage` / `ModelResponse` 补字段；`CapabilityTier` 补占位成员；`chat` 补 5 个参数 |
+| `contracts/model.py` | 新增 `Role` / `FinishReason` / `TokenUsage` / **`HardwareTier`（`S`/`M`/`L`，见 §2.3.2）**；`ChatMessage` / `ModelResponse` 补字段；`CapabilityTier` 补占位成员；`chat` 补 5 个参数 |
 | `contracts/tools.py` | `ToolSpec` / `ExecutionContext` 由 Protocol 改为 `frozen` dataclass 并补字段；新增 `ToolRegistry` Protocol |
 | `contracts/policy.py` | `Capability` / `RiskLevel` 补成员；`PolicyRequest` 补字段；`PolicyDecision` 补 `risk_level` / `reason` / `audit_id`；新增 `PolicyEngine` Protocol |
 | `contracts/audit.py` | 新增 `AuditEventKind` / `AuditOutcome`；`AuditEvent` 补字段 |
@@ -101,7 +101,7 @@
 | U2 | `ToolSpec.description_digest` 的**规范化口径**（`REQ-TOOL-03` 防 rug-pull） | 摘要应覆盖哪些字段、如何规范化尚未定 | 与 MCP 接入（`REQ-TOOL-02`，Should）同期定；本目录给**可用的初始口径** |
 | U3 | **"本次 / 总是 / 拒绝"的持久授权**表示（`REQ-UX-02`） | 不在本轮 9 条问题内；属 `security/` 的审批门 + 配置存储 | 审批门设计时定义（**本目录不扩写**） |
 | U4 | 审计事件的 `detail` **脱敏规则** | 依赖 `REQ-SEC-07` 的脱敏处理器（`observability/` + structlog 管线，D4） | `observability/` 设计时定；契约只强制"必须已脱敏" |
-| U5 | **硬件档位 `S/M/L` 在 `contracts/` 中无对应类型** | `REQ-PERF-06` 要求"映射到固定 3 档（`S/M/L`）预设配置"，但 `ADR-0015 §5.4.1` 的 `contracts/model.py` 只列了 `CapabilityTier`（模型能力档位）——**两条轴各需一个类型**（见 [`model.md`](model.md) §2.3.1 第 (4) 条） | 建议新增 `HardwareTier(StrEnum)` = `S/M/L`；属**新增契约类型**（决策级），需领导确认后落 ADR；本目录**不擅自新增** |
+| U5 | ~~硬件档位 `S/M/L` 在 `contracts/` 中无对应类型~~ ⇒ **已解决（2026-09-18 领导批准）** | 契约缺该类型时，实现者**无法表达一个已批准的需求**（`REQ-PERF-06`）；**授权判据**：`ADR-0011 §5.1` 已定义 `S/M/L` ⇒ 这是"实现**已有**决策、不是新决策" | **已落**：定义见 [`model.md`](model.md) §2.3.2（与 §2.3.1 的两轴对照表），落地动作见 §5 表；`ADR-0015` 修订记录已登记；实现者补 `contracts/model.py` + 单测（"集合恰好相等"断言） |
 
 ---
 

@@ -152,10 +152,41 @@ class CapabilityTier(StrEnum):
 **用词不一致**。这正是"把 `S/M/L` 误当作 `CapabilityTier`"的直接诱因。
 （该节的构成已被 `ADR-0011 §5.1` 取代；按 ADR 只增不改，此处仅登记，不修改 `ADR-0010` 原文。）
 
-**（4）由此暴露的契约缺口**：产品**同时**需要两条轴（`REQ-PERF-06` 要求"映射到固定 3 档
-（`S/M/L`）预设配置"），但 `ADR-0015 §5.4.1` 的 `contracts/model.py` 只列了 `CapabilityTier`。
-**建议**新增 `HardwareTier(StrEnum) = S/M/L`；属**新增契约类型**（决策级），
-已登记为 [README §6](README.md#6-未决项本目录已明确标注不在此臆断) 的 **U5**，本目录不擅自新增。
+**（4）由此暴露的契约缺口 —— 已于 2026-09-18 经领导批准并落定**：产品**同时**需要两条轴
+（`REQ-PERF-06` 要求"映射到固定 3 档（`S/M/L`）预设配置"），但 `ADR-0015 §5.4.1` 的
+`contracts/model.py` 只列了 `CapabilityTier`。⇒ **新增 `HardwareTier`**（见下 §2.3.2）。
+**授权判据**：它实现的是**已有决策**、不是新决策——`ADR-0011 §5.1` 已定义 `S/M/L`，
+`REQ-PERF-06` 已要求映射到该三档；契约里缺这个类型，实现者就**无法表达一个已批准的需求**。
+
+#### 2.3.2 `HardwareTier`（**新增**：由 `ADR-0011 §5.1` 定义，非本目录新造）
+
+**两条轴并列（必须一起理解；这是本层最容易搞错的地方）**：
+
+| 轴 | 类型 | 成员 | 谁是权威 | 决定什么 |
+| --- | --- | --- | --- | --- |
+| **硬件档位** | `HardwareTier` | **`S` / `M` / `L`（已定义）** | `ADR-0011 §5.1`（+ `SRS §6.3`、`SRS §14`） | 模型规模与量化档、上下文长度 `-c`、线程数 `-t`/`-tb`、批量 `-b`/`-ub` —— **"能跑多大、多快"** |
+| **模型能力档位** | `CapabilityTier` | **【待定】**（占位 `BASIC`/`STANDARD`/`ADVANCED`） | `SRS Q-3`（未决）+ `REQ-MODEL-06`（验收） | 工具集大小与描述详略（`REQ-HARNESS-03`）、提示结构与示例（`REQ-HARNESS-04`）、验证强度与重试预算 —— **"该给多少自由度和约束"** |
+
+```python
+class HardwareTier(StrEnum):
+    """**硬件档位**（可用硬件预算的分级）。成员与语义由 ADR-0011 §5.1 定义；
+    `REQ-PERF-06` 要求"会话启动时探测一次并映射到固定 3 档预设配置"。
+
+    与 :class:`CapabilityTier`（**模型能力**档位）是**两条正交的轴**
+    （ADR-0010 §5.2 / SRS §14）：**同一模型换到更强硬件，能力档位不变，但配置必须变**。
+    """
+
+    S = "s"  # ≤ 4 GiB：移动端代表性验证（MiniCPM5-2B-Q4_K_M）
+    M = "m"  # 8 GiB：目标设备下限 / 通用基线（Qwen3-4B-Q4_K_M）
+    L = "l"  # 16 GiB：笔记本 / 个人 PC（Qwen3-8B-Q4_K_M）
+```
+
+- **谁产生**：`foundation/` 的硬件探测（`REQ-PERF-05`，多源交叉并记录来源）→ 映射为档位。
+- **谁消费**：`model/assets.py`（模型规模 / 量化档推荐）与会话启动配置（上下文 / 线程 / 批量）。
+- **硬禁令（与 `CapabilityTier` 同一条）**：**任何代码不得把 `HardwareTier` 与 `CapabilityTier`
+  相互转换**；也不得让两条轴共用同一套字母的不同含义——`S`/`M`/`L` **只属于 `HardwareTier`**，
+  `CapabilityTier` 的成员**不得**取名为 `S`/`M`/`L`。
+- **留痕**：`REQ-PERF-06` 要求"探测值 → 决策 → 生效配置"三段记录，本档位是其中的"决策"一环。
 
 ### 2.4 `FinishReason`（**新增**）
 
@@ -276,3 +307,5 @@ ADR-0015 §5.1.2 写作 `chat(messages, tools, ...)`，其中 `...` 的**其余�
 6. `close` 不变；
 7. import 需含 `ToolCallRequest`（与 `ToolSpec` 同来自 `contracts/tools.py`）——`ChatMessage.tool_calls`
    与 `ModelResponse.tool_calls` 均引用它。
+8. **新增 `HardwareTier`**（`StrEnum`：`S` / `M` / `L`）——由 `ADR-0011 §5.1` 定义（见 §2.3.2）；
+   单测须断言**成员集合恰好等于** `{"s", "m", "l"}`（用"**恰好相等**"断言，不要只断言"存在"）。
