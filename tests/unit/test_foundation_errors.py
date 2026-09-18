@@ -19,6 +19,7 @@ from agent_sec_perf.foundation.errors import (
     ModelProtocolError,
     ModelUnavailableError,
     ProtocolError,
+    ToolArgumentsInvalidError,
 )
 
 
@@ -41,3 +42,23 @@ def test_config_error_lives_in_the_shared_hierarchy_once() -> None:
     """``ConfigError`` 在共享层次内，且 ``config`` 模块暴露的是**同一个类**（无第二处定义）。"""
     assert issubclass(ConfigError, BenchError)
     assert config_module.ConfigError is ConfigError
+
+
+@pytest.mark.unit
+def test_tool_arguments_invalid_error_is_inside_the_single_hierarchy() -> None:
+    """信任边界校验失败必须落在同一层次内：``except BenchError`` 必须能接住它。
+
+    否则装配点（把 ``BenchError`` 统一转成"中文提示 + 非零退出码"）会漏接，
+    一次非法参数会以未预期异常的形式冒泡。
+    """
+    assert issubclass(ToolArgumentsInvalidError, BenchError)
+
+
+@pytest.mark.unit
+def test_tool_arguments_invalid_error_does_not_inherit_protocol_error() -> None:
+    """不得继承 ``ProtocolError``：一个处置是**回喂**、一个是**中止**，合并会让 ``except`` 误捕。
+
+    依据 ``harness.md`` §3.4：本异常的处置是 ``denied_reason="invalid_arguments"`` ⇒ 交回模型继续
+    （``REQ-HARNESS-06``），与 ``ProtocolError`` 的"参数/协议不可比 ⇒ 必须中止"相反。
+    """
+    assert not issubclass(ToolArgumentsInvalidError, ProtocolError)
