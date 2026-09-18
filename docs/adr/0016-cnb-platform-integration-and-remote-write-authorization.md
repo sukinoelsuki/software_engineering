@@ -606,6 +606,9 @@ git grep -n "任何写入远端的操作都必须事先获得批准"
   - `CODEBUDDY.md` §2/§5、`AGENTS.md` §2/§5、`.codebuddy/rules/git-workflow/RULE.mdc`、
     `docs/engineering/git-workflow.md` §4、`CONTRIBUTING.md` §8 —— A~F 分级口径
     **5 处逐项一致**（自查：把 5 处的 A~F 归一化后取哈希，全部相同）。
+  - `docs/engineering/git-workflow.md` §2——**分工判据表同步**：原"远端授权细则 ❌ 不在摘要"
+    会让将来的一致性检查把（ADR-0016 §5.8 第 4 条要求的）摘要分级表判成漂移 ⇒ 改为
+    "**远端授权的 A~F 分级集合 ✅ 必须出现**" + "其余**细则** ❌ 不在摘要"两行。
   - `SECURITY.md` §3 新增 `S-9`；§2 供应链段补"镜像内第三方 CLI / Skill 的来源·精确版本·摘要"
     与"Skill 文本进入指令面须钉 commit"。
   - **仍未落地**：`.ide/Dockerfile` 新阶段、`.cnb.yml`、`.gitignore`、`post-build-checklist.md`、
