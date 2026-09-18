@@ -352,7 +352,101 @@ $ mv .git/hooks/pre-commit.disabled .git/hooks/pre-commit
 
 ---
 
-## 8. 变更记录
+## 8. 同一家族的第三个实例：mypy 钩子与 `make check` 的**依赖集合不同**（2026-09-19）
+
+- **状态**：**待所有者裁决**（本文只登记问题、证据与候选修法；**改门禁配置属 `F` 类，需所有者事先确认**）
+- **发现人**：实现工程师 `implementer-core`（在写 `G4` 的第一个模块时撞上，**正确拒绝**用 `--no-verify` 绕过）
+- **触发**：M0 骨架实现开工（`devlog 0016` §3.6）——**任何 import 第三方依赖的 `src/` 模块都会撞上它**
+
+### 8.1 现象与证据（可复现）
+
+同一份代码、同一个 mypy 版本，**两条路径结果相反**：
+
+```text
+$ uv run mypy                                   # = make check 的 typecheck（项目 venv，装齐 8 个组件）
+Success: no issues found in 28 source files     ← 绿（含 logging.py）
+
+$ uv run pre-commit run mypy --files src/agent_sec_perf/foundation/paths.py
+mypy.............................................................Passed     ← 钩子本身可用（该文件只 import 标准库）
+
+$ uv run pre-commit run mypy --files src/agent_sec_perf/foundation/logging.py
+src/agent_sec_perf/foundation/logging.py:31: error: Cannot find implementation or library
+stub for module named "structlog"  [import-not-found]
+（另两条：structlog.stdlib / structlog.typing）  ← 3 条假红
+```
+
+**根因**：`.pre-commit-config.yaml` 的 mypy 钩子用 `mirrors-mypy`（`language: python`），
+其钩子环境是**独立虚拟环境**且 `additional_dependencies: []` ⇒ **只有 mypy、没有运行期依赖**。
+而 `make check` 的 `typecheck` 走 `uv run mypy`（项目 venv）⇒ **两处口径不同**。
+
+**判定：这不是"更严"，是"看不到"。** 缺依赖的 mypy 对任何第三方 import 只能报 `import-not-found`，
+属**构造性假红**——它既不能替代 `make check`，还会**阻断全部实现工作**。
+
+### 8.2 影响面（为什么必须尽快处置）
+
+- **不止本次**：`G7`（`pydantic`/`urllib3`）、`G8`（`tools`）、以及后续 `harness/` 的实现**全部**会撞上；
+- **当前实际后果**：成员的产出**无法提交**（工作树里的未提交产出即孤儿风险，`agent-teams.md` §8.10）；
+- **文档中未见登记**：`additional_dependencies` 在 `docs/` 下 0 命中 ⇒ 属**此前未发现的缺陷**；
+  `§2.4` 第 4 条早已写明"**本次未评估 ruff / mypy 的配置生效性**"，本条即那次推广的第 1 项。
+
+### 8.3 候选修法
+
+| 方案 | 做法 | 强度 | 代价 |
+| --- | --- | --- | --- |
+| **A（推荐）** | 改为 `repo: local` + `language: system` + `entry: uv run mypy` + `pass_filenames: false` | **不变**（与 `make check` 的 `typecheck` **同一解释器、同一依赖集合、同一调用形态**） | 不再享受 pre-commit 的钩子环境隔离；需 `uv` 在 PATH（本地与 CI 本来都有）；`uv run` 会在钩子内触发一次同步（已同步时是 no-op） |
+| B | 保留 `mirrors-mypy`，`additional_dependencies` 填运行期依赖 | 不变 | **依赖集合要在 `.pre-commit-config.yaml` 与 `uv.lock` 两处维护**（与本文件头部"`rev` 必须与 `uv.lock` 对齐"同源问题）；`pydantic-core` 是编译扩展 ⇒ 钩子环境每次建/升级更慢 |
+| C | 删掉该钩子（`make check` 已覆盖） | **下降**（少一道本地防线） | 与 DoD"本地第一道防线"的设计取向相悖 ⇒ 不推荐 |
+
+### 8.4 需所有者确认
+
+| # | 待确认 | 影响 |
+| --- | --- | --- |
+| Q4 | 是否同意**候选 A**（`repo: local` + `uv run mypy`，与 `make check` 同源）？ | 决定成员能否继续提交；**净强度不变、只修缺陷** |
+| Q5 | 若采纳 A，是否同意把"**钩子与 `make check` 必须同一依赖集合**"写成**不变式**（与 §5.1 的 bandit 不变式同族）？ | 防止同类问题以其它工具再次出现 |
+
+> **不在本次改动范围**（`F` 类未获批准前）：`.pre-commit-config.yaml`。
+
+### 8.5 补充证据：假红**全部**是"依赖不可见"的派生物，且**不需要改任何源码**（2026-09-19）
+
+实现角色在冻结文件后做了只读核对，领导复核并抄录于此（**用于把裁决成本降到最低**）：
+
+**① 钩子环境下的 6 条报错，逐条可追到"依赖不可见"，无一条是真实代码问题**：
+
+```text
+foundation/config.py:34   import-not-found: platformdirs
+foundation/config.py:81   Returning Any … declared to return "Path"   ← PlatformDirs(...) 是 Any 的派生物
+foundation/config.py:96   Returning Any … declared to return "Path"   ← 同上
+foundation/logging.py:31  import-not-found: structlog
+foundation/logging.py:32  import-not-found: structlog.stdlib
+foundation/logging.py:33  import-not-found: structlog.typing
+```
+
+同一批文件在项目 venv（`uv run mypy` = `make check` 的 `typecheck`）下：**0 error**
+⇒ **候选 A 与候选 B 都能让这 6 条同时消失，且都不需要动源码**；差别只在"依赖集合是否两处维护"
+与钩子环境建/升级成本（§8.3）。
+
+**② 同一批文件在 `pre-commit` 下**其余**钩子全部 Passed（唯一失败项是 mypy）**：
+
+```text
+check-added-large-files / check-merge-conflict / check-case-conflict / detect-private-key /
+end-of-file-fixer / trailing-whitespace / mixed-line-ending / no-commit-to-branch /
+ruff / ruff-format / bandit                          → 全部 Passed
+mypy                                                 → Failed（即上述 6 条）
+```
+
+并且已用 `cz check --message` **预验**提交信息（Conventional Commits + 中文正文 + `Refs:` footer）
+→ `Commit validation: successful!`。
+
+⇒ **读法**：裁决一到，**改一行配置即可一次通过**，不存在"第二处意外"。
+这同时说明实现角色的"拒绝绕过"是**只差一行配置**，而不是"代码有问题"——
+**该拒绝是正确行为**（`F` 类未获批准前，绕过本身也需授权与留痕）。
+
+> **本节的证据性质**：由实现角色提供、**领导复核**（两组对照命令均已实跑）。
+> 命令可从 §8.1 的命令块复现；**未改动任何 `src/` 文件**。
+
+---
+
+## 9. 变更记录
 
 - **2026-09-18（初稿）**：建立本文。问题、代码级证据、三组差异化探针、
   影响评估、两个候选修法与推荐、复核方式。
@@ -369,3 +463,8 @@ $ mv .git/hooks/pre-commit.disabled .git/hooks/pre-commit
   五条新不变式与四条已知边界；附三条变异探针的实跑证据。
   **原 §7「变更记录」顺延为 §8：仅编号移动，文字未改**（本文原先只有 §7，为避免在"变更记录"之后
   追加正文章节而顺延）。
+- **2026-09-19（同一家族的第三个实例）**：**新增 §8**——`pre-commit` 的 mypy 钩子跑在
+  "只有 mypy、没有运行期依赖"的独立环境里 ⇒ 任何 import 第三方依赖的 `src/` 模块**构造性假红**，
+  与 `make check` 的 `typecheck` **口径相反**；附三组对照证据、影响面（`G7`/`G8`/`harness` 全部受阻）
+  与三个候选修法（推荐 **A：`repo: local` + `uv run mypy`**，净强度不变）。
+  **原 §8「变更记录」顺延为 §9：仅编号移动，文字未改。**
