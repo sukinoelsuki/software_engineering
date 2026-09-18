@@ -166,7 +166,14 @@ class SandboxRequest:
   全仓无 `shell=True` 由机器检查强制）。
 - `env` 默认空并**禁止继承**父进程环境：父进程含 `CNB_TOKEN` 等敏感变量，
   执行模型产物时**绝不能**传入（`REQ-PERF-08`："执行模型产物时不得继承父进程凭据"；
-  `foundation/proc.py` 的 `_isolated_env` 已是此语义）。
+  `foundation/proc.py` 的 `minimal_env()` 即此语义）。
+- **策略已覆盖 `spawn`**（2026-09-18 收敛，`8e047e6`，见 §5「变更留痕」）：
+  `minimal_env(workdir)` 是 `foundation.proc` 中**执行不可信产物的两条路径**——
+  `run(isolation="user")` 与 **`spawn`** ——**共用**的**唯一**环境构造入口；
+  **`spawn` 的 `env` 默认亦为最小环境（默认拒绝）**，需要继承父环境者必须**显式**
+  传 `env=dict(os.environ)`（当前无此类调用者）。
+  **例外必须写明**：`run_inherit_env()` **有意**继承父环境（只用于自有工具链静态检查、
+  不执行模型产物）；`run(isolation="root")` **仍继承**（本地开发用，**CI 不得使用**）。
 - **调用方负责**一次性工作目录的创建与清理（ADR-0015 §5.1.2 资源生命周期）。
 
 ### 2.6 `SandboxResult`（Q1）
@@ -206,8 +213,12 @@ ADR-0007 §4.2 明确"档位选择是**逐维度**的"，且不同后端 / 参�
 | `SandboxRequest` 字段 | `foundation.proc` 对应 |
 | --- | --- |
 | `argv` / `cwd` / `timeout_s` | `proc.run(argv, cwd=..., timeout_s=...)` 的同名参数 |
-| `env` | 隔离执行时**忽略**并改用 `_isolated_env()`；仅 `isolation="root"` 才可能继承 |
+| `env` | 隔离执行时**忽略**并改用 `minimal_env()`；仅 `isolation="root"` 才可能继承 |
 | `network_allowed=False` | **无进程级机制**（L1）；由策略层拒绝 + 审计，故 `NETWORK` 维度在 L1 下 `enforced=False` |
+
+> **`spawn` 亦受同一策略**（2026-09-18 收敛，见 §5「变更留痕」）：`spawn(env=None)` ⇒ `minimal_env(cwd)`
+> （默认拒绝），需要继承者必须**显式**传 `env=`。⇒ 上表 `env` 行的"仅 `isolation="root"` 才可能继承"
+> **只对 `run()` 成立**；`spawn` 侧**已无继承出口**（`bench/runner.py:129` 亦已显式传最小 env）。
 
 > **必须写明的诚实结论**：在只有 `L1` 的环境里，`FILESYSTEM` / `NETWORK` 两个维度
 > **不是内核级隔离**，而是"白名单拦截 + 审计 + 默认拒绝 + 人工确认"（ADR-0006 §6 的负面后果）。
@@ -227,3 +238,25 @@ ADR-0007 §4.2 明确"档位选择是**逐维度**的"，且不同后端 / 参�
 5. import 补 `Path`（`pathlib`）、`field`（`dataclasses`）、`Mapping`（`collections.abc`）；
 6. 模块 docstring 删除"字段均未规定 ⇒ 占位"，改为指向本文件并重申
    "`enforced` 只能来自负向探针"与"禁止静默降级"。
+
+---
+
+## 5. 变更留痕
+
+- **2026-09-18 · `env` 策略覆盖 `spawn`（"实现向既有策略收敛"，**不是**契约变更）**：
+  §2.5 的"`env` 默认空、**不得继承** `os.environ`"这一**语义自始未变**；本次修的是
+  **`spawn` 未遵守它**这一违约——它是同一封装层内**唯一**没有走该策略的子进程出口。
+  **实现侧**（提交 `8e047e6`，`implementer-t08` 落地）：
+  `_isolated_env` 提升为公开 `minimal_env(workdir)`（`foundation/proc.py:97-111`，已进 `__all__`），
+  成为 `run()`（`:148`）与 `spawn()`（`:235`）**共用**的**唯一**环境构造入口；
+  `spawn` 的 `env is None` 由"继承 `os.environ`"改为"**最小环境**"（默认拒绝）；
+  唯一调用点 `bench/runner.py:129` 改为**显式**传 `env=proc.minimal_env(...)`。
+  **本目录同步**：§2.5 / §3 的符号指针由 `_isolated_env` 改为 `minimal_env`。
+  实现侧**暂留**同名私有别名 `_isolated_env = minimal_env`（`proc.py:116`）以兼容历史引用；
+  文档一律指向公开名，该别名待领导派一笔独立提交删除。
+  **证据**：`make check` 全绿（110 passed）；`tests/security/test_spawn_credentials_canary.py`
+  （行为 canary）与 `test_spawn_env_explicit.py`（静态守卫）随 `8e047e6` 由 `xfail` **翻正为常态断言**；
+  另有 `tests/unit/test_foundation_proc.py`（`minimal_env` 白名单 / 无凭据类键 / `spawn` 默认 /
+  `run(isolation="user")` 四条）与 `tests/unit/test_bench_runner.py::test_llama_server_spawn_passes_minimal_env`。
+  **未覆盖（残余）**：`run(isolation="root")` **仍继承**父环境，且**无机器检查**禁止 CI 使用
+  （见威胁模型 `T-08` 残余风险 3）。
