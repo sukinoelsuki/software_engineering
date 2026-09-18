@@ -112,14 +112,17 @@ code-server --list-extensions   # 核对扩展是否真的装上了（见下方�
 > ⇒ 沿用本节口径，必须在环境内**显式校验一次**：
 >
 > 1. `cnb --version` 应输出 ≥ **1.15.36**。
->    口径冲突须留意：`ADR-0016` §5.6 把"`cnb --version` 是否存在"记为**【待验证】**
->    （其 `V1` 因此只用 `cnb --help`）⇒ **若该命令不存在**，改用 `cnb --help`（退出码 0 即通过），
->    并把结论回填 `ADR-0016` §10 的 `U6`，**不得**把"能跑"写成"版本已核"。
+>    **（2026-09-18 更正）** 原记的"口径冲突"**已闭环**：`ADR-0016` §10 的 `U6`
+>    已核验为 **✅ 存在**（返回 `1.15.36`），§5.6 亦已同步 ⇒ **`cnb --version` 可直接作断言**，
+>    原先"若该命令不存在则改用 `cnb --help`"的条件分支**不再适用**。
 > 2. 官方 CNB Skill 已安装，**5 个**：`cnb-api`、`cnb-docs`、`cnb-code-review`、`cnb-pr-analysis`、
 >    `cnb-pipeline`；落点 `~/.codebuddy/skills/` 的**符号链接非空**（`ls -l` 可核）。
->    名称口径待核验：上述 `cnb-pipeline` 与 [`ADR-0017`](../adr/0017-project-level-agent-skills.md)
->    §5.3.2 的**项目内** Skill **同名** ⇒ 实测落点后**按实际名称回填本表**，并登记
->    `ADR-0016` §10 的 `U12`；在此之前**不得**假设官方与项目内的同名 Skill 是同一个。
+>    **名称口径已回填（2026-09-18）**：本条的 `cnb-pipeline` 是**官方** Skill；
+>    项目内的同名 Skill 已按 [`ADR-0017`](../adr/0017-project-level-agent-skills.md) §5.3.2
+>    **改名为 `repo-ci-conventions`**（落点在 `.codebuddy/skills/`，**不在** `~/.codebuddy/skills/`）
+>    ⇒ **两者不再同名**，本节第 2 项**只核官方那 5 个**。
+>    依据：`ADR-0017` §5.3.2（分工判据）、`ADR-0016` §11 的编排性修订（`U12` 读法）。
+>    本项登记为 **`V-15`**（见 §6.6）。
 
 ---
 
@@ -447,6 +450,16 @@ llama-server -m /opt/models/MiniCPM5-2B-Q4_K_M.gguf -c 8192 -t 8 --port 8080 --n
 | V-6 | llama.cpp 版本固定是否生效 | §6.1 | ✅ 已确认：`commit 69eb250` |
 | V-7 | pyright 替换是否生效 | §6.1 | ✅ 已确认：有 `ms-pyright.pyright`、无 `pylance` |
 | V-14 | 服务端 `n_slots`/`n_ctx_slot` 口径 | §6.5（正式基准需显式固定 `-np 1`） | ✅ 已确认：未指定时默认 4 槽位 / `n_ctx_slot=8192` / `kv_unified=true` |
+| V-15 | `cnb-cli` 与官方 CNB Skill 是否装妥、**名称口径**是否如 §6.1 所述 | §6.1（`cnb --version` / `ls -l ~/.codebuddy/skills`） | ⏳ **待镜像重建后实测**（2026-09-18 起草时本工作区**未按新镜像重建**：`command -v cnb` 无输出、`~/.codebuddy/skills/` 不存在 ⇒ 相关缓解**尚无载体**，见 [devlog 0015 §5.4](../devlog/0015-2026-09-18-CNB接入与技能体系落地.md)） |
+
+> **V-15 的登记与判据（2026-09-18，按团队领导裁决落盘）**：该编号承接 `V-14`。
+> **判据（三条，缺一不可）**：① `cnb --version` 输出 `1.15.36`（与 `.ide/assets/` 清单一致）；
+> ② `ls -l ~/.codebuddy/skills` 的**符号链接非空**且**恰好 5 个**（`cnb-api`、`cnb-docs`、
+> `cnb-code-review`、`cnb-pr-analysis`、`cnb-pipeline`）；③ 落点名称与 `.ide/assets/cnb-skills.txt`
+> 清单**逐项一致**（清单是唯一真源）。
+> **为何要单立编号**：这两项属"**没装上也不阻断构建**"的环节（与扩展同类）⇒ 沿用本节既有口径，
+> **必须在环境内显式校验一次**；且起草时它同时是"**无主残留**"（不在当时任何成员的产出白名单内），
+> 由领导指派单一写者后落盘（同一文件不得两人写）。
 
 ---
 
