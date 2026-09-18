@@ -49,3 +49,7 @@ class ModelProtocolError(BenchError):
     调用方处置：**重试一次**，仍失败则回喂给模型（``REQ-HARNESS-02``）。
     同样**不**继承 :class:`ProtocolError`，理由同上。
     """
+
+
+class ConfigError(BenchError):
+    """配置非法（fail-secure：不得捕获后继续用默认值）；实现见 ``foundation/config.py``。"""
