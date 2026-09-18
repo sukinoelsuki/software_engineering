@@ -30,7 +30,7 @@ name = "agent-sec-perf"
 # 决策见 docs/adr/0019-release-and-version-policy.md）；`make bump` 已被改为拒绝执行。
 # 本值有 **4 处副本**（本行 / [tool.commitizen].version / src/agent_sec_perf/__init__.py /
 # uv.lock），一致性由 tests/unit/test_release_policy.py 机器检查。
-version = "0.0.0"
+version = "0.0.1"
 description = "原生智能系统的安全与加速工程实践（项目代号 TBD）"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -182,7 +182,7 @@ markers = [
 # ============================================================================
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.0.0"
+version = "0.0.1"
 tag_format = "v$version"
 # 版本号共 4 处副本，其中两处（本文件 / 包内 `__version__`）由本字段同步；
 # `uv.lock` 的那份由 `uv lock` 同步（`make release` 会跑）。缺任何一处都会被
