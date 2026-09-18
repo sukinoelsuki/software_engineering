@@ -19,7 +19,7 @@
 | 组织形式 | 单人独立开发（决策、实现、评审均由本人完成，AI 作为实现与决策辅助） |
 | 周期 | 2026-09 ~ 2026-12（约 2~3 个月，多迭代） |
 | 仓库 | <https://cnb.cool/Mybase_Le0n3rd/software_engineering> |
-| 当前阶段 | **Phase 0 · 工程初始化（进行中）**：工程骨架与流程规范已完成；base project 的**复用组件清单**、SRS v0.2、威胁模型与模块划分 ADR **尚未完成**。详见 [里程碑](docs/engineering/sdlc.md) 与 [`CODEBUDDY.md`](CODEBUDDY.md) §9 |
+| 当前阶段 | **`M0`（工程初始化）已达成**（2026-09-19，判据 `G1`~`G9` 全绿）⇒ 进入 **Phase 1**：需求规格、架构设计与威胁模型成稿（`M1`）。详见 [里程碑](docs/engineering/sdlc.md) §3.1 与 [`CODEBUDDY.md`](CODEBUDDY.md) §9 |
 
 > ## 🚧 下一步（开发环境构建后立即执行）
 >
