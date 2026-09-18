@@ -46,8 +46,14 @@ class AuditEvent:
 
     ``timestamp`` 为**带时区的 ISO-8601 UTC 文本**（存储形态，避免序列化时区不一致）；
     ``detail`` **必须已脱敏**（``REQ-SEC-07``，具体规则属观测层设计）。
-    不变式：``POLICY_DECISION`` ⇒ ``call_id`` / ``capability`` / ``risk_level`` 均非 ``None``；
-    ``TOOL_CALL`` ⇒ ``call_id`` / ``tool_name`` 非 ``None``。
+
+    不变式（逐条定义与裁决见 ``docs/design/interfaces/audit.md`` §2.3）：
+    **I1**（关联键）``kind == POLICY_DECISION`` ⇒ ``call_id`` / ``risk_level`` 均非 ``None``；
+    **I2**（能力集合可回放）``kind == POLICY_DECISION`` ⇒ ``detail["requested"]`` **存在**，
+    为 ``Capability`` 值组成的**升序** ``list[str]``（请求不可解析时记 ``[]``，此时 ``detail["error"]``
+    存在）；**I3**（单值字段与集合字段一致）``capability is None`` **⇔** ``detail["requested"] == []``，
+    且 ``capability`` 非 ``None`` 时其值必在该列表内；
+    ``kind == TOOL_CALL`` ⇒ ``call_id`` / ``tool_name`` 非 ``None``。
     """
 
     event_id: str
