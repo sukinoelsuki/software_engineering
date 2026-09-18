@@ -561,3 +561,12 @@ flowchart TD
   `devlog-protocol`、`benchmark-protocol`）；`.codebuddy/rules/project-conventions/RULE.mdc`
   的「目录约定」与「依赖管理」已同步。**§7 的 V1~V6（含 `tests/unit/test_skills_layout.py`）
   与 §8 的其余联动项（`CODEBUDDY.md`/`AGENTS.md` §10.1、`.codebuddy/agents/*`）本次未执行**。
+- **2026-09-18**：**§5.3.5 末注的一半被同批的另一域工作推翻（据实登记，正文不改）**。
+  §5.3.5 末注写的是"ADR-0016 §10 的 U1/U2/U3/U6 仍为**【待核验】**、在回填之前标记仍然有效"——
+  那是**本 ADR 写作当时的事实**；同一时段的另一域工作（提交 `024e637`、`cf1211a`）
+  已把这四项在 ADR-0016 §10 中标注为 **✅ 已核验**并改为"核验台账"。
+  ⇒ 自 `cf1211a` 起，**ADR-0016 §10 的 U1/U2/U3/U6 不再是【待核验】**，
+  §5.3.5 末注中该半句**不再成立**。按「只增不改」在此登记，**不回改 §5.3.5 正文**。
+  另经核对：§5.3.5 与 ADR-0016 §11 的**事实一致、无分叉**（11 → 5 的取舍、项目内 Skill
+  改名 `repo-ci-conventions`、可钉 commit `bcd25870ed100db43c257c3c5feca6c776645914`、
+  `skills` 钉 `1.5.0`、`cnb --version` = `1.15.36`）。
