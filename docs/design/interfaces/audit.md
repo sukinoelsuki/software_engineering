@@ -59,12 +59,38 @@ class AuditOutcome(StrEnum):
 | --- | --- |
 | `POLICY_DECISION` | `ALLOW` / `DENY` / `CONFIRM` |
 | `APPROVAL` | `ALLOW` / `DENY` |
-| `TOOL_CALL` | `OK` / `ERROR` |
+| `TOOL_CALL` | `OK` / `ERROR` / **`DENY`**（2026-09-19 放宽，见下） |
 | `EXECUTION_DEGRADATION` | `DEGRADED` |
 | `REFUSAL` | `DENY` |
 
 > 用枚举报 `outcome` 而不是裸 `str`：`REQ-OBS-01` 要"按结果检索"，裸字符串会因拼写差异
 > （`"deny"` / `"denied"` / `"rejected"`）让查询静默漏项。
+
+**`TOOL_CALL` 放宽为允许 `DENY`（2026-09-19；**放宽的是本表的允许集**，不是 `AuditOutcome` 的成员）**：
+
+`AuditOutcome` 的 **6 个成员**（`ALLOW` / `DENY` / `CONFIRM` / `OK` / `ERROR` / `DEGRADED`，见 §2.2 上文）
+**本来就已存在**，本次**不新增任何成员**；被改的只是**上表 `TOOL_CALL` 这一格的允许集**
+（`{OK, ERROR}` → `{OK, ERROR, DENY}`）。
+
+理由（两处契约合起来曾不可满足）：
+
+- [`tools.md`](tools.md) §2.6 规定：工具未在注册表中 ⇒ 调用方**默认拒绝 + 审计**；
+- 而本表原只允许 `TOOL_CALL` 取 `{OK, ERROR}` ⇒ "**被拒绝、根本没有执行**"**无法被忠实表达**。
+  若改用 `ERROR`，则"**执行失败**"与"**从未执行**"在 `REQ-OBS-01` 的"按结果检索"下**同形**，
+  直接破坏 `REQ-SEC-06` 的可回放性——而 `architecture.md` §5.3 的硬规定 2 正是"**拒绝不等于失败**"。
+
+规定（与 [`harness.md`](harness.md) §2.7 一致）：
+
+| # | 规定 |
+| --- | --- |
+| D1 | `DENY` 专指"**未执行**"；**不得**用 `ERROR` 代替它 |
+| D2 | `DENY` 时 `detail["denied_reason"]` **必填**，取值限于 `{"unknown_tool", "not_exposed", "invalid_arguments", "policy_denied", "approval_denied"}`（均为**我方生成的定长短码**，不含不可信内容） |
+| D3 | 已执行路径的 `TOOL_CALL` 事件仍由工具层发出（`tools/registry.py::audit_tool_call`，只产出 `OK` / `ERROR`，**行为不变**）；"未执行"路径由 `harness/loop.py` 发一条 |
+| D4 | 同一 `call_id` 可能出现**多条** `TOOL_CALL` 事件（§2.3 已允许"调用前后各一条"）⇒ 判据是"**存在且可回放**"，**不是**"恰好一条" |
+
+⚠️ **边界（不得外推）**：本次**只放宽这一格**。`ALLOW` / `DENY` / `ERROR` / `OK` / `CONFIRM` /
+`DEGRADED` 的**既有语义不变**，其余 4 个 `kind` 行的约束**不动**；`AuditEventKind` 的成员集合
+**不变**（新增 kind 需 ADR）。
 
 ### 2.3 `AuditEvent`（Q1）
 
@@ -265,6 +291,7 @@ class AuditSink(Protocol):
 | 2026-09-19 | §2.3 的不变式第 1 条改写为 I1~I3：`capability` 的"非 `None`"改为**以 `requested` 非空为前置**，并把**完整能力集合**规定为 `detail["requested"]`；同步 §2.3 字段表、生产者表与 §3 清单 | 实现侧报出的契约缺口（空集下"必须 `emit`"与"`capability` 非 `None`"互斥）；裁决、规则与验证判据见 [`policy.md`](policy.md) §2.5「补充规定」 |
 | 2026-09-19 | **新增 §2.5「落点来源与路径白名单」**：`audit.directory` 来自项目级 `.lowspec.toml`（不可信输入）⇒ 现只校验"绝对路径 + 无 NUL"**不满足** `SECURITY.md` 的路径白名单硬性要求。规定 P1~P7（根集合为常量 `ALLOWED_AUDIT_ROOTS`、配置期 `ConfigError` / 装配期 `PathNotAllowedError` 两层校验、先校验后 `mkdir`、禁止静默降级回退、校验时点在构造期、冒泡规则不变），并给出 W1~W8 判据 | 实现侧报出的接口决策缺口（`resolve_within` 的 `roots` 需调用方提供，"允许哪些根"属接口决策）；复核成立：不加约束时构成**任意路径追加写**原语；威胁模型侧同步见 `T-02`（**不升降状态、不改计数**） |
 | 2026-09-19 | I2 的 `[]` 来源由两种更正为**三种**（新增"含非 `Capability` 成员"，判别键 `invalid`）；**新增 I4**——`capability` 必须是 `Capability` 实例或 `None`（裸 `str` 即使取值合法也拒绝）；`capability` 字段表同步 | 同族缺口的第三轮报出（类型违规输入）与架构侧独立复现：裸 `str` 取值合法时会被**放行**，审计的 `capability` 类型与 I2/I3 同时被破；规定与规范见 [`policy.md`](policy.md) §2.5「非法成员的规定行为」 |
+| 2026-09-19 | **§2.2 的 kind→outcome 约束表：`TOOL_CALL` 的允许集由 `{OK, ERROR}` 放宽为 `{OK, ERROR, DENY}`**（**放宽允许集，不新增 `AuditOutcome` 成员**——`DENY` 成员本就存在）；表下补 D1~D4 与"不得外推"边界 | [`tools.md`](tools.md) §2.6 要求"未知工具 ⇒ 拒绝 **+ 审计**"，而原约束**无法表达"被拒绝、未执行"**；改用 `ERROR` 会让"执行失败"与"从未执行"同形，破坏 `REQ-SEC-06` 可回放性（`architecture.md` §5.3 硬规定 2"拒绝不等于失败"）。规范同 [`harness.md`](harness.md) §2.7。**其它 `kind` 行与既有成员语义不变**；`contracts/audit.py` 与 `observability/audit.py` **均无需改动**（成员已存在；读取侧只校验枚举取值，不校验 kind×outcome 组合） |
 
 ---
 
