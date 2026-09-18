@@ -11,8 +11,6 @@ import pathlib
 import pytest
 
 from agent_sec_perf.bench.assets import read_model_manifest
-from agent_sec_perf.bench.errors import PathNotAllowedError, ProtocolError
-from agent_sec_perf.bench.paths import resolve_within
 from agent_sec_perf.bench.protocol import (
     PROTOCOL_VERSION,
     TASK_IDS,
@@ -22,6 +20,8 @@ from agent_sec_perf.bench.protocol import (
     model_path_for,
     read_fixture,
 )
+from agent_sec_perf.foundation.errors import PathNotAllowedError, ProtocolError
+from agent_sec_perf.foundation.paths import resolve_within
 
 
 @pytest.mark.unit

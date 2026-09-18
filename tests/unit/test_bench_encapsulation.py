@@ -16,7 +16,10 @@ import pathlib
 import pytest
 
 SRC_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
-ENCAPSULATION_MODULE = "proc.py"
+#: 唯一的子进程封装层：判定依据是**相对路径**而不只是文件名。
+#: 只按 ``path.name == "proc.py"`` 判定的话，任何目录下出现同名文件都能绕过；
+#: ADR-0015 §7.1 要求把判定升级为"位于 ``foundation/`` 下的 ``proc.py``"。
+ENCAPSULATION_MODULE = pathlib.Path("agent_sec_perf") / "foundation" / "proc.py"
 
 
 def _source_files() -> list[pathlib.Path]:
@@ -29,7 +32,8 @@ def test_subprocess_is_used_only_in_encapsulation_layer() -> None:
     offenders = [
         str(path.relative_to(SRC_ROOT))
         for path in _source_files()
-        if "subprocess" in path.read_text(encoding="utf-8") and path.name != ENCAPSULATION_MODULE
+        if "subprocess" in path.read_text(encoding="utf-8")
+        and path.relative_to(SRC_ROOT) != ENCAPSULATION_MODULE
     ]
 
     assert offenders == [], f"以下模块绕过了子进程封装层：{offenders}"

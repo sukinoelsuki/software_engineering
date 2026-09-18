@@ -11,7 +11,7 @@ import hashlib
 import pathlib
 from dataclasses import dataclass
 
-from agent_sec_perf.bench.errors import ProtocolError
+from agent_sec_perf.foundation.errors import ProtocolError
 
 DEFAULT_MODELS_MANIFEST = pathlib.Path(".ide/assets/models.txt")
 _HASH_CHUNK_BYTES = 1024 * 1024

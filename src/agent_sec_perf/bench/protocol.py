@@ -15,7 +15,7 @@ from __future__ import annotations
 import pathlib
 from dataclasses import dataclass
 
-from agent_sec_perf.bench.errors import ProtocolError
+from agent_sec_perf.foundation.errors import ProtocolError
 
 # ---------------------------------------------------------------------------
 # 协议常量

@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import cast
 
-from agent_sec_perf.bench.errors import SchemaError
+from agent_sec_perf.foundation.errors import SchemaError
 
 INDEX_FILENAME = "index.json"
 LATEST_REPORT_FILENAME = "latest.md"

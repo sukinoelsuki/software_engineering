@@ -13,7 +13,6 @@ from typing import Any
 import pytest
 from conftest import make_record
 
-from agent_sec_perf.bench.errors import SchemaError
 from agent_sec_perf.bench.store import (
     append_index,
     load_index,
@@ -23,6 +22,7 @@ from agent_sec_perf.bench.store import (
     today_local,
     validate_round,
 )
+from agent_sec_perf.foundation.errors import SchemaError
 
 
 @pytest.mark.unit

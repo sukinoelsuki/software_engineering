@@ -24,7 +24,7 @@ import subprocess  # nosec B404
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from agent_sec_perf.bench.errors import IsolationError, ProtocolError
+from agent_sec_perf.foundation.errors import IsolationError, ProtocolError
 
 #: 隔离执行使用的非特权 uid/gid（nobody）。
 UNPRIVILEGED_UID = 65534

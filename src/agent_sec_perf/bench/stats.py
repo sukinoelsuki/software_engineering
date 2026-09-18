@@ -13,7 +13,7 @@ import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from agent_sec_perf.bench.errors import ProtocolError
+from agent_sec_perf.foundation.errors import ProtocolError
 
 
 @dataclass(frozen=True)

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent_sec_perf.bench.errors import ProtocolError
 from agent_sec_perf.bench.stats import relative_delta_pct, success_rate, summarize
+from agent_sec_perf.foundation.errors import ProtocolError
 
 
 @pytest.mark.unit

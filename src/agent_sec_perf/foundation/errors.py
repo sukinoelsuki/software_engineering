@@ -1,4 +1,7 @@
-"""基准流水线的异常类型。
+"""全项目共享的异常层次。
+
+由 ``bench/errors.py`` 提升而来（``docs/adr/0015-layering-and-reuse-boundary.md``
+§5.4.1）；基类 :class:`BenchError` 沿用历史名称，语义上已是全项目的基类异常。
 
 设计原则：**失败一律显式抛出，禁止静默降级**（fail-secure）。
 基准确认数据是否可比，一旦参数或路径可疑，宁可整轮失败，也不要产出一份
@@ -9,7 +12,7 @@ from __future__ import annotations
 
 
 class BenchError(Exception):
-    """基准流水线的基类异常。"""
+    """全项目基类异常（由基准流水线提升为共享层次，名称沿用历史）。"""
 
 
 class PathNotAllowedError(BenchError):

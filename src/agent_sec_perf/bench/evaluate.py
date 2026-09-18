@@ -10,7 +10,7 @@
    "杀不死变异体"——那会把夹具变更伪装成模型能力下降。
 
 **不可信边界**：本模块执行的是**模型生成**的代码（``pytest`` 会真的 import 并运行它），
-因此执行型调用一律走 :func:`agent_sec_perf.bench.proc.run` 的隔离路径；
+因此执行型调用一律走 :func:`agent_sec_perf.foundation.proc.run` 的隔离路径；
 只有不执行被测代码的静态检查（``mypy``）走普通路径。
 """
 
@@ -22,10 +22,10 @@ import re
 import sys
 from dataclasses import dataclass
 
-from agent_sec_perf.bench import proc
-from agent_sec_perf.bench.errors import ProtocolError
-from agent_sec_perf.bench.paths import make_writable_by_all
 from agent_sec_perf.bench.protocol import read_fixture
+from agent_sec_perf.foundation import proc
+from agent_sec_perf.foundation.errors import ProtocolError
+from agent_sec_perf.foundation.paths import make_writable_by_all
 
 CODEFENCE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
 _IMPORT_RE = re.compile(r"^\s*(from\s+\S+\s+)?import\s+.*merge_intervals", re.M)

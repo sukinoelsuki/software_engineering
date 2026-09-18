@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 from collections.abc import Sequence
 
-from agent_sec_perf.bench.errors import PathNotAllowedError
+from agent_sec_perf.foundation.errors import PathNotAllowedError
 
 
 def resolve_within(

@@ -19,9 +19,9 @@ import time
 from dataclasses import dataclass
 from typing import cast
 
-from agent_sec_perf.bench import proc
-from agent_sec_perf.bench.errors import BenchError
 from agent_sec_perf.bench.protocol import RunParams
+from agent_sec_perf.foundation import proc
+from agent_sec_perf.foundation.errors import BenchError
 
 _PREFILL_RE = re.compile(
     r"prompt eval time =\s*([\d.]+) ms /\s*(\d+) tokens \(.*?([\d.]+) tokens per second"
