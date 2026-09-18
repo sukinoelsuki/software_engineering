@@ -86,7 +86,8 @@
 
 ## T-02 路径穿越
 
-**状态**：`部分缓解` ｜ **主导类别**：STRIDE-E（权限提升）
+**状态**：`部分缓解`（2026-09-18 重评：`S2` 的"**拒绝**"半已有可执行行为用例，"**且留审计**"半无载体
+⇒ **不升为"已缓解并验证"**）｜ **主导类别**：STRIDE-E（权限提升）
 
 - **资产**：A-1（工作目录文件）、A-2（白名单外文件系统）
 - **攻击者与前提**：攻击者能控制一个**会被当成路径使用**的字符串——工具参数
@@ -107,11 +108,18 @@
   - `roots` 为空 ⇒ **恒拒绝**（默认拒绝，`SECURITY.md` §2 第 1 条）；
   - 机器检查（**部分**）：`test_architecture_layers.py:266-274` 断言 `resolve_within`
     **只允许定义在** `foundation/paths.py`；
-    `test_architecture_layers.py:298-306`（V6）断言 `bench/` 不再保留独立实现。
+    `test_architecture_layers.py:298-306`（V6）断言 `bench/` 不再保留独立实现；
+  - **行为用例（2026-09-18 新增，`f436b0b`）**：`tests/security/test_path_traversal_rejected.py`
+    （11 个 `@pytest.mark.security` 用例：`..` 语料 6 条 + 绝对路径 + 软链接指向白名单外 +
+    深层穿越 + 边界正确性 + 变异验证）与 `test_path_validation_seam.py`（2 个接缝用例）
+    ⇒ "拒绝"半**已验证**；`make test-security` → **13 passed / 85 deselected**。
 - **残余风险**：
-  1. **"唯一入口"的机器检查只覆盖"不得在别处定义同名函数"**，
-     **不覆盖**"不得自行做路径判断/拼接"——`os.path.join` + 前缀比较在别处出现**不会被拦**。
-     `ADR-0015 §5.1.1` 的 R4 语义（唯一入口）目前**只兑现了一半**。
+  1. **"唯一入口"的机器检查覆盖面仍不全**：既有检查只覆盖"不得在别处定义同名函数"
+     （`test_architecture_layers.py:266-274`）；2026-09-18 新增的接缝检查
+     （`test_path_validation_seam.py`：源码中 `raise PathNotAllowedError` 只应出现在
+     `foundation/paths.py`）**进一步**堵住了"别处自建白名单并自行抛错"这条绕过，
+     但**仍不覆盖**"不得自行做路径判断 / 拼接"——`os.path.join` + 前缀比较在别处出现**不会被拦**。
+     ⇒ `ADR-0015 §5.1.1` 的 R4 语义（唯一入口）由"只兑现一半"改善为"**兑现大半、但未完全兑现**"。
   2. **校验与使用之间的 TOCTOU 窗口**：`resolve()` 在**校验时刻**解析符号链接；
      之后若路径分量被替换（`bench` 的一次性工作目录是 `chmod 0o777`，
      `paths.py:42-49` 的 `make_writable_by_all`），解析结果与打开的对象可能不是同一个。
@@ -122,10 +130,13 @@
   4. **Windows 语义未覆盖**：UNC、盘符、大小写不敏感文件系统、8.3 短名。
      `REQ-PLAT-01` 要求跨平台，**当前只在 Linux 验证过** 【待验证】。
 - **验证方式**：
-  - **应有**（行为，**缺验证**）——即 `ADR-0015 §7.2` 的 **`S2`**
-    `test_path_traversal_is_rejected_and_audited`：对上述 5 类输入逐一断言
-    **抛 `PathNotAllowedError` 或返回拒绝**、**绝不回退为放行**、且留下审计记录。
-    落地位置：`tests/security/`；**当前 `S2` 未落地**。
+  - **已有（行为，2026-09-18，`f436b0b`）**：`S2` 的"**拒绝**"半——落地位置 `tests/security/`：
+    `test_path_traversal_rejected.py`（11 用例：覆盖第 1~4 类输入 + 边界正确性 + 变异验证）与
+    `test_path_validation_seam.py`（2 接缝用例）。**变异验证**：临时移除 `resolve_within` 拒绝分支后
+    **9 个拒绝用例 `DID NOT RAISE`（失败）**，恢复后 `raise` 回到 `paths.py:39`、工作树干净。
+  - **仍缺（`S2` 的"**且留审计**"半）**：对这些输入断言"留下审计记录"——**当前无法验证**，
+    因为 `AuditSink`（`observability/audit.py`）在仓库中**不存在**；验证者**拒绝造测**（正确）。
+    **第 5 类（Windows / UNC / 盘符）**亦仍缺：本机为 Linux，`REQ-PLAT-01` 的多平台 job 未建。
   - 建议补一条**参数化**用例覆盖第 4 类前缀欺骗（`/tmp/foo` vs `/tmp/foobar`），
     它是"看起来实现了其实没有"的高发点。
   - **【待验证】项**：Windows/UNC 输入 → 在 win_amd64 运行器上跑同一组参数化输入
