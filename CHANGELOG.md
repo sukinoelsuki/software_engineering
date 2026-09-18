@@ -81,6 +81,7 @@
 
 ### Changed
 
+- **安全门禁 `bandit` 口径统一为"不读配置"**：`pre-commit` 去掉 `-c`、`pyproject.toml` 失效的 `[tool.bandit]`（`skips=["B101"]`）删除，两处门禁规则集一致；净效果因不再跳过 `B101` 而**更严**（`9804a0a`）。
 - **沙箱方案**：由单一用户态命名空间隔离（bwrap/firejail）改为**分层抽象 + 能力探测 + fail-secure 降级**。
 - SRS 定向修订至 **v0.1.1**：更新 `REQ-SEC-05` 验收标准、假设项 A-1/A-2、风险 R-4 与复用清单。
 - 开发环境：以 `ms-pyright.pyright` 替换 Open VSX 上不存在的 `ms-python.vscode-pylance`；修正默认深色主题 ID 为 `Dark Modern`。
@@ -115,9 +116,11 @@
 - 确立密钥零入库、最小权限、信任边界显式化等强制原则。
 - 新增硬规则：**隔离是否生效必须由主动探针判定，禁止以命令退出码判定**（依据：`firejail` 静默失效的实测）。
 - 新增硬规则：**降级必须显式记录，禁止静默降级**。
+- **修复常驻子进程凭据继承（T-08）**：`foundation/proc.py` 的 `spawn` 在 `env is None` 时由"继承 `os.environ`"改为最小环境（默认拒绝），调用点 `bench/runner.py` 显式传 `proc.minimal_env(...)`；`_isolated_env` 兼容别名删除。定性：实现向既有契约 `sandbox.md` §2.5「不得继承」收敛，**非接口语义变更**。验证：`tests/security/` 用例覆盖调用点实际收到的 env，含变异探针（默认改回继承 ⇒ 失败）。
 
 ### Fixed
 
+- **`make test-security` 在零 `security` 用例时 fail-secure**：原实现把 pytest 退出码 5（无匹配用例）当正常并 `exit 0`，安全测试层缺失或标记丢失时门禁假绿；现改为 `exit 1` 并说明原因（`a39ad48`，关联一致性报告 A-9）。`tests/security/` 现有 13 个用例，不会误伤。
 - **修正基准数据发布的 refspec**：数据分支首次创建时必须用**全限定引用名**
   （`HEAD:refs/heads/bench/data`）——远端已存在带斜杠的分支时，短写法
   `HEAD:bench/data` 会被 git 拒绝（`not a full refname`），这正是首轮 push
