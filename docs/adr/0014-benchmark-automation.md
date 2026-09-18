@@ -132,14 +132,77 @@ bench/daily/<日期>/
 
 | 豁免 | 位置 | 理由 | 影响面 |
 | --- | --- | --- | --- |
-| `import subprocess`（ruff S404 / bandit B404） | `src/agent_sec_perf/foundation/proc.py`（**2026-09-18 更正**；原 `bench/proc.py`，见文末「修订记录」） | 承载项目的子进程需求 | 仅该模块 |
-| `subprocess.run/Popen`（ruff S603 / bandit B603） | 同上，共 3 处 | 不经 shell、参数以列表传入、执行前施加隔离与资源上限 | 3 个调用点 |
+| `import subprocess`（**bandit B404**；ruff S404 处于 preview、**当前未启用**，见 §2.9.1） | `src/agent_sec_perf/foundation/proc.py`（**2026-09-18 更正**；原 `bench/proc.py`，见文末「修订记录」） | 承载项目的子进程需求 | 仅该模块 |
+| `subprocess.run/Popen`（ruff **S603** / bandit **B603**，二者均生效） | 同上，共 3 处 | 不经 shell、参数以列表传入、执行前施加隔离与资源上限 | 3 个调用点 |
 | 数据提交不运行代码钩子（`core.hooksPath` 指向空目录） | `scripts/bench/publish.sh` | 提交内容是**机器产出**，`ruff` 会格式化其中的代码块从而改写证据；代码侧门禁已在 `bench/nightly` 推送时执行 | 仅数据分支的提交 |
 | 签名不可用时降级为未签名提交 | 同上 | 平台签名助手依赖会话上下文，在流水线中可能不可用；降级会**显式打进日志**，不静默 | 数据分支的提交 |
 
 另有一条**机器检查**把约定钉住（`tests/unit/test_bench_encapsulation.py`）：
 除 `proc.py` 外任何模块使用 `subprocess`、任何地方出现 `shell=True`、
 `src/` 中出现 `print(...)`，测试即失败。
+
+#### 2.9.1 规则号更正与**逐点**豁免理由（供实现者照抄）
+
+**（a）规则号更正：`S404` 是 preview、未启用。**
+
+上表原将 `import subprocess` 标为"ruff `S404` / bandit `B404`"。2026-09-18 实测（命令与输出见下）：
+`ruff` 的 `S404`（`suspicious-subprocess-import`）**处于 preview**，
+当前配置（未开 `--preview`）下**不生效** ⇒ 该行真正生效的只有 **bandit `B404`**。
+原写法会让读者以为有两条检查在管它，属**登记准确性问题**，故更正为只保留生效的规则号。
+
+```text
+$ uv run ruff rule S404
+This rule is in preview and is not stable. The `--preview` flag is required for use.
+$ uv run ruff check --select S404 src/agent_sec_perf/foundation/proc.py
+warning: Selection `S404` has no effect because preview is not enabled.
+All checks passed!
+```
+
+> **将来若启用** `S404`（例如升级后转正、或显式开 `--preview`），**必须重新登记**本表——
+> 届时该 import 行将同时受 ruff `S404` 与 bandit `B404` 约束。
+> 对照：`S603` **不在** preview（`uv run ruff rule S603` 无 preview 提示），当前生效。
+
+**（b）逐点豁免理由。**
+
+安全基线要求"确需豁免时必须在**该行**写明理由"。实测现状：理由此前只写成
+`foundation/proc.py` L142~L144 的一段注释块，**仅覆盖 1 个调用点**；其余 3 个豁免点
+（`import` 行与另外 2 个调用点）**该行没有任何理由文本** ⇒ 属"**豁免理由与豁免点未逐点对应**"的
+符合性缺口（**该缺口先于 D9 的文件移动就存在**，非移动引入）。
+
+下表给出**每一豁免点**的理由措辞（**可直接抄成行尾注释**）。措辞**由架构师定义、实现者照抄**，
+以避免"登记与实现分叉"。
+
+| 豁免点（实测行号） | 生效规则（实测） | 行内理由措辞（照抄） |
+| --- | --- | --- |
+| `import subprocess`（L23） | bandit **B404** | `—— 本模块是全项目唯一子进程封装层，导入 subprocess 即其职责（登记：ADR-0014 §2.9）` |
+| `subprocess.run`（L145，`run`） | ruff **S603** + bandit **B603** | `—— 不经 shell、参数为列表；执行前施加非特权 uid + rlimit + 最小环境（登记：ADR-0014 §2.9）` |
+| `subprocess.run`（L187，`run_inherit_env`） | ruff **S603** + bandit **B603** | `—— 仅执行自有工具链静态检查、不执行模型产物；不经 shell、参数为列表（登记：ADR-0014 §2.9）` |
+| `subprocess.Popen`（L223，`spawn`） | ruff **S603** + bandit **B603** | `—— 启动常驻 llama-server（自有二进制、绝对路径）；不经 shell、参数为列表（登记：ADR-0014 §2.9）` |
+
+**放置规则（默认）**：理由**追加在扫描器报告的那一行行尾**——即 `import` 行（L23）与三处调用行
+（L145/L187/L223）；其余标记（`# nosec B603` 仍在右括号行）**保持不动**：
+
+```text
+import subprocess  # nosec B404 —— 本模块是全项目唯一子进程封装层，导入 subprocess 即其职责（登记：ADR-0014 §2.9）
+
+        completed = subprocess.run(  # noqa: S603 —— 不经 shell、参数为列表；执行前施加非特权 uid + rlimit + 最小环境（登记：ADR-0014 §2.9）
+```
+
+**实测依据（2026-09-18，探针文件）**：豁免标记后**追加中文文本不会破坏解析**——
+`# noqa: S603 —— …` 仍抑制 `S603` 且**不触发** `RUF100`；`# nosec B404 —— …` 仍被计为 1 条 skip。
+（**等价放置**：也可将同一措辞改贴到该语句的 `# nosec B603` 行尾——**二者只留一处，不要重复**。）
+
+**豁免点与承载关系（实测，一一对应、无多无少）**：
+
+```text
+$ uv run ruff check --select S603 --ignore-noqa src/agent_sec_perf/foundation/proc.py
+S603 ... proc.py:145:21 / 187:… / 223:…
+$ uv run bandit -q --ignore-nosec -r src/agent_sec_perf/foundation/proc.py
+B404 @ L23 ; B603 @ L145 / L187 / L223
+```
+
+⇒ = **3 个调用点**（L145/L187/L223，每个同时受 ruff `S603` 与 bandit `B603` 管）
+\+ **1 个 import**（L23，bandit `B404`）。
 
 ## 3. 备选方案与取舍
 
@@ -210,3 +273,23 @@ bench/daily/<日期>/
   `tests/unit/test_bench_encapsulation.py` 仍然有效；此外已新增
   `tests/unit/test_architecture_layers.py`（ADR-0015 §7.1 的 V1~V6），
   并把封装层判定由"文件名 `proc.py`"升级为"位于 `foundation/` 下的 `proc.py`"。
+
+- **2026-09-18（追加，同日第二轮）**：**豁免登记的两项准确性更正**（均由实测驱动，非采信报告）。
+  1. **规则号更正**：原表将 `import subprocess` 标为"ruff S404 / bandit B404"。实测
+     `ruff rule S404` 报 "in preview … requires `--preview`"、`ruff check --select S404` 报
+     "has no effect because preview is not enabled" ⇒ **`S404` 未启用，真正生效的只有 bandit B404**。
+     原句（照录）：
+
+     > `import subprocess`（ruff S404 / bandit B404）
+
+     已更正为只保留生效规则（见 §2.9），并在 §2.9.1(a) 注明"若将来启用 `S404` 需重新登记"。
+     对照：`S603` **不在** preview、当前生效，故第二行"ruff S603 / bandit B603"**不动**。
+  2. **新增 §2.9.1(b)：逐点豁免理由**。安全基线要求"在该行写明理由"；实测理由是
+     `foundation/proc.py` L142~L144 的**一段注释块、仅覆盖 1 个调用点**，其余 3 个豁免点
+     （L23 与另外 2 个调用点）**该行无理由文本** ⇒ 属符合性缺口（**先于 D9 的文件移动就存在**，
+     非移动引入）。§2.9.1(b) 为 4 个豁免点逐点给出**可直接抄成行尾注释**的措辞与放置规则，
+     附解析安全性实测（追加中文文本后 ruff/bandit 仍正确抑制）。
+     **豁免范围、理由实质与影响面不变**，仅把"理由"落到每一个点。
+  3. **证据（实测命令与输出摘要见 §2.9.1）**：`ruff check --select S603 --ignore-noqa` 报
+     L145/L187/L223；`bandit --ignore-nosec` 报同 3 行 `B603` + L23 的 `B404`
+     ⇒ **3 个调用点 + 1 个 import**，与豁免一一对应、无多无少。
