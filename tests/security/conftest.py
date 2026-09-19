@@ -7,7 +7,14 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
+
+# 让同目录下的共享模块（如 ``_harness_fakes``）以裸模块名可被对抗性用例导入，
+# 不受 pytest 的包导入解析（tests/security 有 __init__.py 但 tests/ 没有）影响。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_sec_perf.contracts.audit import AuditEvent, AuditEventKind, AuditSink
 from agent_sec_perf.contracts.policy import Capability

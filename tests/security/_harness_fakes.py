@@ -31,7 +31,6 @@ from agent_sec_perf.contracts.harness import (
     ApprovalResult,
     ArgumentValidator,
     CapabilityTier,
-    Session,
     SessionConfig,
 )
 from agent_sec_perf.contracts.model import (
@@ -54,6 +53,7 @@ from agent_sec_perf.contracts.tools import (
     ToolResult,
     ToolSpec,
 )
+from agent_sec_perf.harness.session import Session
 
 
 def _now() -> str:
