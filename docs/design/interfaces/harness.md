@@ -617,7 +617,7 @@ class TaskLoop:
         approval: ApprovalGate | None = None,  # None ⇒ 需确认即拒绝（§2.5.5 的 R1）
         sink: AuditSink,
         validator: ArgumentValidator,
-        pack_name: str | None = None,  # 只传**名字**：H2 禁止 loop 依赖 domain_pack（数据以参数传入）
+        pack_name: str | None = None,  # 只传名字：H2 禁止 loop import domain_pack
     ) -> None: ...
 
     def run(self, task: str) -> Iterator[SessionEvent]: ...
