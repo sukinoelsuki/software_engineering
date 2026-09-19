@@ -884,3 +884,17 @@ src/agent_sec_perf/
       `interfaces/README.md` §6 的 `U9` ① 与 `design/architecture.md` §11 的 `G-2`
       也**不得**按已收敛表述。另：`pyproject.toml` 的 `pydantic` 去留（两处用途都不落地 ⇒
       该依赖无调用方）属 **`F` 类**（依赖变更需事先确认），该 ADR 未代拍。
+      - **2026-09-19（续四）**：**`ADR-0020` 已获批准并落地 ⇒ 上面「续三」末段的
+      「提议中 / 批准前 `harness/arguments.py` 不得开工」表述已过期**（ADR 只增不改 ⇒
+      在此追加更正，**不回头改写「续三」原文**）。事实：所有者 2026-09-19 **批准**该 ADR
+      （其状态行改为「已接受」、`docs/adr/README.md` 索引同步）；手写 JSON-Schema 子集校验器
+      随后**已实现并入库**（`harness/arguments.py`，`43a177c`；单测
+      `tests/unit/test_harness_arguments.py`）⇒ `interfaces/README.md` §6 的 `U9` ① 与
+      `design/architecture.md` §11 的 `G-2` **可按已收敛表述**，`harness.md` §5.1 第 8 行的
+      **装配阻塞已解除**。
+      **模块清单依据（领导 2026-09-19 裁决）**：`harness/` 的模块清单 = **本文 §5.4.1
+      ＋ `ADR-0020`**——第 9 件 `harness/arguments.py` 由 `ADR-0020` 引入，
+      **不并入 §5.4.1 的清单条目**（§5.4.1 原文不改）。
+      **本文 §5.1 的分层模型、§5.1.1 的 `R1`~`R5`、§5.2 的组件选型、§5.3 的自研边界、
+      §5.4 的目录结构、§8.1 的 `D1`~`D10` 一律不变**；`pyproject.toml` 的 `pydantic` 去留
+      仍属 **`F` 类**（该 ADR 未代拍，状态不变）。
