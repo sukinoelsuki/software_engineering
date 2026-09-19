@@ -21,17 +21,32 @@
 **两处刻意的不对称（写清理由，避免后人改回）**：
 
 * **异常终止路径不补 ``TOOL_RESULT``**：步 4 的 ``R3``/``R4``（审批通路故障 / 应答形状非法）、
-  步 1 的"不变量被破"与"工具未给审计关联键"会直接以 ``ERROR(INTERNAL)`` +
-  ``TASK_FINISHED(FAILED)`` 收尾，此时该 ``call_id`` 上 ``I1`` 的配对**不成立**。
-  之所以不补：步 6b 的 ``denied_reason`` 被契约 §2.7 的 ``D2`` 限定为**闭集**，其中**没有**
-  "审批通路故障"这一档；补一条 ``TOOL_RESULT`` 就必然要么违反闭集、要么借用
+  步 1 的"名字在 ``exposed`` 内却 ``resolve`` 不到"与"工具未给审计关联键"会直接以
+  ``ERROR(INTERNAL)`` + ``TASK_FINISHED(FAILED)`` 收尾，此时该 ``call_id`` 上 ``I1`` 的配对
+  **不成立**。之所以不补：步 6b 的 ``denied_reason`` 被契约 §2.7 的 ``D2`` 限定为**闭集**，
+  其中**没有**"审批通路故障"这一档；补一条 ``TOOL_RESULT`` 就必然要么违反闭集、要么借用
   ``approval_denied`` 把"基础设施故障"与"人拒绝了"在审计里弄成同形——而 ``R3`` 明令
-  **不得**做后者。故选择"少产出两条事件、不伪造语义"，并把该路径登记为 ``I1`` 的
-  **已知例外**（``H-1`` 的九个场景都不落在它上面）。
+  **不得**做后者；"审计关联键缺失"那条更是**根本无从**构造 ``I3`` 要求的非空 ``audit_id``。
+  ⇒ 契约 §2.2 的 ``I1``（第七版）已就此开出**可判定的例外**：悬空 ``TOOL_CALL``
+  **只允许**出现在"以 ``FAILED`` 终止**且**流中至少一条 ``ERROR(error_kind=INTERNAL)``"的流里；
+  任何 ``status is COMPLETED`` / ``LIMIT_REACHED`` 的流**必须**逐条配对。
+  **该判据由 ``H-1`` 断言**：``tests/unit/test_harness_loop.py`` 的 ``_assert_invariants``
+  **从流本身**判定（**不接受**调用方传入"本场景可以悬空"的开关），并有一条元测试证明它真的会触发。
 * **``ErrorDisposition.FEEDBACK`` 只在工具路径落地**：契约 §2.4 的表把 ``PROTOCOL`` 定为
   **终止**，而"模型响应不合契约"没有回喂载体（``SessionEvent`` 只有 7 种 kind，
   ``ChatMessage`` 也没有"协议错误"位）。故模型调用路径上：``RETRY`` ⇒ 原地重试，
   其余 ⇒ 终止。工具路径的"回喂"由 ``ChatMessage(role=TOOL, tool_call_id=...)`` 承担。
+
+**一条必须先写出来的假设（契约 §8 的 ``T6``）**：本模块把 ``ToolRegistry.specs()`` 当作
+**全量注册集**用——步 1 的"两短码"判定就是 ``specs()`` 与 ``exposed`` 的**差集**：
+在 ``specs()`` 里但不在 ``exposed`` 里 ⇒ ``not_exposed``（**我们把它裁掉了**），
+两边都没有 ⇒ ``unknown_tool``（**模型幻觉**）。
+⚠️ ``contracts/tools.py`` 的 docstring 写的是"返回当前**裁剪后**、可暴露给模型的工具描述"，
+与契约 §3.1 第 2 条 / §3.3 步 1 的用法**不一致**（已登记为 ``T6``，待架构师裁决）。
+**若 ``specs()`` 真的是"已裁剪"的，则 ``not_exposed`` 这一档永远不可达**，
+契约 §6.2 的 ``S1-b`` 第②问会退化成**空断言** ⇒ 该假设**不得**被静默容忍：
+裁决后必须同步三处（``tools.md`` §2.6、``contracts/tools.py`` 的 docstring、本文 §3.3 步 1），
+并相应调整本模块的判定点。
 
 **重试与步数**：``max_steps`` 计的是**模型往返**（ReAct 的"步"）。一次瞬时故障的重试
 **不**新开一步——它仍在同一步内，重试次数由 ``errors.MAX_TRANSIENT_RETRIES`` 独立兜住，
@@ -280,6 +295,8 @@ class TaskLoop:
             registry: 工具注册表。步 1 用它区分"**被裁剪**"（``not_exposed``）与
                 "**模型幻觉**"（``unknown_tool``），步 5 用它解析可执行句柄。以**构造注入的
                 Protocol** 到达（``H1``）：本模块不 import ``tools/`` 的实现模块。
+                ⚠️ 本处**假设** ``specs()`` 返回**全量注册集**（若它返回的是"已裁剪"集合，
+                ``not_exposed`` 这一档就永远不可达）——依据与联动见模块 docstring 的 ``T6`` 段。
             exposed: 由 ``session`` 用 ``trimming.select_tools`` 算好的暴露集合
                 （会话内固定，契约 §3.1 第 3 条）。
             system: 系统提示原文（**唯一可信的指令位**），由 ``session`` 从 ``prompts`` 的常量

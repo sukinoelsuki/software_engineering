@@ -9,10 +9,13 @@
 （:func:`_assert_invariants`，即 ``H-1`` 要求的那个），再让**每个场景**复用它；
 ``H-2``（``seq`` 连续、``TASK_FINISHED`` 唯一且最后）由同一函数覆盖。
 
-**已知例外（显式登记，不静默成立）**：``R3``/``R4`` 等"响应中途终止"的路径上
-``I1`` 的配对不成立（``TOOL_CALL`` 已产出、``TOOL_RESULT`` 不再产出）。
-这些用例显式传 ``expect_pairing=False``，从而把例外**写在测试里**而不是让它悄悄通过。
-理由见 ``harness/loop.py`` 的模块 docstring。
+**``I1`` 的例外由断言判定，不由调用方的开关判定**：``R3``/``R4`` 等"响应中途终止"的路径上
+``TOOL_CALL`` 已产出、``TOOL_RESULT`` 不再产出。契约 §2.2（**第七版**）只允许这种**悬空**出现在
+"以 ``FAILED`` 终止**且**流中至少一条 ``ERROR(error_kind=INTERNAL)``"的流里 ⇒
+``_assert_invariants`` **从流本身**判定（**没有** ``expect_pairing`` 这类开关——否则"例外"会退化成
+"每个用例自己说自己可以不合规"），并由
+:func:`test_the_dangling_call_rule_can_actually_fire` 的元测试证明该判据**真的会触发**。
+理由与联动见 ``harness/loop.py`` 的模块 docstring。
 
 变异探针（逐条能被一个具体改动杀死）：
 
@@ -22,7 +25,9 @@
 * 把 ``R3``（gate 抛异常）吞成一次普通拒绝 ⇒ :func:`test_gate_failure_terminates_the_task` 失败；
 * 把 ``ERROR.text`` 改成 ``str(exc)`` ⇒ :func:`test_error_text_never_echoes_the_exception_message` 失败；
 * 去掉 ``_deny`` 里那条 ``TOOL_CALL/DENY`` 审计 ⇒ ``I4`` 的回放断言失败；
-* 把 ``_event`` 的 ``seq`` 改成每次 ``run`` 从 0 开始 ⇒ :func:`test_seq_is_not_reset_across_runs` 失败。
+* 把 ``_event`` 的 ``seq`` 改成每次 ``run`` 从 0 开始 ⇒ :func:`test_seq_is_not_reset_across_runs` 失败；
+* 把 ``I1`` 例外的判定删掉、或退回成"调用方传一个 ``expect_pairing`` 开关" ⇒
+  :func:`test_the_dangling_call_rule_can_actually_fire` 失败（判据会退化成"被默认"）。
 """
 
 from __future__ import annotations
@@ -371,17 +376,29 @@ def _build(
 # ---------------------------------------------------------------------------
 
 
+def _dangling_call_ids(events: Sequence[SessionEvent]) -> set[str]:
+    """模型请求过、但流中**没有** ``TOOL_RESULT`` 的 ``call_id``（§2.2 的 ``I1`` 例外面）。"""
+    requested: set[str] = set()
+    for event in events:
+        if event.kind is SessionEventKind.MODEL_RESPONSE and event.response is not None:
+            requested.update(call.call_id for call in event.response.tool_calls)
+    answered = {event.call_id for event in events if event.kind is SessionEventKind.TOOL_RESULT}
+    return {call_id for call_id in requested if call_id not in answered}
+
+
 def _assert_invariants(
     events: Sequence[SessionEvent],
     *,
     sink: _FakeSink | None = None,
     first_seq: int = 0,
-    expect_pairing: bool = True,
 ) -> None:
     """把契约 §2.2 的 ``I1``~``I10`` 一次断言完（``H-1`` / ``H-2``）。
 
-    ``expect_pairing=False`` 只用于**显式登记的**例外：响应中途终止的路径上
-    ``TOOL_CALL`` 没有配对的 ``TOOL_RESULT``（见模块 docstring 与 ``loop.py`` 的说明）。
+    ``I1`` 的**例外**（第七版）由本函数**从流本身**判定，而**不是**由调用方开关：
+    悬空 ``TOOL_CALL`` 只允许出现在"以 ``FAILED`` 终止**且**流中至少一条
+    ``ERROR(error_kind=INTERNAL)``"的流里；任何 ``COMPLETED`` / ``LIMIT_REACHED`` 的流
+    必须逐条配对。⇒ "没有 ``TOOL_RESULT``"本身不能是静默的，它必须伴随**响亮的终止**。
+    （该判据本身由 :func:`test_the_dangling_call_rule_can_actually_fire` 证明会触发。）
     """
     assert events, "事件流不得为空"
     session_ids = {event.session_id for event in events}
@@ -423,6 +440,10 @@ def _assert_invariants(
     tool_calls = [event for event in events if event.kind is SessionEventKind.TOOL_CALL]
     tool_results = [event for event in events if event.kind is SessionEventKind.TOOL_RESULT]
     position = {id(event): index for index, event in enumerate(events)}
+    has_internal_error = any(
+        event.kind is SessionEventKind.ERROR and event.error_kind is SessionErrorKind.INTERNAL
+        for event in events
+    )
 
     # I1 / I2 / I4：逐条模型请求的配对与相对位置。
     for event in events:
@@ -435,7 +456,16 @@ def _assert_invariants(
             assert len(calls) == 1, f"{call.call_id} 的 TOOL_CALL 不是恰好一条"
             assert calls[0].tool_name == call.name
             assert len(calls[0].__dict__) == len(EXPECTED_EVENT_FIELDS)
-            if not expect_pairing:
+            if not results:
+                # §2.2 的 I1 例外：**悬空 TOOL_CALL 必须伴随响亮的终止**。
+                assert finished[0].status is TaskStatus.FAILED, (
+                    f"{call.call_id} 悬空，但流以 {finished[0].status} 终止："
+                    "悬空只允许出现在 FAILED 的流里"
+                )
+                assert has_internal_error, (
+                    f"{call.call_id} 悬空，但流中没有 ERROR(error_kind=INTERNAL)："
+                    "悬空必须伴随响亮的终止"
+                )
                 continue
             assert len(results) == 1, f"{call.call_id} 的 TOOL_RESULT 不是恰好一条"
             assert position[id(calls[0])] < position[id(results[0])]
@@ -474,6 +504,63 @@ def _assert_invariants(
             assert SENTINEL not in (value or "")
     if sink is not None:
         assert all(SENTINEL not in repr(dict(audit.detail)) for audit in sink.events)
+
+
+def _raw_event(kind: SessionEventKind, seq: int, **fields: object) -> SessionEvent:
+    """手工构造一条事件（**只用于元测试**：证明 H-1 的判据真的会触发）。"""
+    return SessionEvent(
+        kind=kind,
+        session_id="s-synthetic",
+        seq=seq,
+        timestamp="2026-09-19T00:00:00+00:00",
+        **fields,
+    )
+
+
+@pytest.mark.unit
+def test_the_dangling_call_rule_can_actually_fire() -> None:
+    """元测试：``H-1`` 的 ``I1`` 例外判据**真的会触发**（否则"被断言"退化成"被默认"）。
+
+    没有这一条，``_assert_invariants`` 里的悬空检查在"判定写错了"时会**静默通过**——
+    与 ``test_harness_internals.py::test_the_axis_guard_can_actually_fire`` 同一取向
+    （``Makefile`` 对 ``LOCAL_HOOKS`` 的同一条教训：声称的缓解必须能被实测）。
+    """
+    response = _response(_call("read_file", call_id="c1"))
+
+    # ① 悬空 + COMPLETED ⇒ 必须失败（悬空不得出现在"正常结束"的流里）。
+    completed = [
+        _raw_event(SessionEventKind.MODEL_RESPONSE, 0, response=response),
+        _raw_event(SessionEventKind.TOOL_CALL, 1, call_id="c1", tool_name="read_file"),
+        _raw_event(
+            SessionEventKind.ERROR, 2, error_kind=SessionErrorKind.INTERNAL, text="伪造的内部错误"
+        ),
+        _raw_event(SessionEventKind.TASK_FINISHED, 3, status=TaskStatus.COMPLETED, text="完成"),
+    ]
+    with pytest.raises(AssertionError, match="悬空只允许出现在 FAILED 的流里"):
+        _assert_invariants(completed)
+
+    # ② 悬空 + FAILED，但**没有** ERROR(INTERNAL) ⇒ 也必须失败（"静默地没有 TOOL_RESULT"不行）。
+    silent = [
+        _raw_event(SessionEventKind.MODEL_RESPONSE, 0, response=response),
+        _raw_event(SessionEventKind.TOOL_CALL, 1, call_id="c1", tool_name="read_file"),
+        _raw_event(
+            SessionEventKind.ERROR, 2, error_kind=SessionErrorKind.TRANSIENT, text="不可信断言"
+        ),
+        _raw_event(SessionEventKind.TASK_FINISHED, 3, status=TaskStatus.FAILED, text="失败"),
+    ]
+    with pytest.raises(AssertionError, match="必须伴随响亮的终止"):
+        _assert_invariants(silent)
+
+    # ③ 真终止路径的形状（悬空 + FAILED + INTERNAL）⇒ 合法，必须通过。
+    legitimate = [
+        _raw_event(SessionEventKind.MODEL_RESPONSE, 0, response=response),
+        _raw_event(SessionEventKind.TOOL_CALL, 1, call_id="c1", tool_name="read_file"),
+        _raw_event(
+            SessionEventKind.ERROR, 2, error_kind=SessionErrorKind.INTERNAL, text="通路故障"
+        ),
+        _raw_event(SessionEventKind.TASK_FINISHED, 3, status=TaskStatus.FAILED, text="终止"),
+    ]
+    _assert_invariants(legitimate)
 
 
 # ---------------------------------------------------------------------------
@@ -736,7 +823,9 @@ def test_gate_failure_terminates_the_task() -> None:
     error = next(event for event in events if event.kind is SessionEventKind.ERROR)
     assert error.error_kind is SessionErrorKind.INTERNAL
     assert events[-1].status is TaskStatus.FAILED
-    _assert_invariants(events, sink=sink, expect_pairing=False)
+    # 本场景正是 §2.2 的 I1 例外：悬空 TOOL_CALL + FAILED + ERROR(INTERNAL)。
+    assert _dangling_call_ids(events) == {"c1"}
+    _assert_invariants(events, sink=sink)
 
 
 @pytest.mark.unit
@@ -771,7 +860,9 @@ def test_malformed_approval_answer_terminates_the_task(bad_answer: object) -> No
         for event in events
     )
     assert events[-1].status is TaskStatus.FAILED
-    _assert_invariants(events, expect_pairing=False)
+    # 同样是 §2.2 的 I1 例外：悬空 TOOL_CALL，但终止是响亮的（FAILED + INTERNAL）。
+    assert _dangling_call_ids(events) == {"c1"}
+    _assert_invariants(events)
 
 
 # ---------------------------------------------------------------------------
