@@ -63,6 +63,12 @@ dependencies = [
     "tree-sitter-python>=0.25",  # F1 · Python 语法包（与主包 0.26 运行期实测兼容）
 ]
 
+[project.scripts]
+# 控制台入口（`REQ-UX-03`「一条命令安装」）：装好即可 `agent-sec-perf run "<task>" [OPTIONS]`。
+# 指向 `cli/app.py::main`——它**不是**第二条实现路径：`main()` 只调 Typer 应用，
+# 与 `python -m agent_sec_perf.cli.app` 同源（入口只有一处）。
+agent-sec-perf = "agent_sec_perf.cli.app:main"
+
 [project.optional-dependencies]
 # 开发依赖（`make setup` 会安装）
 dev = [
