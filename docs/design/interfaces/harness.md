@@ -842,7 +842,7 @@ ChatMessage(role=Role.TOOL, content=<观察内容>, tool_call_id=call.call_id)
 `tool_call_id` **必须**等于 `call.call_id`：它是 `TOOL` 消息与 `ASSISTANT.tool_calls` 的唯一
 配对键，缺失会让回指断裂、审计无法回放（`model.md` §2.1 的不变式）。
 
-### 3.4 参数校验器（**新增 Protocol**；实现选型：**手写 JSON-Schema 子集校验器** —— `ADR-0020`，已接受）
+### 3.4 参数校验器（**新增 Protocol**；实现选型：**手写 JSON-Schema 子集校验器** —— `ADR-0020`，已接受、已实现）
 
 ```python
 class ArgumentValidator(Protocol):
@@ -1137,7 +1137,7 @@ with Session(
 | `security/capabilities.py` | **新增**一个纯函数（建议 `narrow_granted(granted: CapabilitySet, allowlist: frozenset[Capability]) -> CapabilitySet`）实现"只能收窄"的交集；装配点必须经它 |
 | `tests/unit/test_harness_*.py` | §6.1 的 `H-1`~`H-10`（另需覆盖 §5.2 的渲染分支与退出码表：每一 `kind` 至少一条用例） |
 | `tests/security/test_harness_*.py` | §6.2 的 `S1` / `S1-b` / `S1-c` / `S3` / `S-new-1`~`6` |
-| `harness/arguments.py` | **新建**（`ADR-0020`，**已接受**）：手写 JSON-Schema 子集校验器的唯一实现（无状态；受支持子集 / 解析顺序 / 错误消息形状见 `ADR-0020` §5）。落地清单见 **§7.2** |
+| `harness/arguments.py` | **已落**（2026-09-19，`43a177c`；`ADR-0020` 已接受）：手写 JSON-Schema 子集校验器的唯一实现（无状态；受支持子集 / 解析顺序 / 错误消息形状见 `ADR-0020` §5）。落地清单见 **§7.2** |
 | `contracts/tools.py` + `tools/registry.py` | **docstring 同步（`T6` 裁决）**：`ToolRegistry.specs()` 的口径由"裁剪后"改为"**全量注册集**"（`tools.md` §2.6 已更正）。**只改 docstring，不改行为**——实现本就返回全部已注册描述 |
 | `docs/design/interfaces/audit.md` | **已落**（2026-09-19，`be63b31`）：§2.2 的 kind→outcome 表把 `TOOL_CALL` 的允许集放宽为 `{OK, ERROR, DENY}` + `D1~D4` + 修订记录。**下游联动**：`contracts/audit.py` 与 `observability/audit.py` **均无需改动**（已读源码核实：成员本就存在；读取侧只校验枚举取值，不校验 kind×outcome 组合）；**0 处测试会因此翻红**（全仓无 kind→outcome 允许集断言） |
 | `docs/design/architecture.md` | **已落**（2026-09-19）：§2.4 表首行与 §5.2 同步为同步 `Iterator`，§12 登记修订 |
@@ -1170,11 +1170,11 @@ with Session(
 
 | # | 文件 | 必做动作 | 关联 |
 | --- | --- | --- | --- |
-| 1 | `harness/arguments.py` | **新建** `SubsetArgumentValidator`：无状态、纯函数式；只依赖 `contracts` + `foundation.errors` + `foundation.logging`；**不** import 任何 harness 兄弟模块 | `ADR-0020` §5 |
-| 2 | `tests/unit/test_harness_arguments.py` | **新建**：§6.1 的 `H-3` 子集用例 + 新增的 `H-11` | `ADR-0020` §7 |
-| 3 | `tests/unit/test_harness_internals.py` | `LEAF_UNITS` 增加 `arguments` —— **否则 H2（叶子零依赖）对新模块不生效**（"检查集合与新模块漂移"正是本项目要防的形状） | `ADR-0020` §6 负面后果 3 |
-| 4 | `cli/` 装配点 | 注入该实现（§5.1 第 8 行） | `ADR-0020` §8 动作 4 |
-| 5 | `contracts/tools.py` + `tools/registry.py` | `specs()` 的 docstring 由"裁剪后"改为"**全量注册集**"（`T6` 裁决，见 §8 的 `T6`） | `T6` |
+| 1 | `harness/arguments.py` | **新建** `SubsetArgumentValidator`：无状态、纯函数式；只依赖 `contracts` + `foundation.errors` + `foundation.logging`；**不** import 任何 harness 兄弟模块。✅ **已落**（2026-09-19，`43a177c`） | `ADR-0020` §5 |
+| 2 | `tests/unit/test_harness_arguments.py` | **新建**：§6.1 的 `H-3` 子集用例 + 新增的 `H-11`。✅ **已落**（`43a177c`） | `ADR-0020` §7 |
+| 3 | `tests/unit/test_harness_internals.py` | `LEAF_UNITS` 增加 `arguments` —— **否则 H2（叶子零依赖）对新模块不生效**（"检查集合与新模块漂移"正是本项目要防的形状）。✅ **已落**（`2423d99`：`LEAF_UNITS` 已含 `arguments`） | `ADR-0020` §6 负面后果 3 |
+| 4 | `cli/` 装配点 | 注入该实现（§5.1 第 8 行）。✅ **已落**（`cli/app.py`，`SubsetArgumentValidator()`） | `ADR-0020` §8 动作 4 |
+| 5 | `contracts/tools.py` + `tools/registry.py` | `specs()` 的 docstring 由"裁剪后"改为"**全量注册集**"（`T6` 裁决，见 §8 的 `T6`）。✅ **已落**（`df55cdb`） | `T6` |
 
 ---
 
