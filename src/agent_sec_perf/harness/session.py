@@ -44,7 +44,7 @@ from agent_sec_perf.contracts.model import ChatMessage, ModelClient
 from agent_sec_perf.contracts.policy import PolicyEngine
 from agent_sec_perf.contracts.tools import ToolRegistry, ToolSpec
 from agent_sec_perf.foundation.paths import resolve_within
-from agent_sec_perf.harness import errors, prompts, trimming
+from agent_sec_perf.harness import prompts, trimming
 from agent_sec_perf.harness.domain_pack import DomainPack
 from agent_sec_perf.harness.loop import TaskLoop
 
@@ -100,8 +100,8 @@ class Session(SessionContract):
                 ``max_steps`` / ``max_consecutive_failures`` 非正整数；
                 ``tool_timeout_s`` / ``max_prompt_tokens`` 非有限正数。
             PathNotAllowedError: ``working_dir`` 不在 ``allowed_roots`` 内（含符号链接逃逸）。
-            HarnessInternalError: ``prompts`` 的 SYSTEM 常量未写入 ``content``（不可达；
-                出现即说明模板被改坏，按 fail-secure 拒绝启动而不是继续发空提示）。
+            ValueError: ``prompts.build_system_prompt`` 收到未知档位（``prompts`` 自己的
+                校验，**不回落**到任何档位：档位不确定时应显式取最保守的 ``BASIC``）。
         """
         _check_config(config)
 
@@ -111,11 +111,11 @@ class Session(SessionContract):
             registry.specs(), tier=config.capability_tier, allowlist=allowlist
         )
 
-        system_message = prompts.build_system_message(config.capability_tier)
-        system = system_message.content
-        if system is None:
-            msg = "内部错误：prompts.build_system_message 未写入 content"
-            raise errors.HarnessInternalError(msg)
+        # 取 `str` 形态（契约 §3.1 第 5 条，**第七版**）：`context.assemble` 要的就是 `str`，
+        # 因而没有 `None` 分支。它与 `build_system_message(tier)` 同源，后者 =
+        # `ChatMessage(SYSTEM, build_system_prompt(tier))` ⇒ SYSTEM 位置的内容**只**由
+        # `prompts` 的常量模板产生，不接收任何外部内容（§4.4 第 2 条的结构性保证）。
+        system = prompts.build_system_prompt(config.capability_tier)
 
         pack_message = None
         if pack is not None:

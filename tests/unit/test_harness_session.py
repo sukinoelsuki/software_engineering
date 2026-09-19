@@ -39,6 +39,7 @@ from agent_sec_perf.contracts.model import (
 from agent_sec_perf.contracts.policy import Capability, PolicyDecision, PolicyRequest, RiskLevel
 from agent_sec_perf.contracts.tools import ExecutionContext, ToolCallRequest, ToolResult, ToolSpec
 from agent_sec_perf.foundation.errors import PathNotAllowedError
+from agent_sec_perf.harness import prompts
 from agent_sec_perf.harness.domain_pack import DomainPack
 from agent_sec_perf.harness.session import Session
 
@@ -325,6 +326,22 @@ def test_pack_allowlist_cannot_widen_beyond_the_tier_budget(tmp_path: pathlib.Pa
     list(session.run("任务"))
 
     assert [spec.name for spec in _tools_of(model)] == ["read_file"]
+
+
+@pytest.mark.unit
+def test_system_position_uses_the_frozen_prompt_template(tmp_path: pathlib.Path) -> None:
+    """SYSTEM 位置的内容 = ``prompts.build_system_prompt(tier)``（§3.1 第 5 条，第七版）。
+
+    钉住"取 ``str`` 形态"这个来源：SYSTEM 文本只由 ``prompts`` 的常量模板产生，
+    不接受任何外部内容（§4.4 第 2 条的结构性保证）。
+    """
+    session, model, _, _ = _build(tmp_path=tmp_path, script=[_response(content="完成")])
+
+    list(session.run("任务"))
+
+    system_message = model.requests[0][0][0]
+    assert system_message.role is Role.SYSTEM
+    assert system_message.content == prompts.build_system_prompt(CapabilityTier.BASIC)
 
 
 @pytest.mark.unit
