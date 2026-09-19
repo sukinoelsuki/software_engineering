@@ -177,6 +177,14 @@ class SessionEvent:
   `response.content` / `result.content` / `result.error` / `tool_name`。
   ⇒ 任何把参数值写进 `text`、`detail`、日志或审计的理由都必须在 `argument_validator` 里
   换成"哪个键、期望什么类型"（§3.4 第 4 条）。
+  ⚠️ **澄清（第八版）：`text` 的禁区是"不可信片段"，判据是"这段文本由谁产生"。**
+  | 片段 | 可否进 `text` | 理由 |
+  | --- | --- | --- |
+  | 参数**值**（任何形态 / 长度 / 转义） | ❌ | 不可信内容；`V4` 与 §3.3 步 2 都明令不得 |
+  | **未声明（未知）键的名字** | ❌ | **模型自带** ⇒ 不可信文本。反例：模型可把 `{"\u001b[2J…": 1}` 当作未知键，回显即把**攻击者可控字节**送进一个"干净字段"（甚至终端控制序列） |
+  | `parameters_schema` **已声明的键名** | ✅ | **我方 schema 产生**，且模型本就持有它；它是"哪个键、期望什么类型"（`V4`）**唯一可用**的表达。仍须经 `sanitize_for_display` 且受长度上限约束（`loop` 侧已有 `_VALIDATOR_DETAIL_LIMIT`） |
+  反之，若把已声明的键名也禁掉，`V4` 就只剩"某个参数类型不符"这种无信息量的说法 ⇒
+  既违反 `REQ-HARNESS-06` 的"回喂自恢复"，也让唯一的处置路径失效。
 - **I9（`seq`）**：`seq` 在**一个 `Session` 实例**的生命周期内从 0 起连续无空洞；
   多次 `run` 不重置（§2.9）。
 - **I10（无凭据）**：事件**不含**任何凭据字段（C8）；`SessionEvent` 不暴露 `os.environ`，
@@ -807,7 +815,7 @@ class ArgumentValidator(Protocol):
 | V1 | 输入 `arguments_json` 是**不可信文本**；必须按 `spec.parameters_schema` **严格**校验：类型、`required`、以及**未知键拒绝**（`additionalProperties: false` 的语义） | `REQ-SEC-03` / `ADR-0015` §5.1.2 的关键约定：解析与校验**只能**在 HARNESS 侧发生 |
 | V2 | 输出只含 schema 声明过的键，值的类型与 schema 一致；**不得**把原始 JSON 的其它片段带出来 | 下游（`PolicyEngine` / `Tool.invoke`）据此判定"这是已校验参数" |
 | V3 | 失败 ⇒ 抛 `ToolArgumentsInvalidError`（`foundation/errors.py` **新增**，`BenchError` 子类） | 单一异常层次（`model.md` §3 的既有依据）：异常分裂成两套基类会让 `except BenchError` 漏接 |
-| V4 | **错误信息不得回显原始不可信内容**：只描述"哪个键、期望什么类型"，**不得**包含参数值、也**不得**包含 `arguments_json` 的任何片段；键名经 `sanitize_for_display` 截断 | I8；`REQ-SEC-07`（不入日志）；也是"回喂内容不带原始参数"的前提 |
+| V4 | **错误信息不得回显原始不可信内容**：只描述"哪个键、期望什么类型"，**不得**包含参数值、也**不得**包含 `arguments_json` 的任何片段。⚠️ **键名分两类**（**第八版澄清**，判据 = 谁产生它）：`parameters_schema` **已声明的键名** **可以**出现（它是"哪个键"唯一可用的表达），但须经 `sanitize_for_display` 截断；**未声明的（未知）键名不得出现**——那是**模型自带**的不可信文本，回显等于把攻击者可控字节送进 `text`（`I8` 的反例见 §2.2） | I8；`REQ-SEC-07`（不入日志）；也是"回喂内容不带原始参数"的前提 |
 | V5 | **输入大小上限**：`arguments_json` 超过上限（建议 `64 KiB`，与 `tools/registry.py::MAX_TOOL_OUTPUT_BYTES` 同量级）⇒ **直接拒绝**，不尝试解析 | 防"用超大 JSON 撑爆校验器"（`SECURITY.md`：限制输入体积） |
 | V6 | **无状态、纯函数式**：不得访问文件系统 / 网络 / 环境变量，不得缓存跨调用状态 | 可并发调用；单测可用最小输入覆盖 |
 
@@ -1121,6 +1129,8 @@ with Session(
 | 2026-09-19 | **第六版（更正第三处自相矛盾：H2 与 `DomainPackError` 的落点打架）**：§3.1 的 `errors.py` 段把 **`DomainPackError` 定义在 `harness/errors.py`**（§7 改动清单同此），§4.3 又要求 `load_pack` 在各失败模式下**抛 `DomainPackError`**；但 §3.2 的 **H2** 原文是"六个叶子**两两之间互不 import**"，§3.1 的 `domain_pack` 段又写"**只依赖 contracts + foundation**" ⇒ **`domain_pack → errors` 同时被两处禁止**，而它是 §4.3 的**硬要求**。该矛盾**已被已落地的机器检查当场抓出**（`tests/unit/test_harness_internals.py::test_leaf_modules_have_no_mutual_dependencies` 报 `domain_pack.py -> errors`），且**发生在共享工作树上 ⇒ 两名成员的门禁同时变红**。**处置**：给 H2 开**唯一例外**——`harness/errors.py` 是**汇点**，任何 harness 模块可 import 其异常类型，而 `errors` 自身**不得** import 任何 harness 内部模块；§3.1 的 `domain_pack` 依赖说明同步。**被否决**：把 `DomainPackError` 搬到 `foundation/errors.py`（会让 L3 语义漂到共享层，且与既有落点裁决冲突）。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 实现侧按契约写 `domain_pack.py` 时**被机器检查拦下**（不是被人读出来）。⇒ 两处教训：① 这是**第三次**同一形状（同一文件内两处表述打架：`prompts` 旧写法 / `TaskLoop.pack` / `DomainPackError`），**H2 这类"禁止式"条款容易与其它条款的硬要求对撞**；② **判据写进测试之后，文档矛盾的代价从"评审时被发现"变成"门禁当场变红"**——这次的代价是**共享工作树上所有人的门禁一起红**（§3.4(c) 的老问题），但**红得早**远比**埋到实现里**好 |
 
 | 2026-09-19 | **第七版（补三处实现侧必需但契约漏写的接口，并给 I1 开一处**可判定**的例外）**：① §3.1 的 `TaskLoop.__init__` 增加 **`registry: ToolRegistry`**、**`system: str`**、**`data_context: tuple[ChatMessage, ...] = ()`** 三个 keyword-only 入参，并在 §3.1 的 `session` 构造期清单补第 5 条说明来源（`TaskLoop` 原签名**无法实现 §3.3**：步 1 要 `registry.specs()` 才能区分 `not_exposed`/`unknown_tool`、步 5 要 `registry.resolve()` 才拿得到执行句柄，而 `exposed: tuple[ToolSpec, ...]` 是纯数据；`context.assemble` 的调用者是 `loop`（§3.2 的 `L --> C`），但 loop 原来既拿不到 `system` 也拿不到 `data_context`）；② §2.2 的 **I1** 增加**唯一例外**：三条"我方不变量/基础设施故障"路径（`R3`/`R4` 审批通路故障、`resolve` 返回 `None`、工具 `audit_id` 为空）**允许悬空 `TOOL_CALL`**，但**必须**伴随 `ERROR(INTERNAL)` + `TASK_FINISHED(FAILED)`，并给出**可机器检查的判据**（悬空只允许出现在 FAILED+INTERNAL 的流里）——**不补 `TOOL_RESULT` 的理由**：`D2` 的 `denied_reason` 是闭集且没有"通路故障"档，借用 `approval_denied` 会让"基础设施故障"与"人拒绝了"**同形**（`R3` 明令不得），路径③更根本没有 `audit_id` 可用；③ §2.9 如实登记**teardown 四步中只有两步有载体**（`Tool` Protocol 无 `close()` ⇒ 工具一步无可调用接口；`llama-server` 一步在 `ModelClient.close()` 内部），本轮可观察顺序为 `model.close()` → `sink.flush()`，`H-9` 同步。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 除 I1 的例外条款外一律不变**；`contracts/harness.py` **无需改动** | 实现侧 `impl-harness-core` 在写 `loop.py` 前的**阻塞上报**（附 §3.3 / §3.1 / §3.2 的内部证据）与**附带发现**（I1 与 `R3`/`R4` 不能同时成立）。⚠️ **注：`loop.py` 已按这三项新增入参先行入库（`a9f73ee`）**——本版是**事后追认**，不是"先批准后实现"；领导已核实它未改动 `contracts/` 且未触碰其它文件域，故判为**可追认**（不是"合规流程"的样板） |
+
+| 2026-09-19 | **第八版（澄清 `I8` 与 `V4` 的张力：键名能不能进 `text`）**：实现侧上报——§3.3 步 2 要求"回喂内容 = 校验器的中文说明"、§3.4 的 `V4` 明文许可"只描述**哪个键**、期望什么类型"，而 §2.2 的 `I8` 又写"`text` 不得包含其**任何片段**"⇒ 两句字面冲突（"键名"正是 `arguments_json` 的片段）。**处置**：把判据从"是不是片段"换成"**由谁产生**"——① 参数**值** ❌；② **未声明的（未知）键名** ❌（**模型自带 ⇒ 不可信文本**；反例：模型可把 `{"\u001b[2J…": 1}` 当未知键，回显就是把攻击者可控字节送进干净字段、甚至终端控制序列）；③ `parameters_schema` **已声明的键名** ✅（我方 schema 产生、模型本就持有，且是"哪个键"唯一可用的表达），仍须 `sanitize_for_display` + 长度上限（`loop` 侧已有 `_VALIDATOR_DETAIL_LIMIT = 200`）。§2.2 的 I8 与 §3.4 的 `V4` **两处同步**。**§2 的类型 / 成员 / 不变式名称一律不变**（只澄清 I8 的判据）；`contracts/harness.py` **无需改动** | 实现侧 `impl-harness-core` 的主动上报（它按"任何**值**片段"落地并说明该读法与 `V4` 相容）。⚠️ **对 `cli/validator` 的约束**：这条必须在**校验器实现**里落地——`S1-c` 的 sentinel 用例只覆盖"值"，**未声明键名**这一面**尚无用例**（已列入波 4 的验证范围） |
 
 **待同步项**（本文件已给规范；逐项状态如下）：
 
