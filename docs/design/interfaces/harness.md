@@ -1,9 +1,9 @@
 # 契约：`contracts/harness.py`（L3 编排边界与会话事件流）
 
-- 对应模块：`src/agent_sec_perf/harness/`（L3 编排层，8 件：`session` / `loop` / `prompts` /
-  `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack`）
-  ——`ADR-0020`（**已接受**）新增**第 9 件** `arguments.py`（手写 JSON-Schema 子集校验器，
-  见 §3.1 与 §7.2）；批准前**不得开工**
+- 对应模块：`src/agent_sec_perf/harness/`（L3 编排层，**9 件**：`session` / `loop` / `prompts` /
+  `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` / `arguments`）
+  ——第 9 件 `arguments.py`（手写 JSON-Schema 子集校验器）由 `ADR-0020` 定案，
+  该 ADR **已于 2026-09-19 获批准并落地**（见 §3.1 与 §7.2）
 - 上游决策：ADR-0015 §5.1.2（`UX ↔ HARNESS` 行 + `HARNESS ↔ CAPABILITY` 行 + 「关键约定」）、
   §5.3 自研模块 2/4/5、§5.4.1、§7.2（`S1`/`S3`）、§7.3
 - 依赖：`contracts/model.py`（`ModelResponse` / `ChatMessage` / `CapabilityTier`）、
@@ -491,7 +491,7 @@ class Session(Protocol):
 
 ## 3. `harness/` 内部接缝（"能并行"的前提）
 
-### 3.1 8 件的职责与对外签名（`ADR-0020` 提议新增第 9 件：`arguments.py`）
+### 3.1 9 件的职责与对外签名（第 9 件 `arguments.py` 由 `ADR-0020` 定案并已落地）
 
 **哪些类型进 `contracts/`（判据，不得只记结论）**：
 
@@ -770,7 +770,7 @@ flowchart TD
 | # | 禁止项 | 理由 |
 | --- | --- | --- |
 | H1 | `harness/**` **不得** import `model` / `tools` / `security` / `observability` / `cli` 的**任何实现模块** | 它们全部以**构造注入的 Protocol** 到达（§3.1 的构造签名）。这条比对 `architecture.md` §2.3 的白名单**更严**（白名单是**允许**而不是**必须**）：它让"只读契约写 fake 跑单测"（`ADR-0015` §7.3）成为可能，并挡住"顺手 `from ...tools.files import ReadFileTool`"这类把 L3 与 L2 实现焊死的改动 |
-| H2 | **叶子模块之间零依赖**：`prompts` / `trimming` / `context` / `checkpoint` / `domain_pack` 两两之间**互不 import**；`loop` 不 import `session`，`loop` 不 import `domain_pack`。**唯一例外是 `harness/errors.py`（汇点）**：任何 harness 模块**可以** import 它的异常类型（`HarnessError` / `HarnessInternalError` / `DomainPackError`——异常只有一份定义），但 **`errors` 自身不得 import 任何 harness 内部模块**（否则汇点性质被破、可能出现环） | 数据由 `session` 从 `domain_pack` 取出后**以参数传入**（§3.1 的签名已体现：`trimming` 收 `allowlist`，`prompts` 收 `fragments`）。harness 内部若长成一张网，8 件模块的并行开工立刻退化为串行。**为什么给 `errors` 开口子**：`domain_pack` 必须抛 `DomainPackError`（§4.3），而该类按 §3.1 / §7 的裁决**就定义在 `harness/errors.py`**；`errors` 本身零 harness 内部依赖 ⇒ 指向它的边**不引入环**，是"共享词汇"而不是"网"。**被否决的替代方案**：把 `DomainPackError` 搬到 `foundation/errors.py` 以维持 H2 字面严格——否决理由：它会把 L3 子系统的语义漂到全项目共享层，且 `harness/errors.py` 的落点已由既有裁决固定 |
+| H2 | **叶子模块之间零依赖**：`prompts` / `trimming` / `context` / `checkpoint` / `domain_pack` 两两之间**互不 import**；`loop` 不 import `session`，`loop` 不 import `domain_pack`。**唯一例外是 `harness/errors.py`（汇点）**：任何 harness 模块**可以** import 它的异常类型（`HarnessError` / `HarnessInternalError` / `DomainPackError`——异常只有一份定义），但 **`errors` 自身不得 import 任何 harness 内部模块**（否则汇点性质被破、可能出现环） | 数据由 `session` 从 `domain_pack` 取出后**以参数传入**（§3.1 的签名已体现：`trimming` 收 `allowlist`，`prompts` 收 `fragments`）。harness 内部若长成一张网，各模块的并行开工立刻退化为串行。**为什么给 `errors` 开口子**：`domain_pack` 必须抛 `DomainPackError`（§4.3），而该类按 §3.1 / §7 的裁决**就定义在 `harness/errors.py`**；`errors` 本身零 harness 内部依赖 ⇒ 指向它的边**不引入环**，是"共享词汇"而不是"网"。**被否决的替代方案**：把 `DomainPackError` 搬到 `foundation/errors.py` 以维持 H2 字面严格——否决理由：它会把 L3 子系统的语义漂到全项目共享层，且 `harness/errors.py` 的落点已由既有裁决固定 |
 | H3 | **需要直接 import L2 实现时停下上报**，不得默认放宽 H1 | 与"接口先行"的流程一致：改接口先过架构师（`CODEBUDDY.md` §10.2 规则 3） |
 
 **建议的机器检查**（`tests/unit/test_harness_internals.py`，实现者落）：H1 一条（扫描 `harness/`

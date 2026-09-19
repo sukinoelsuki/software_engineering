@@ -29,7 +29,7 @@
 
 - **已实现**：`contracts/`（6 模块）、`foundation/`（5 件）、`security/{capabilities,policy}`、
   `observability/audit`、`model/client`（**仅本地回环**）、`tools/{registry,files,shell}`、
-  **`harness/`（8 件）**、`bench/`；
+  **`harness/`（9 件）**、`bench/`；
 - **未开工**：`cli/`（3 件 —— **唯一整层未开工的层**）、`security/sandbox/`、`security/refusal.py`、
   `model/{router,probe,assets}.py`、`tools/search.py`、`observability/tracing.py`。
 
@@ -57,7 +57,7 @@
 flowchart TD
     subgraph V["纵向层（依赖方向自上而下，单向）"]
         UX["L4 表现层 UX — cli/<br/>Typer 应用 · Rich 渲染 · 交互/非交互 · 权限确认<br/>【未开工：仅 __init__.py 骨架】"]
-        HARNESS["L3 编排层 HARNESS — harness/<br/>ReAct 循环 · 工具裁剪 · 提示分级 · 检查点 · 上下文引擎 · 领域包<br/>【8 件已实现；ADR-0020 提议新增第 9 件 arguments.py】"]
+        HARNESS["L3 编排层 HARNESS — harness/<br/>ReAct 循环 · 工具裁剪 · 提示分级 · 检查点 · 上下文引擎 · 领域包<br/>【9 件已实现，含 ADR-0020 的 arguments.py】"]
         CAP["L2 能力层 CAPABILITY<br/>model/ 客户端【本地已实现；router/probe/assets 未开工】<br/>tools/ registry·files·shell【已实现；search 未开工】"]
         FND["L1 基础设施层 FOUNDATION — foundation/<br/>errors · paths · proc · config · logging<br/>【全部已实现】"]
     end
@@ -230,7 +230,7 @@ flowchart LR
 | 模块 | 组件（`ADR-0015` §5.2 的行） | 自研部分（`§5.3` 的自研模块） | 落地文件（现状） |
 | --- | --- | --- | --- |
 | `cli/` | **Typer** `0.27.2`（`A1`）+ **Rich** `15.0.0`（`A2`） | 交互 / 非交互（JSON）双形态、权限确认交互、中文优先 | **未开工**（3 件规划：`app` / `render` / `approval`） |
-| `harness/` | `tree-sitter` + `tree-sitter-python`（`F1`，用于上下文引擎的符号层） | **自研模块 2**：能力自适应 Harness（循环 / 工具裁剪 / 提示分级 / 检查点 / 错误分级）<br/>**自研模块 4**：上下文效率引擎<br/>**自研模块 5**：领域包机制 | **未开工**（8 件） |
+| `harness/` | `tree-sitter` + `tree-sitter-python`（`F1`，用于上下文引擎的符号层） | **自研模块 2**：能力自适应 Harness（循环 / 工具裁剪 / 提示分级 / 检查点 / 错误分级）<br/>**自研模块 4**：上下文效率引擎<br/>**自研模块 5**：领域包机制 | **已实现**（**9 件**：`session` / `loop` / `prompts` / `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` / `arguments`） |
 | `security/` | **无第三方组件**（策略引擎刻意不自研通用引擎，也不引入 `casbin`） | **自研模块 3（前半）**：能力 / 权限模型（default-deny）、策略求值、审批门、沙箱后端抽象与逐维度探针、能力边界拒答 | `capabilities.py`、`policy.py` **已实现**；`sandbox/`、`refusal.py` **未开工** |
 | `observability/` | **structlog** `26.1.0`（`E1`，日志与脱敏管线） | **自研模块 3（后半）**：审计事件模型与可回放查询 | `audit.py` **已实现**（`JsonlAuditSink`）；`tracing.py` **未开工** |
 | `model/` | **`urllib3` 2.x**（`HTTP-1`，云端）+ 标准库 `http.client`（**本地回环**，见 §11 登记 `G-3`） | **自研模块 1**：本地 + 云端统一模型层与能力探测（客户端 / 路由降级 / 探针 / GGUF 发现与校验） | `client.py`（`LocalLlamaClient` + 回环传输）**已实现**；`router` / `probe` / `assets` **未开工** |
@@ -338,7 +338,7 @@ flowchart LR
 
 | 模块 | 规划 | 当前状态 | 依据 |
 | --- | --- | --- | --- |
-| `harness/`（8 件） | `session` / `loop` / `prompts` / `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` | **已实现**（8 件均落地；`ADR-0020` 提议新增**第 9 件** `arguments.py`，**待批准**） | 源码：`src/agent_sec_perf/harness/{errors,prompts,trimming,context/__init__,checkpoint,domain_pack,loop,session}.py`（128~846 行）；单测：`tests/unit/test_harness_{errors,prompts,trimming,context,checkpoint,domain_pack,loop,session,internals}.py`（4029 行）；提交：`fe82cce` / `83835af` / `68ce680` / `cb3157e` / `cbef66f` / `14a7831` / `a9f73ee` / `19ade9a` / `5cd45f1` / `0fc11cc`。⚠️ **"已实现" ≠ "已跑通端到端"**：装配点 `cli/` 未开工（§0 第 1 条） |
+| `harness/`（9 件） | `session` / `loop` / `prompts` / `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` / `arguments` | **已实现**（**9 件均落地**；第 9 件 `arguments.py` 由 `ADR-0020` 定案，该 ADR 已于 2026-09-19 获批准） | 源码：`src/agent_sec_perf/harness/{errors,prompts,trimming,context/__init__,checkpoint,domain_pack,loop,session}.py`（128~846 行）；单测：`tests/unit/test_harness_{errors,prompts,trimming,context,checkpoint,domain_pack,loop,session,internals}.py`（4029 行）；提交：`fe82cce` / `83835af` / `68ce680` / `cb3157e` / `cbef66f` / `14a7831` / `a9f73ee` / `19ade9a` / `5cd45f1` / `0fc11cc`。⚠️ **"已实现" ≠ "已跑通端到端"**：装配点 `cli/` 未开工（§0 第 1 条） |
 | `cli/`（3 件） | `app` / `render` / `approval` | **未开工**（只有 `__init__.py` 骨架） | `src/agent_sec_perf/cli/__init__.py`；`CODEBUDDY.md` §9 |
 | `bench/`（12 模块 + 4 夹具） | 评测子系统，保持独立 | **已实现** | `src/agent_sec_perf/bench/`；`tests/unit/test_bench_*.py`（7 个模块） |
 
@@ -520,7 +520,7 @@ flowchart TD
 
 | 组件 | 并发假设 | 资源生命周期 | 现状 |
 | --- | --- | --- | --- |
-| `Session`（`harness/`） | **单会话单线程**；事件流串行产出 | `with Session(...)`；退出按序：工具 → 模型客户端 → `llama-server` → `flush` 审计。⚠️ 本轮**可观察的只有两步**：`model.close()` → `sink.flush()`（"工具"一步无载体，见 `interfaces/harness.md` §2.9） | 已实现（8 件，见 §4.3） |
+| `Session`（`harness/`） | **单会话单线程**；事件流串行产出 | `with Session(...)`；退出按序：工具 → 模型客户端 → `llama-server` → `flush` 审计。⚠️ 本轮**可观察的只有两步**：`model.close()` → `sink.flush()`（"工具"一步无载体，见 `interfaces/harness.md` §2.9） | 已实现（**9 件**，见 §4.3） |
 | `ModelClient` | **非线程安全**；一个会话一个实例（`llama-server` 默认 `-np 1`） | `close()` **幂等**；连接**每次请求新建、用完即关**（不持有跨调用的可变态） | 本地已实现 |
 | `PolicyEngine` | **无状态、纯函数式**，可多线程调用 | 无（无句柄、无 `close`）；`tool_risk` 构造后为**只读视图** | 已实现 |
 | `CapabilitySet` | 不可变（`frozen` + `frozenset`），可安全共享 | 无 | 已实现 |
@@ -540,7 +540,7 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | SRS §7 分组 | 条目数 | 落在哪层 | 承载模块 |
 | --- | --- | --- | --- |
 | `MODEL` | 6 | L2 | `model/`（本地客户端已实现；云端 / 路由 / 探针 / 资产未开工） |
-| `HARNESS` | 8 | L3 | `harness/`（8 件**已实现**，见 §4.3） |
+| `HARNESS` | 9 | L3 | `harness/`（9 件**已实现**，见 §4.3） |
 | `SEC` | 9 | **横切 SEC** | `security/`（capabilities / policy 已实现；sandbox / refusal 未开工）+ `observability/`（audit 已实现） |
 | `PERF` | 8 | L3 + L1 + `bench/` | `harness/context/`（**已实现**；检索/压缩算法不在本轮，见 `interfaces/harness.md` §1）、`foundation/`（硬件探测**无落点**，见 §11 `G-1`）、`bench/`（已实现） |
 | `TOOL` | 3 | L2 | `tools/`（registry / files / shell 已实现；search 未开工） |
