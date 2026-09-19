@@ -88,11 +88,11 @@ typecheck: ## 类型检查（mypy）
 # ---------------------------------------------------------------------------
 # 测试
 # ---------------------------------------------------------------------------
-test: ## 运行测试（快速回归，排除 benchmark）
-	$(UV) run pytest $(PYTEST_XDIST) -m "not benchmark"
+test: ## 运行测试（快速回归，排除 benchmark 与 slow）
+	$(UV) run pytest $(PYTEST_XDIST) -m "not benchmark and not slow"
 
 test-cov: ## 运行测试并生成覆盖率报告
-	$(UV) run pytest -m "not benchmark" --cov --cov-report=term-missing --cov-report=xml
+	$(UV) run pytest -m "not benchmark and not slow" --cov --cov-report=term-missing --cov-report=xml
 
 test-security: ## 仅运行安全与对抗性测试（**零用例视为失败**，fail-secure）
 	@$(UV) run pytest -m security; \

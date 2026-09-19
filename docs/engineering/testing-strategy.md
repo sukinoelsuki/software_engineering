@@ -124,12 +124,20 @@
 ## 8. 运行方式
 
 ```bash
-make test              # 快速回归（排除 benchmark）
-make test-cov          # 含覆盖率
+make test              # 快速回归（排除 benchmark 与 slow）
+make test-cov          # 含覆盖率（同一排除集）
 make test-security     # 仅安全测试（现有 13 个用例；零用例会 fail-secure，见 §2 的状态说明）
 make check             # 完整自检（提交 PR 前必须执行）
 uv run pytest -m benchmark    # 性能基准
+AGENT_SEC_PERF_E2E=1 uv run pytest -m integration   # 真模型端到端（默认不跑，见下）
 ```
+
+> **`slow` 的排除口径（2026-09-19 起）**：`make test` / `make test-cov` 用
+> `-m "not benchmark and not slow"`；CI（`.cnb.yml`）经 `make check` **继承同一口径**，
+> 不需要另写一份（"同一事实两处表述必然漂移"）。
+> **为什么必须排除**：`slow` 类用例会起**真实 `llama-server` + 真实 GGUF**（实测一轮 ≈ 6 分钟），
+> 放进默认回归会让门禁变慢且不稳定；它们靠 `make test` 与**用例自带的环境变量门槛**
+> **两道锁**保证默认不跑（后者防"显式 `-m integration` 时误跑"，见 `tests/integration/` 的 docstring）。
 
 ---
 
