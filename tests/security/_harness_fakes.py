@@ -245,7 +245,9 @@ class FakeApprovalGate(ApprovalGate):
     ) -> None:
         self._sink = sink
         self._outcome = outcome
-        self._audit_id = audit_id or f"approval-{uuid.uuid4().hex}"
+        # 注意：用 `is not None` 而非 `or`，否则空串会被当成"未提供"而默认成 uuid，
+        # 那样会悄悄掩盖"空 audit_id"这一故障形态（R4 / S-new-5 的 empty_audit_id 判据）。
+        self._audit_id = audit_id if audit_id is not None else f"approval-{uuid.uuid4().hex}"
         self._raise_with = raise_with
         self._bad_return = bad_return
         self.request_calls: list[ApprovalRequest] = []
