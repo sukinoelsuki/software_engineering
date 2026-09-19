@@ -46,9 +46,9 @@
 | --- | --- | --- | --- | --- | --- |
 | **B-1** | 用户输入 → HARNESS | 入 | 命令行参数、交互输入 | HARNESS 参数校验（`REQ-UX-01`）+ `paths.resolve_within` | 校验**已实现**（`harness/arguments.py`，`43a177c`）；`paths` **已实现** |
 | **B-2** | 模型输出 → HARNESS | 入 | `content`、`tool_calls[].arguments_json` | 按 `ToolSpec.parameters_schema` 严格校验（`D2`：pydantic 限定用途） | **已实现**（`harness/arguments.py` 的 `SubsetArgumentValidator`，`43a177c`） |
-| **B-3** | 工具返回 / 文件内容 / 网页内容 → 上下文 | 入 | `ToolResult.content`、被读入的仓库文件、抓取的网页 | 装配层按 `role` 判定信任、**只作数据**（`interfaces/model.md` §2.1） | **未实现** |
+| **B-3** | 工具返回 / 文件内容 / 网页内容 → 上下文 | 入 | `ToolResult.content`、被读入的仓库文件、抓取的网页 | 装配层按 `role` 判定信任、**只作数据**（`interfaces/model.md` §2.1） | **已实现**（`harness/context` 的 `role is USER` 结构性守卫 + `harness/loop` 以数据装配工具返回、读文件经 `tools/files.py`）；⚠️ 网页抓取工具**未开工** |
 | **B-4** | 子代理（成员）回报 → 团队领导 | 入 | 成员产出的文本（**可被注入**） | 上游 harness 的**非破坏性去毒**（缓解，非保证）；项目纪律：只作证据线索 | 去毒为上游行为；纪律已写入 `CODEBUDDY.md` §10.4 / `agent-teams.md` §4 |
-| **B-5** | 领域包（Domain Pack）声明 → 加载器 | 入 | pack 目录内的 TOML / JSON（**以及可能存在的 `.py`**） | 只加载声明式配置；**禁止**动态导入（`ADR-0015` §5.1.1 规则 `R5`） | **未实现**（`harness/domain_pack.py` 不存在） |
+| **B-5** | 领域包（Domain Pack）声明 → 加载器 | 入 | pack 目录内的 TOML / JSON（**以及可能存在的 `.py`**） | 只加载声明式配置；**禁止**动态导入（`ADR-0015` §5.1.1 规则 `R5`） | **已实现**（`harness/domain_pack.py`，`14a7831`：目录内出现 `.py`/`.pyc`/`__pycache__` ⇒ `DomainPackError`，**不**忽略） |
 | **B-6** | 交付产物 → 子进程执行 | 出（执行不可信代码） | 模型产物、工具请求的命令 | `foundation.proc.run`（非特权 uid + rlimit + 最小环境）+ `paths` 白名单 | **已实现**（唯一实现的边界承载） |
 | **B-7** | 本进程 → 网络 | 出 | 云端模型端点、任意 URL | 出站默认拒绝 + 白名单放行 + 超时 + 响应体上限（`REQ-SEC-07`） | **未实现** |
 | **B-8** | 外部依赖 / 权重 / 二进制 → 构建与运行 | 入 | PyPI 包、GGUF、`llama-server` | 锁版本 + 来源与摘要记录（`SECURITY.md` §3 `S-3`/`S-4`） | **部分实现**（`uv.lock` 有；资产摘要校验脚本在构建侧） |
@@ -60,15 +60,15 @@ flowchart TD
     B6["B-6 执行边界<br/>foundation.proc + foundation.paths"] -->|已实现| OK1["结构性机器检查在跑<br/>（test_bench_encapsulation / test_architecture_layers）"]
     B1["B-1 用户输入"] --> OK2["已实现（harness 参数校验）"]
     B2["B-2 模型输出"] --> OK2
-    B3["B-3 工具/文件/网页内容"] --> NA["未实现"]
+    B3["B-3 工具/文件/网页内容"] --> OK3["已实现（role 守卫 + 数据装配）"]
     B4["B-4 子代理回报"] --> P["上游去毒（缓解）+ 纪律"]
-    B5["B-5 领域包"] --> NA
-    B7["B-7 网络出站"] --> NA
+    B5["B-5 领域包"] --> OK4["已实现（拒绝包内 .py）"]
+    B7["B-7 网络出站"] --> NA["未实现"]
     B8["B-8 供应链"] --> P2["锁文件 + 登记纪律"]
 ```
 
-> **这张图就是本威胁模型的核心事实**：8 条边界里，**3 条（B-1 / B-2 / B-6）有已实现的承载机制**，
-> 2 条靠流程纪律或上游行为（B-4 / B-8），**3 条未实现**（B-3 / B-5 / B-7）。
+> **这张图就是本威胁模型的核心事实**：8 条边界里，**5 条（B-1 / B-2 / B-3 / B-5 / B-6）有已实现的承载机制**，
+> 2 条靠流程纪律或上游行为（B-4 / B-8），**1 条未实现**（B-7）。
 > ⚠️ **本图只反映承载机制的"有无"**：机制已实现**不等于**威胁已缓解（缓解成立还须可执行的
 > 行为级证据，口径见 README §1 规则 2 / §4.1）⇒ **不构成任何 `T-XX` 条目升级的依据**；
 > 13 条威胁的状态分布（README §4.1）不变。
