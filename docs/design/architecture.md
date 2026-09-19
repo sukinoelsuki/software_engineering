@@ -29,12 +29,14 @@
 
 - **已实现**：`contracts/`（6 模块）、`foundation/`（5 件）、`security/{capabilities,policy}`、
   `observability/audit`、`model/client`（**仅本地回环**）、`tools/{registry,files,shell}`、
-  **`harness/`（9 件）**、`bench/`；
-- **未开工**：`cli/`（3 件 —— **唯一整层未开工的层**）、`security/sandbox/`、`security/refusal.py`、
-  `model/{router,probe,assets}.py`、`tools/search.py`、`observability/tracing.py`。
+  **`harness/`（9 件）**、**`cli/`（3 件）**、`bench/`；
+- **未开工**：`security/sandbox/`、`security/refusal.py`、`model/{router,probe,assets}.py`、
+  `tools/search.py`、`observability/tracing.py`。
 
-逐项依据见 **§4 实现状态表**。**不得**把 §5/§6 中"规划"的路径读成"已经在跑"——`harness/` 已实现、
-各段也**单独有测试**，但**装配点 `cli/` 尚不存在** ⇒ 端到端闭环（`0.1.0` 的判据）**尚未跑通过一次**。
+逐项依据见 **§4 实现状态表**。**不得**把 §5/§6 中"规划"的路径读成"已经在跑"——`harness/` 与
+`cli/` 均已实现、各段也**单独有测试**；端到端闭环（`0.1.0` 的判据）**已有可跑路径**
+（`tests/integration/test_end_to_end.py`，`fba8c4c`：真模型路径、标 `slow`、默认不跑），
+**实跑结果以 `docs/devlog/` 的记录为准**（本文不代其宣称"已跑通"）。
 
 **2. 本文件不得被读成"安全已到位"。** 威胁模型当前是
 **已缓解并验证 0 条 / 部分缓解 8 条 / 未缓解 5 条**（`threat-model/README.md` §4.1），
@@ -56,7 +58,7 @@
 ```mermaid
 flowchart TD
     subgraph V["纵向层（依赖方向自上而下，单向）"]
-        UX["L4 表现层 UX — cli/<br/>Typer 应用 · Rich 渲染 · 交互/非交互 · 权限确认<br/>【未开工：仅 __init__.py 骨架】"]
+        UX["L4 表现层 UX — cli/<br/>Typer 应用 · Rich 渲染 · 交互/非交互 · 权限确认<br/>【3 件已实现：app · render · approval】"]
         HARNESS["L3 编排层 HARNESS — harness/<br/>ReAct 循环 · 工具裁剪 · 提示分级 · 检查点 · 上下文引擎 · 领域包<br/>【9 件已实现，含 ADR-0020 的 arguments.py】"]
         CAP["L2 能力层 CAPABILITY<br/>model/ 客户端【本地已实现；router/probe/assets 未开工】<br/>tools/ registry·files·shell【已实现；search 未开工】"]
         FND["L1 基础设施层 FOUNDATION — foundation/<br/>errors · paths · proc · config · logging<br/>【全部已实现】"]
@@ -229,7 +231,7 @@ flowchart LR
 
 | 模块 | 组件（`ADR-0015` §5.2 的行） | 自研部分（`§5.3` 的自研模块） | 落地文件（现状） |
 | --- | --- | --- | --- |
-| `cli/` | **Typer** `0.27.2`（`A1`）+ **Rich** `15.0.0`（`A2`） | 交互 / 非交互（JSON）双形态、权限确认交互、中文优先 | **未开工**（3 件规划：`app` / `render` / `approval`） |
+| `cli/` | **Typer** `0.27.2`（`A1`）+ **Rich** `15.0.0`（`A2`） | 交互 / 非交互（JSON）双形态、权限确认交互、中文优先 | **已实现**（3 件：`app` / `render` / `approval`；`4baa9e8` / `b4a7213` / `663c266`） |
 | `harness/` | `tree-sitter` + `tree-sitter-python`（`F1`，用于上下文引擎的符号层） | **自研模块 2**：能力自适应 Harness（循环 / 工具裁剪 / 提示分级 / 检查点 / 错误分级）<br/>**自研模块 4**：上下文效率引擎<br/>**自研模块 5**：领域包机制 | **已实现**（**9 件**：`session` / `loop` / `prompts` / `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` / `arguments`） |
 | `security/` | **无第三方组件**（策略引擎刻意不自研通用引擎，也不引入 `casbin`） | **自研模块 3（前半）**：能力 / 权限模型（default-deny）、策略求值、审批门、沙箱后端抽象与逐维度探针、能力边界拒答 | `capabilities.py`、`policy.py` **已实现**；`sandbox/`、`refusal.py` **未开工** |
 | `observability/` | **structlog** `26.1.0`（`E1`，日志与脱敏管线） | **自研模块 3（后半）**：审计事件模型与可回放查询 | `audit.py` **已实现**（`JsonlAuditSink`）；`tracing.py` **未开工** |
@@ -338,8 +340,8 @@ flowchart LR
 
 | 模块 | 规划 | 当前状态 | 依据 |
 | --- | --- | --- | --- |
-| `harness/`（9 件） | `session` / `loop` / `prompts` / `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` / `arguments` | **已实现**（**9 件均落地**；第 9 件 `arguments.py` 由 `ADR-0020` 定案，该 ADR 已于 2026-09-19 获批准） | 源码：`src/agent_sec_perf/harness/{errors,prompts,trimming,context/__init__,checkpoint,domain_pack,loop,session}.py`（128~846 行）；单测：`tests/unit/test_harness_{errors,prompts,trimming,context,checkpoint,domain_pack,loop,session,internals}.py`（4029 行）；提交：`fe82cce` / `83835af` / `68ce680` / `cb3157e` / `cbef66f` / `14a7831` / `a9f73ee` / `19ade9a` / `5cd45f1` / `0fc11cc`。⚠️ **"已实现" ≠ "已跑通端到端"**：装配点 `cli/` 未开工（§0 第 1 条） |
-| `cli/`（3 件） | `app` / `render` / `approval` | **未开工**（只有 `__init__.py` 骨架） | `src/agent_sec_perf/cli/__init__.py`；`CODEBUDDY.md` §9 |
+| `harness/`（9 件） | `session` / `loop` / `prompts` / `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` / `arguments` | **已实现**（**9 件均落地**；第 9 件 `arguments.py` 由 `ADR-0020` 定案，该 ADR 已于 2026-09-19 获批准） | 源码：`src/agent_sec_perf/harness/{errors,prompts,trimming,context/__init__,checkpoint,domain_pack,loop,session}.py`（128~846 行）；单测：`tests/unit/test_harness_{errors,prompts,trimming,context,checkpoint,domain_pack,loop,session,internals}.py`（4029 行）；提交：`fe82cce` / `83835af` / `68ce680` / `cb3157e` / `cbef66f` / `14a7831` / `a9f73ee` / `19ade9a` / `5cd45f1` / `0fc11cc`。⚠️ **"已实现" ≠ "已跑通端到端"**：装配点 `cli/` 已实现（§0 第 1 条），端到端用例见 `tests/integration/`（真模型、标 `slow`、默认不跑） |
+| `cli/`（3 件） | `app` / `render` / `approval` | **已实现** | `src/agent_sec_perf/cli/{app,render,approval}.py`；`tests/unit/test_cli_{app,render,approval}.py`；提交 `4baa9e8` / `b4a7213` / `663c266` |
 | `bench/`（12 模块 + 4 夹具） | 评测子系统，保持独立 | **已实现** | `src/agent_sec_perf/bench/`；`tests/unit/test_bench_*.py`（7 个模块） |
 
 ### 4.4 设计件与测试分层
@@ -380,7 +382,7 @@ flowchart LR
 `AuditConfig` 的落点默认为白名单内唯一根、`roots=None` 表示"用安全默认"**不是**"不校验"、
 `network_allowed` 默认 `False`。**default-deny 不能靠调用方记得传参。**
 
-> **装配点归属**：上表 5~7 的串接应由 `cli/` 的装配代码完成，它**尚未存在**。
+> **装配点归属**：上表 5~7 的串接由 `cli/` 的装配代码完成（`cli/app.py`，`4baa9e8`）。
 > 由此产生一条已知的待办：**装配点必须把包括 `PathNotAllowedError` 在内的 `BenchError`
 > 转成"中文错误提示 + 非零退出码"，不得转为"回退默认落点"**（`interfaces/audit.md` §2.5）。
 
@@ -390,11 +392,11 @@ flowchart LR
 sequenceDiagram
     autonumber
     participant U as 用户
-    participant CLI as cli/（未开工）
+    participant CLI as cli/（已实现）
     participant S as harness.Session（已实现）
     participant L as loop + context（已实现）
     participant M as ModelClient（本地已实现）
-    participant A as cli/approval（未开工）
+    participant A as cli/approval（已实现）
     participant P as PolicyEngine（已实现）
     participant SINK as JsonlAuditSink（已实现）
     participant T as Tool（已实现）
@@ -544,7 +546,7 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | `SEC` | 9 | **横切 SEC** | `security/`（capabilities / policy 已实现；sandbox / refusal 未开工）+ `observability/`（audit 已实现） |
 | `PERF` | 8 | L3 + L1 + `bench/` | `harness/context/`（**已实现**；检索/压缩算法不在本轮，见 `interfaces/harness.md` §1）、`foundation/`（硬件探测**无落点**，见 §11 `G-1`）、`bench/`（已实现） |
 | `TOOL` | 3 | L2 | `tools/`（registry / files / shell 已实现；search 未开工） |
-| `UX` | 6 | L4 | `cli/`（**全部未开工**） |
+| `UX` | 6 | L4 | `cli/`（**3 件已实现**，见 §4.3） |
 | `OBS` | 2 | **横切 OBS** | `observability/`（audit 已实现；tracing 未开工） |
 | `PLAT` | 3 | L1 + 全仓 | `foundation/`（已实现）+ CI 多平台构建 |
 | `OPS` | 4 | 工程地基 | `Makefile` / `.cnb.yml` / `tests/` / `docs/`（已具备） |
@@ -640,3 +642,4 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | 2026-09-19 | **初稿（成稿）**：分层与依赖方向（`R1`~`R5` + 机器检查九条断言 + 逐层白名单）、组件与自研边界（含"不写什么"与不引入清单）、被否决方案、`模块 × 状态 × 依据` 表、关键路径的数据结构与算法（含 `default-deny` 拒绝路径）、并发与资源生命周期、部署形态、威胁与需求落位、缺口登记 | `ADR-0015`（§5.1/§5.1.2/§5.1.3/§5.2/§5.3/§5.3.1/§5.4/§7.1~§7.5/§8.2.1/§9）、`interfaces/`（5 份）、`threat-model/README.md`、`sdlc.md` §3/§3.1、`SECURITY.md`、`src/agent_sec_perf/`（读代码得出的实现状态）、`tests/unit/test_architecture_layers.py` |
 | 2026-09-19 | **表述同步（`async` → 同步）**：§2.4 表首行 `AsyncIterator[SessionEvent]` → **同步 `Iterator[SessionEvent]`**，并补全该行的错误语义（"逃逸的三类"含**审计写入失败必须冒泡**）；§5.2 在时序图后补"事件流的形态"说明（同步迭代器 + 审批回传通路的落点）。**不改任何决策**：§2.3 的依赖白名单、`R1`~`R5`、§4 的实现状态表、§7 的威胁落位一律不变 | `ADR-0015` §5.1.2 同一格已规定"单会话单线程；事件流**串行**产出"，`AsyncIterator` 与之自相矛盾且 `src/` 下**无任何 `async def`** ⇒ 由 [`interfaces/harness.md`](interfaces/harness.md) §2.9 裁决为同步（含被否决方案）；`ADR-0015` 已以「修订记录」登记同一更正。获批记录：领导于 2026-09-19 批准两处待同步并扩展本轮产出白名单至本文件 |
 | 2026-09-19 | **现状同步（`harness/` 已实现）+ `G-2` 处置登记**：① 状态刷新——§0 第 1 条、§0 第 2 段、§1.1 的 `HARNESS` 节点、§4.1 的 `contracts/` 行、§4.3 的 `harness/` 行、§4.4 的 `interfaces/` 行、§5.2 时序图的两个参与者、§6 的 `Session` 行、§7.1 的 `HARNESS` / `PERF` 行：`harness/` 由"未开工"更正为**已实现（8 件）**（依据：源码 128~846 行 × 8、9 个单测模块共 4029 行、提交哈希见 §4.3）；`contracts/` 由 5 → **6 模块**；`interfaces/` 由 5 → **6 份**；未决项由 `U1`~`U7` → **`U1`~`U9`**。⇒ **`cli/` 成为唯一整层未开工的层**，§0 第 2 段随之改写为"端到端闭环尚未跑通一次"。⚠️ **"已实现" ≠ "已跑通"**。② **`G-2` 处置**：新增 [`ADR-0020`](../adr/0020-argument-validator-implementation.md)（校验器选型 + `D2` 两处用途不落地的登记），本行只登记指针，**获批前不按已关闭处理**。**不改任何决策**：§2.1 的 `R1`~`R5`、§2.3 的依赖白名单、§3 的组件选型、§5 的算法与路径一律不变 | 读源码与提交核实（`src/agent_sec_perf/harness/*`、`tests/unit/test_harness_*.py`、`git log --oneline`）；[`interfaces/harness.md`](interfaces/harness.md) §3.4 / §7.2 / §8 的第八版；[`ADR-0020`](../adr/0020-argument-validator-implementation.md) |
+| 2026-09-19 | **现状同步（`cli/` 已实现）**：§0 第 1 条的"已实现 / 未开工"两个清单、§0 第 2 段（端到端由"尚未跑通一次"改为"已有可跑路径，实跑结果以 `docs/devlog/` 为准"）、§1.1 的 `UX` 节点、§3.1 的 `cli/` 行、§4.3 的 `harness/` 行注记与 `cli/` 行、§5.1 的"装配点归属"、§5.2 时序图的两个参与者、§7.1 的 `UX` 行：`cli/` 由"未开工 / 尚不存在"更正为**已实现（3 件）**（依据：`src/agent_sec_perf/cli/{app,render,approval}.py`、`tests/unit/test_cli_*.py`、提交 `4baa9e8` / `b4a7213` / `663c266`）；端到端用例 `tests/integration/test_end_to_end.py`（`fba8c4c`）**已建立**（真模型、标 `slow`、默认不跑）。**不改任何决策**：§2.1 的 `R1`~`R5`、§2.3 的依赖白名单、§3 的组件选型、§5 的算法与路径、§7.2 的威胁落位与状态一律不变（**"已实现" ≠ "已缓解"**）。 | 读源码与提交核实（`git log --oneline -- src/agent_sec_perf/cli tests/integration`；`ls src/agent_sec_perf/cli tests/integration`）；领导 2026-09-19 明确授权本项同步 |
