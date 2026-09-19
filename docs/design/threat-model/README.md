@@ -763,3 +763,40 @@ flowchart LR
 - **否则**（任一项判为阻塞）**维持「部分缓解」**，并把**理由换成** (a)~(c)（**不再**是
   "审计半无载体"——该理由已证伪）。
 - ⚠️ **无论哪条，本轮都不动计数**；§4.1 / §5 的联动更新是**裁决落地时**的动作。
+
+---
+
+#### `Q-2`：路径穿越拒绝的审计 `outcome` —— **`ERROR` 还是专用 `DENY`**（**只框定选项与代价，不拍板**）
+
+**现象（可核）**：工具层路径穿越被拒时，`tools/registry.py::audit_tool_call` 对 `ok=False`
+**统一**置 `outcome=AuditOutcome.ERROR`（`registry.py:205`：`AuditOutcome.OK if ok else
+AuditOutcome.ERROR`）；"这次失败是路径越权"仅由 `detail["reason"] == "path_not_allowed"` 表达
+（`tools/files.py:93-96` 的 `_fail(..., reason="path_not_allowed")`）。`test_t02_path_traversal_audit.py`
+已把这一现状**钉成断言**（`outcome is AuditOutcome.ERROR`）。
+
+**现口径（`../interfaces/audit.md` §2.2 的 kind→outcome 约束表与其 `D1`~`D4`）**：
+
+- `TOOL_CALL` 的**允许** `outcome` 集为 `{OK, ERROR, DENY}`（`DENY` 于 2026-09-19 放宽加入）；
+- **`D1`：`DENY` 专指"**未执行**"，不得用 `ERROR` 代替它**；"执行失败"用 `ERROR`；
+- **`D2`：`DENY` 时 `detail["denied_reason"]` 必填**，取值限于
+  `{unknown_tool, not_exposed, invalid_arguments, policy_denied, approval_denied}` 五个定长短码
+  （⚠️ **`path_not_allowed` 不在此集内**）；
+- **`D3`：已执行路径的 `TOOL_CALL` 仍由工具层发出**（`audit_tool_call` 只产出 `OK`/`ERROR`，
+  **行为不变**）；"未执行"路径由 `harness/loop.py::_deny` 发一条；
+- ⇒ 按现口径，**工具层在"已进入 `invoke()` 之后"因路径校验失败而返回**，被归为"**执行失败**"
+  （`ERROR`）而非"**未执行**"（`DENY`）——这是一处**口径边界**，**不是**实现违约
+  （`test_t02_path_traversal_audit.py` 已按此断言）。
+
+**两个选项与各自代价（可区分性 / 下游消费者 / 既有用例与数据的影响面）**：
+
+| 选项 | 做法 | 代价 / 影响面 |
+| --- | --- | --- |
+| **(A) 维持 `ERROR`**（现状） | 越权事实由 `detail.reason == "path_not_allowed"` 表达 | **可区分性**：只能靠**字典键**区分；`AuditOutcome` 的**枚举级**检索（`REQ-OBS-01`"按结果检索"）**无法**直接筛出"路径越权"。**下游消费者**：按 `outcome` 分组的报表 / 告警会把"路径越权"与"读文件 `io_error`"**同形**。**改动面**：**零**——既有用例（`test_t02_path_traversal_audit.py` 断言 `ERROR`）与已落盘 `.jsonl` 数据**都不动**；与 `D1`（`DENY`=未执行）语义**自洽** |
+| **(B) 改专用 `DENY`** | 工具层路径拒绝置 `outcome=DENY`（并在 `detail` 补 `denied_reason`） | **需先裁决三处口径**：① **扩 `D2` 的短码集**（加 `path_not_allowed`）**或**放宽 `D2`；② **重述 `D1`**（"`DENY`=未执行"——而路径拒绝时工具**已进入 `invoke()`**，是否算"未执行"须重新定义）；③ 确认与 `harness/loop.py::_deny` 的 `DENY` **不可混**。**既有用例与数据影响面**：`test_t02_path_traversal_audit.py` 的 `outcome=ERROR` 断言**需改**；`test_s1_replayable_audit_link.py` 只断言 `kind`/`audit_id`（**不受影响**）；**已落盘 `.jsonl` 中该字段取值会新旧不一致**（影响 `REQ-OBS-01` 检索一致性与 `REQ-SEC-06` 可回放口径）。**优点**：越权在**枚举级**可检索，与"拒绝 ≠ 失败"（`architecture.md` §5.3 硬规定 2）一致 |
+
+**与 `Q-1` 的关系**：`Q-2` 只问"**这条已存在的工具层拒绝事件该用哪个 `outcome`**"，
+**不依赖** `Q-1` 是否裁决；反之，`Q-1` 若选"非工具层调用点也进审计"，**其**事件也应一并按
+`Q-2` 的口径取值。
+
+**现状**：**未决** ⇒ 本轮**不改** `../interfaces/audit.md`、**不改**任何用例与计数
+（本节职责是**框定选项与代价**，结论**须由所有者裁决**）。
