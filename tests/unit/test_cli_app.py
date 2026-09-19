@@ -327,14 +327,18 @@ def test_max_completion_tokens_reaches_the_model_client(tmp_path: pathlib.Path) 
 
 @pytest.mark.unit
 def test_request_timeout_layer_applies_the_configured_value() -> None:
-    """``_RequestTimeoutModel`` 把 CLI 配置的请求超时应用到**每一次** ``chat``，并透传关闭。"""
+    """``_RequestTimeoutModel`` 把 CLI 配置的请求超时应用到**每一次** ``chat``，并透传关闭。
+
+    同时钉住那处**显式登记的语义取舍**（类 docstring）：调用方传入的 ``timeout_s`` 被**忽略**
+    ——否则"默认形参无法区分没传与显式传 60.0"这条理由就只是散文，没人会拦住它被改回。
+    """
     inner = _ScriptedModel([_response(content="done")])
     wrapped = cli_module._RequestTimeoutModel(inner, request_timeout_s=240.0)
 
-    wrapped.chat([ChatMessage(role=Role.USER, content="hi")])
+    wrapped.chat([ChatMessage(role=Role.USER, content="hi")], timeout_s=1.0)
     wrapped.close()
 
-    assert inner.requests[0][3] == 240.0, "请求超时未生效（仍是协议默认 60s？）"
+    assert inner.requests[0][3] == 240.0, "调用方传入的 timeout_s 必须被忽略，只用本层配置值"
     assert inner.closed is True, "close() 必须透传到内层（否则 llama-server 进程不会被回收）"
 
 

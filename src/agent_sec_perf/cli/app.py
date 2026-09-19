@@ -413,9 +413,18 @@ class _RequestTimeoutModel(ModelClient):
     只有 CLI 知道。给 ``contracts.SessionConfig`` 加字段或改 ``model/client.py`` 的默认值
     都属**接口变更**（不归本层）；本包装只承载"把 CLI 的取值应用到每一次 ``chat``"。
 
-    ``timeout_s`` 形参**必须保留**（``ModelClient`` 的结构化子类型检查要求签名一致），
-    但其取值由本层决定：CLI 已给出本次部署统一的可用性参数，这里不再叠加第二层默认值
-    （两处默认值必然漂移）。
+    **语义取舍（必读，不要靠读 ``del timeout_s`` 反推）**：本包装**忽略调用方传入的
+    ``timeout_s``**，一律使用构造时给定的 ``request_timeout_s``。理由有两条，缺一不可：
+
+    1. ``harness/loop.py`` **从不传**该参数（它只传 ``tools`` / ``max_tokens``），因此"调用方
+       传了什么"在本项目里始终是协议默认值，读它得不到任何真实意图；
+    2. 更根本的是**默认形参在语言层面无法区分**"没传"与"显式传了 ``60.0``"——两者在函数体内
+       完全同形。真要区分就得把形参改成 ``timeout_s: float | None = None``，那是**改契约**
+       （``ModelClient`` 的签名语义），不归本层。
+
+    因此这里选择"**只有一处默认值**"：CLI 给的 ``request_timeout_s`` 是本次部署唯一的请求超时
+    来源，不存在"两个默认值谁盖谁"的漂移空间。``timeout_s`` 形参**必须保留**（``ModelClient``
+    的结构化子类型检查要求签名一致），保留即为此用途：**保持签名兼容，取值不参与决策**。
     """
 
     def __init__(self, inner: ModelClient, *, request_timeout_s: float) -> None:
@@ -431,7 +440,9 @@ class _RequestTimeoutModel(ModelClient):
         max_tokens: int | None = None,
         timeout_s: float = 60.0,
     ) -> ModelResponse:
-        """转发一次补全；请求超时取本层配置值（见类 docstring）。"""
+        """转发一次补全；**忽略**调用方传入的 ``timeout_s``，一律用本层的
+        ``request_timeout_s``（语义取舍与两条理由见类 docstring，勿据 ``del`` 反推）。
+        """
         del timeout_s
         return self._inner.chat(
             messages,
