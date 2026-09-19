@@ -53,11 +53,18 @@
      `JsonlAuditSink` + `ReadFileTool` 端到端 `query_by_id`，含 **2 条**变异探针）；
    - `S3`（**T-12**）：`tests/security/test_harness_s3_domain_pack.py`（**4 例**，含变异探针）；
    - `S2`（**T-02**）：**"拒绝"半**已落地（`f436b0b`，**18 例** + 2 接缝用例）。
-   **仍未落地的是 `S2` 的"且留审计"半**——其判据（"拒绝时留下审计记录"）**当前无载体**：
-   `resolve_within` 是**纯函数**（不持有 sink），"由谁 emit 这条拒绝记录"属**未决设计**
-   （见 §8.2 的待裁决项）；**防误引**：`test_audit_landing_whitelist.py` **不**构成该半的证据
-   （它断言的是**审计落点目录白名单**，属另一攻击面），详见 §4 的 `T-02` 行与
-   [`execution-and-isolation.md`](execution-and-isolation.md#t-02-路径穿越) 的 T-02 条目。
+   **【2026-09-19 更正】**原写「仍未落地的是 `S2` 的"且留审计"半——其判据
+   （"拒绝时留下审计记录"）**当前无载体**」——**该表述有误**：**承载点存在**
+   （`tools/files.py::_fail` → `tools/registry.py::audit_tool_call` → `JsonlAuditSink.emit`），
+   且**工具层**路径穿越被拒的审计留痕已有**两处行为层证据**
+   （`test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`、
+   `test_t02_path_traversal_audit.py`，后者含变异探针）。**仍未闭合的是另一件事**：
+   `resolve_within` 的**非工具层**调用点（配置期 / 装配期）拒绝时**不进审计**——属 `Q-1` 的范围问题。
+   **防误引（保留并精化）**：`test_audit_landing_whitelist.py` **仍不**构成该半的证据
+   （它断言的是**审计落点目录白名单**，属另一攻击面）——**但该半的证据在别处**（见上行两处用例），
+   **不得**因"这份文件不是证据"误读为"该半无证据"（本轮错误的形状正是如此）。
+   详见 §4/§5 的 `T-02` 行、[`execution-and-isolation.md`](execution-and-isolation.md#t-02-路径穿越)
+   的 T-02 条目、§7 的假声明事故登记与 §8.2 的 `P-2`。
    `tests/security/` 目录已建立；其中 `corpus/` 当前**只有路径穿越语料**（`traversal_payloads.txt`），
    **无注入语料**。
 
@@ -172,7 +179,7 @@ flowchart LR
 | 编号 | 威胁 | 主导类别 | 状态 | 对应用例（2026-09-18 现状） |
 | --- | --- | --- | --- | --- |
 | [`T-01`](execution-and-isolation.md#t-01-子进程执行与逃逸) | 子进程执行与逃逸 | STRIDE-E / 智能体特有 | 部分缓解 | **部分**：`test_rlimit_isolation.py`（超限分配，行为 + 变异探针，`5fddcfa`）；越界写 / 出站 / `IsolationError` 不回退仍**无** |
-| [`T-02`](execution-and-isolation.md#t-02-路径穿越) | 路径穿越（`..` / 符号链接 / 白名单逃逸） | STRIDE-E | 部分缓解 | **部分**：`S2` **拒绝**半（`f436b0b`，**18 个行为用例**〔含 4 种前缀欺骗 + 3 个边界正确性〕+ 2 个接缝用例）；**审计**半**无载体**——⚠️ **防误引登记（2026-09-19）**：`tests/security/test_audit_landing_whitelist.py` **不构成**该半的证据（它断言的是**审计落点目录白名单**——不可信 `.lowspec.toml` 的 `[audit] directory` 不得指向任意路径追加写，属**另一攻击面**）；`test_path_traversal_rejected.py`（`S2` 主体 18 例）**自身 docstring 即写明**「拒绝被正确审计记录」一半**无法验证**（不注入 sink、不断言审计事件）；**配置面落点白名单（`ALLOWED_AUDIT_ROOTS`，`../interfaces/audit.md` §2.5）**：实现已落地（`foundation/config.py` + `observability/audit.py`），`W1`/`W2`/`W4`~`W8` **用例已落地**（`tests/security/test_audit_landing_whitelist.py`，`91ea9d5`）；**`W3`（根内符号链接指向根外）仍缺用例**、**UNC（第 5 类）仍缺** ⚠️ 该文件是**攻击面 6（配置面落点）**的证据，**不是**"且留审计"半的证据 |
+| [`T-02`](execution-and-isolation.md#t-02-路径穿越) | 路径穿越（`..` / 符号链接 / 白名单逃逸） | STRIDE-E | 部分缓解 | **部分**：`S2` **拒绝**半（`f436b0b`，**18 个行为用例**〔含 4 种前缀欺骗 + 3 个边界正确性〕+ 2 个接缝用例）；**审计**半**【2026-09-19 更正：载体已实现 + 已有两处行为层证据】**——载体：`tools/files.py::_fail` → `tools/registry.py::audit_tool_call` → `JsonlAuditSink.emit`；证据：`test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`（真实 sink 端到端 `query_by_id`）＋ `test_t02_path_traversal_audit.py`（`4a35c61`，含变异探针）；⚠️ **原"审计半无载体"表述有误**（见 `P-2` 与 §7 的假声明事故登记）；**仍未闭合**：`resolve_within` **非工具层**调用点（配置期 / 装配期）拒绝不进审计（`Q-1` 范围）；**防误引登记（保留并精化）**：`tests/security/test_audit_landing_whitelist.py` **仍不构成**该半的证据（它断言的是**审计落点目录白名单**——不可信 `.lowspec.toml` 的 `[audit] directory` 不得指向任意路径追加写，属**另一攻击面**）——**但该半的证据在别处**（见上行两处用例），**不得**因"这份文件不是证据"误读为"该半无证据"；`test_path_traversal_rejected.py`（`S2` 主体 18 例）的**旧 docstring** 曾写「拒绝被正确审计记录」一半**无法验证**，**那是假声明**，已由 `b79f383` 修正（详见 §7）；**配置面落点白名单（`ALLOWED_AUDIT_ROOTS`，`../interfaces/audit.md` §2.5）**：实现已落地（`foundation/config.py` + `observability/audit.py`），`W1`/`W2`/`W4`~`W8` **用例已落地**（`tests/security/test_audit_landing_whitelist.py`，`91ea9d5`）；**`W3`（根内符号链接指向根外）本轮已补**（`9b37e99`）⇒ **`W1`~`W8` 全部落地**；**UNC（第 5 类）仍缺显式用例但已判不构成独立绕过面**（Linux 下 `//` 折叠） ⚠️ 该文件是**攻击面 6（配置面落点）**的证据，**不是**"且留审计"半的证据 |
 | [`T-03`](untrusted-input-and-agentic.md#t-03-不可信输入被当作指令指令-数据混淆) | 不可信输入被当作指令（指令-数据混淆） | STRIDE-T / 智能体特有 | **未缓解** | **无** |
 | [`T-04`](untrusted-input-and-agentic.md#t-04-提示注入直接--间接与上下文污染) | 提示注入（直接 / 间接）与上下文污染 | STRIDE-T / 智能体特有 | **未缓解** | **无**（**注入**语料集仍不存在；`corpus/` 目录现有但只有路径穿越语料）；**新增**：经 Skill `description` 的**常驻**注入面已登记（`ADR-0016`），其验证**不可由 CI 断言** |
 | [`T-05`](untrusted-input-and-agentic.md#t-05-子代理输出是不可信输入) | 子代理输出是不可信输入 | STRIDE-S / 智能体特有 | 部分缓解 | **无** |
@@ -242,7 +249,8 @@ flowchart LR
 ——它证明"代码长成约定要求的样子"，**不证明"攻击被挡住"**。
 
 **按此定义计数：13 条中 8 条缺行为层验证。**
-**已有行为级用例的 5 条**：`T-02`（`S2` 拒绝半，`f436b0b`）、`T-01`（超限分配行为断言 + 变异探针，
+**已有行为级用例的 5 条**：`T-02`（`S2` **拒绝**半 `f436b0b`；**工具层审计**半
+`4a35c61`／`05cb0af`，2026-09-19）、`T-01`（超限分配行为断言 + 变异探针，
 `5fddcfa`）、`T-08`（凭据 canary，`5fddcfa`+`8e047e6`）、**`T-11`**（`S1` + 可回放链路，2026-09-19）、
 **`T-12`**（`S3`，2026-09-19）。
 **计数沿革（同一定义，避免"数字变了却不知为何"）**：`f436b0b` 前 = **13**；`f436b0b` 后 = **12**
@@ -262,7 +270,7 @@ flowchart LR
 | 编号 | 缺失的验证 | 应落到哪 | 现状 |
 | --- | --- | --- | --- |
 | T-01 | 逃逸尝试（越界写、越界出站、超限分配）必须被拒绝 | `tests/security/` | **超限分配已落地**（行为 + 变异探针，`5fddcfa`）；**越界写 / 越界出站 / `IsolationError` 不回退**仍缺 |
-| T-02 | `../../etc/passwd`、符号链接、绝对路径、UNC 的拒绝行为 | `tests/security/`（**S2**） | **拒绝半已落地**（`f436b0b`，**18 用例**〔含 4 种前缀欺骗 + 3 个边界正确性〕+ 接缝 2 用例）；**UNC（第 5 类）与"且留审计"半**仍缺——⚠️ **防误引（2026-09-19）**：`test_audit_landing_whitelist.py` **不构成**"且留审计"半的证据（它断言**审计落点目录白名单**，属另一攻击面）；`test_path_traversal_rejected.py` 的 docstring **自述**该半**无法验证**（不注入 sink、不断言审计事件）；**配置面落点**（`.lowspec.toml` 的 `[audit] directory`）的 `W1`~`W8`（根外目录 / `..` 上跳 / 根内符号链接 / 绕过配置 / **拒绝时不创建目录** / **不回退默认** / 变异探针 / 两层各删一层）：**`W1`/`W2`/`W4`~`W8` 已落地**（`91ea9d5`，含 W7 变异探针与 W8 两层各自独立），**`W3`（根内符号链接指向根外）仍缺**（用例未覆盖该输入） |
+| T-02 | `../../etc/passwd`、符号链接、绝对路径、UNC 的拒绝行为 | `tests/security/`（**S2**） | **拒绝半已落地**（`f436b0b`，**18 用例**〔含 4 种前缀欺骗 + 3 个边界正确性〕+ 接缝 2 用例）；**"且留审计"半（工具层）已落地**——⚠️ **2026-09-19 更正**：原写"仍缺"，**有误**；证据两处：`test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`、`test_t02_path_traversal_audit.py`（`4a35c61`，含变异探针）；**仍未闭合**：`resolve_within` **非工具层**调用点（配置期 / 装配期）拒绝不进审计（`Q-1`）；**UNC（第 5 类）缺显式用例但已判不构成独立绕过面**（Linux `//` 折叠）；⚠️ **防误引（保留并精化）**：`test_audit_landing_whitelist.py` **仍不构成**"且留审计"半的证据（它断言**审计落点目录白名单**，属另一攻击面）——**但该半的证据在别处**；`test_path_traversal_rejected.py` 的**旧 docstring** 曾**自述**该半**无法验证**，**那是假声明**，已由 `b79f383` 修正（详见 §7）；**配置面落点**（`.lowspec.toml` 的 `[audit] directory`）的 `W1`~`W8`（根外目录 / `..` 上跳 / 根内符号链接 / 绕过配置 / **拒绝时不创建目录** / **不回退默认** / 变异探针 / 两层各删一层）：**`W1`~`W8` 全部落地**（`W1`/`W2`/`W4`~`W8` 于 `91ea9d5` 含 W7 变异探针与 W8 两层各自独立；**`W3` 于 `9b37e99` 补：配置期 + 装配期 + 变异探针**） |
 | T-03 | 注入语料进入上下文后不得改变控制流 / 权限判定 | `tests/security/` + `tests/security/corpus/` | **注入**语料集不存在（`corpus/` 已建，仅路径穿越语料） |
 | T-04 | 同上（直接注入 / 间接注入分列） | `tests/security/corpus/` | **注入**语料集不存在（同上）；**新增**：经 Skill `description` 的**常驻**注入面（`ADR-0016`）已登记，其验证**不可由 CI 断言**（人工抽查 + 构建期钉 commit） |
 | T-05 | 成员回报中的注入指令不得影响权限决策 | `tests/security/` | 不存在（去毒是上游行为，不可回归） |
@@ -280,12 +288,13 @@ flowchart LR
 | 用例（ADR-0015 §7.2） | 覆盖本文条目 | 当前状态 |
 | --- | --- | --- |
 | `S1 test_unauthorized_tool_call_is_denied_and_audited` | **T-11**（并部分覆盖 T-03） | **已落地（2026-09-19，`e9e780c`）**：`test_harness_s1_authorization.py`（5 例）+ `test_s1_replayable_audit_link.py`（端到端可回放 + 2 变异探针）；**缺口**：harness 路径未端到端跑**真实** `PolicyEngine`；「工具滥用」半零行为证据；能力层 deny 未经**真实** sink 端到端断言（见 `T-11` 条目） |
-| `S2 test_path_traversal_is_rejected_and_audited` | **T-02** | **拒绝半已落地**（2026-09-18，`f436b0b`）：`test_path_traversal_rejected.py`（**18 用例**）+ `test_path_validation_seam.py`（2 用例）；**"且留审计"半未落地**——⚠️ **原因已更正（2026-09-19）**：`observability/audit.py` 的 `JsonlAuditSink` **已在仓库中**（`e78c221`），未落地的原因是**该半没有承载点**：`resolve_within` 是**纯函数、不持有 sink**，"拒绝时由谁 emit 审计"属**未决设计**（见 §8.2 待裁决） |
+| `S2 test_path_traversal_is_rejected_and_audited` | **T-02** | **拒绝半已落地**（2026-09-18，`f436b0b`）：`test_path_traversal_rejected.py`（**18 用例**）+ `test_path_validation_seam.py`（2 用例）；**"且留审计"半（工具层）已落地**——⚠️ **2026-09-19 更正**：原写"未落地 / 没有承载点"，**有误**；**承载点存在**（`tools/files.py::_fail` → `tools/registry.py::audit_tool_call` → `JsonlAuditSink.emit`），证据两处（`test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`、`test_t02_path_traversal_audit.py`）；**仍未闭合**：`resolve_within` **非工具层**调用点（配置期 / 装配期）的拒绝不进审计——"由谁 emit"见 §8.2 的 `Q-1`（**范围已收窄**） |
 | `S3 test_domain_pack_python_code_is_never_imported` | **T-12** | **已落地（2026-09-19，`9a5689c`）**：`test_harness_s3_domain_pack.py`（4 例 + 变异探针）；**缺口**：`.pth` / `.so` / ctypes 等向量未显式断言，且**仅覆盖「领域包」这一载体**（见 `T-12` 条目） |
 
 > **谁也未落地的，不假称已覆盖。** 2026-09-19 现状：`S1`、`S3` 已落地，`S2` 的**拒绝**半已落地，
-> **唯一仍为「未落地」的是 `S2` 的"且留审计"半**（原因见上行：**无承载点**，
-> 而非"sink 不存在"——sink 已实现）。
+> `S2` 的**"且留审计"半（工具层）亦已落地**（⚠️ **2026-09-19 更正**：原写「唯一仍为未落地的是
+> 该半、因**无承载点**」——**有误**；承载点与两处行为层证据均已存在）。**仍未闭合的只剩**
+> `resolve_within` 的**非工具层**调用点（配置期 / 装配期）——见 `Q-1`。
 > 状态变更的依据**必须是仓库里可执行的用例**：**验证工程师写用例，架构师据其更新状态**
 > （与"安全断言不得由实现者自证"同源）。
 > **补记（同日，`5fddcfa`）**：另有 **3 条不属于 `S1`~`S3`** 的守卫用例入库——

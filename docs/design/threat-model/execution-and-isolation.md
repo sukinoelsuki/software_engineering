@@ -91,22 +91,49 @@
 
 ## T-02 路径穿越
 
-**状态**：`部分缓解`（2026-09-18 重评：`S2` 的"**拒绝**"半已有可执行行为用例，"**且留审计**"半无载体
-⇒ **不升为"已缓解并验证"**）｜ **主导类别**：STRIDE-E（权限提升）
+**状态**：`部分缓解`（2026-09-18 重评：`S2` 的"**拒绝**"半已有可执行行为用例；
+**2026-09-19 更正**：原写"**且留审计**"半**无载体**——**该表述有误**，承载点与**两处行为层证据**
+均已存在，见下方「2026-09-19 更正（审计半）」；是否升为「已缓解并验证」见提案 **`P-2`**，
+**本轮不改状态与计数**）｜ **主导类别**：STRIDE-E（权限提升）
 
 > **2026-09-19 增补（配置面落点）**：新增"**不可信配置决定审计落点**"这一类攻击面（攻击路径 6）
 > 与其缓解规格（`../interfaces/audit.md` §2.5，判据 `W1`~`W8`）。
 > **落地现状（2026-09-19 复核）**：缓解**已实现**（`foundation/config.py` 的配置期校验 +
 > `observability/audit.py` 的装配期校验），`W1`/`W2`/`W4`~`W8` **用例已落地**
 > （`tests/security/test_audit_landing_whitelist.py`，`91ea9d5`，含 W7 变异探针与 W8 两层各自独立），
-> **`W3`（根内符号链接指向根外）仍缺用例** ⇒ 本条**不因此升降状态**：T-02 仍「部分缓解」，
-> 主因是"**且留审计**"半**无承载点**（见下）。
+> **`W3`（根内符号链接指向根外）本轮已补**（`9b37e99`：配置期 + 装配期 + 变异探针）
+> ⇒ **`W1`~`W8` 全部落地**；**UNC（第 5 类）仍缺显式用例**，但**已判不构成独立绕过面**
+> （Linux 下 `//` 折叠为 `/`，实测 `Path("//server/share").resolve() == Path("/server/share")`；
+> 跨平台项仍见残余风险 4）。本条**不因此升降状态**：T-02 仍「部分缓解」——**是否升级待 `P-2` 裁决**
+> （"且留审计"半的**原表述**已于 2026-09-19 更正，见下）。
 >
 > **2026-09-19 裁决（`A-3`，见 `README.md` §8.1）**：`test_audit_landing_whitelist.py`
 > **不构成**本条"**且留审计**"半的证据——它断言的是**审计落点目录白名单**（攻击面 6），
-> 与本半（"拒绝时留下审计记录"）**不是同一落点**；该半**至今无承载点**：
-> `resolve_within` 是**纯函数、不持有 sink**，"由谁 emit"的选项与代价登记于
-> `README.md` §8.2 的 **`Q-1`（待领导裁决）**。
+> 与本半（"拒绝时留下审计记录"）**不是同一落点**。
+> ⚠️ **【2026-09-19 更正】**该裁决的**结论（此文件不是证据）不变**，但其中"该半**至今无承载点**"
+> 一句**有误**：**承载点存在**（工具层 `_fail` → `audit_tool_call` → `emit`），且已有**两处行为层证据**
+> ⇒ **"这份文件不是该半的证据" ≠ "该半没有证据"**（本轮错误的形状正是把二者混同）。
+> **更精确的现状**：仅 **`resolve_within` 的非工具层调用点**（配置期 / 装配期）的拒绝不进审计，
+> 其"由谁 emit"的选项与代价见 `README.md` §8.2 的 **`Q-1`（范围已收窄，待领导裁决）**。
+>
+> **2026-09-19 更正（审计半：原"无载体"表述为误）**：
+> **原表述**（本轮之前，见 `README.md` §4/§5/§7）：「`S2` 的"且留审计"半**无载体**／
+> `resolve_within` 是纯函数不持有 sink ⇒ 该半**无承载点**」。
+> **错在哪**：把"**`resolve_within` 这个纯函数不持有 sink**"当成了"**该半没有承载点**"。
+> 事实是**承载点不止一处**——**工具层**的路径拒绝**已经**留痕：`tools/files.py` 的
+> `ReadFileTool.invoke` 在 `resolve_tool_path` 抛 `PathNotAllowedError` 时走 `_fail`
+> （`files.py:121-129`），`_fail` 调 `tools/registry.py::audit_tool_call`（`registry.py:179-211`，
+> 构造 `TOOL_CALL` 事件并 `sink.emit`），落盘到 `observability/audit.py` 的 `JsonlAuditSink`；
+> `harness/loop.py` **不重复** emit，只把 `result.audit_id` 回填 `TOOL_RESULT`。
+> **"纯函数不持有 sink"只说明这一半*不由 `paths` 承担*，不等于没人承担**。
+> **行为层证据（两处，均已入库）**：
+> ① `tests/security/test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`
+> （**真实** `JsonlAuditSink` + **真实** `ReadFileTool`，断言拒绝后 `audit_id` 落盘且 `query_by_id` 可还原）；
+> ② `tests/security/test_t02_path_traversal_audit.py`（`4a35c61`，断言 `kind=TOOL_CALL` 与
+> `detail["reason"] == "path_not_allowed"` 这一**安全语义字段**，并含**变异探针**：摘掉 `emit` 后主用例必红）。
+> **仍成立的部分（不得一并更正）**：`resolve_within` **自身的**非工具层调用点（配置期 / 装配期）
+> 的拒绝**不进审计**——那是 `Q-1` 的范围问题，与本处是两件事。
+> **是否据此把本条升为「已缓解并验证」**：见 `README.md` §8.2 的提案 **`P-2`**（**本轮不改计数**）。
 
 - **资产**：A-1（工作目录文件）、A-2（白名单外文件系统）
 - **攻击者与前提**：攻击者能控制一个**会被当成路径使用**的字符串——工具参数
@@ -140,6 +167,13 @@
     ⇒ "拒绝"半**已验证**；`make test-security` → **13 passed / 85 deselected**
     （**这是 `f436b0b` 当时的快照**；同日追加 4 种前缀欺骗 + 3 个边界正确性用例后，
     该文件为 **18 例**，见下方"验证方式"——**保留快照计数并标注口径**，不覆写）。
+  - **审计留痕（工具层，"且留审计"半；2026-09-19 更正：载体与证据均已存在）**：
+    工具层路径拒绝经 `tools/files.py::_fail`（`files.py:121-129`）→
+    `tools/registry.py::audit_tool_call`（`registry.py:179-211`，构造 `TOOL_CALL` 事件、`ok=False`
+    ⇒ `outcome=ERROR`、`detail={"reason": "path_not_allowed"}`）→ `JsonlAuditSink.emit` 真实落盘；
+    `harness/loop.py` **不重复** emit，只把 `result.audit_id` 回填 `TOOL_RESULT`。
+    ⚠️ 该事件的 `outcome` 是 `ERROR` 而非 `DENY`（越权靠 `detail.reason` 表达）——
+    口径是否调整见 `README.md` §8.2 的 **`Q-2`**（待裁决）。
   - **配置面落点白名单（2026-09-19 新增；实现与用例均已落地）**：`../interfaces/audit.md` §2.5 的
     `P1`~`P7`——根集合为**常量** `foundation.config.ALLOWED_AUDIT_ROOTS`（配置不得影响它）；
     **两层校验**（配置期 `resolve_within` ⇒ `ConfigError`；装配期 sink 自查 ⇒ `PathNotAllowedError`）；
@@ -167,6 +201,9 @@
      该函数正确地"什么都允许"——**它只保证不越出给定根**。
   4. **Windows 语义未覆盖**：UNC、盘符、大小写不敏感文件系统、8.3 短名。
      `REQ-PLAT-01` 要求跨平台，**当前只在 Linux 验证过** 【待验证】。
+     **UNC 补充评估（2026-09-19）**：在 **Linux** 下 `//` 折叠为 `/`
+     （实测 `Path("//server/share").resolve() == Path("/server/share")`），
+     故 UNC **不构成 Linux 上的独立绕过面**；本项仍属**多平台项**（Windows / 盘符语义未验）。
   5. **配置面缓解的残余（2026-09-19 新增）**：① 允许的根集合仍由**代码**决定——装配代码若显式
      传入宽根，白名单等于被放宽（`resolve_within` **不校验根本身**，与残余风险 3 同一失效模式；
      当前唯一根是 `default_audit_directory()`）；② "是否允许额外根（如 CI 挂载卷）"是**策略待确认项**
@@ -178,16 +215,23 @@
     边界正确性 + 变异验证 + 4 种前缀欺骗 + 3 种"根内同前缀文件名"）与
     `test_path_validation_seam.py`（2 接缝用例）。**变异验证（一）**：临时移除 `resolve_within`
     拒绝分支后 **9 个拒绝用例 `DID NOT RAISE`（失败）**，恢复后 `raise` 回到 `paths.py:39`、工作树干净。
-  - **仍缺（`S2` 的"**且留审计**"半）——原因已于 2026-09-19 更正**：**不是**"sink 不存在"
-    （`observability/audit.py` 的 `JsonlAuditSink` 已实现，`e78c221`），而是**该半没有承载点**：
-    `foundation.paths.resolve_within` 是**纯函数、不持有 sink**，"拒绝时由谁 emit 审计记录"
-    **尚未裁决**（`README.md` §8.2 的 `Q-1`：三个候选 + 各自代价，待领导拍板）。
-    ⚠️ **防误引（2026-09-19，本轮负向发现）**：`tests/security/test_audit_landing_whitelist.py`
-    **不构成**该半的证据（它断言**审计落点目录白名单**，属攻击面 6，见上方 `A-3` 裁决段）；
-    本文件（`test_path_traversal_rejected.py`）的 **docstring 自身即写明**「拒绝被正确审计记录」
-    一半**目前无法验证**——因为它**不注入 sink、不断言任何审计事件**
-    ⇒ **该半至今无证据**，**不得**用上述任一文件充当。
-    **第 5 类（Windows / UNC / 盘符）**亦仍缺：本机为 Linux，`REQ-PLAT-01` 的多平台 job 未建。
+  - **工具层"且留审计"半——已有证据（2026-09-19 更正：原写"该半至今无证据"，有误）**：
+    ① `tests/security/test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`
+    （**真实** sink 端到端 `query_by_id`）；② `tests/security/test_t02_path_traversal_audit.py`
+    （`4a35c61`，**真实** `JsonlAuditSink` + **真实** `ReadFileTool`，断言 `kind=TOOL_CALL` /
+    `outcome=ERROR` / `detail.reason == "path_not_allowed"`，含**变异探针**证明非恒过）。
+    ⚠️ **防误引（保留并精化）**：`tests/security/test_audit_landing_whitelist.py`
+    **仍不构成**该半的证据（它断言**审计落点目录白名单**，属攻击面 6，见上方 `A-3` 裁决段）——
+    **但该半的证据在别处**（见本行前两处用例）；**不得**因"这份文件不是证据"误读为"该半无证据"
+    （本轮错误的形状正是如此，见 `README.md` §7 的假声明事故登记）。
+    `test_path_traversal_rejected.py` 的**旧 docstring** 曾写「该半无法验证」——**那是假声明**，
+    已由 `b79f383` 修正（现指向上述两处用例）。
+  - **仍未闭合（`Q-1` 的范围问题）**：`resolve_within` 的**非工具层调用点**（配置期 / 装配期）
+    在拒绝时**不进审计**——"由谁 emit"的选项与代价见 `README.md` §8.2 的 `Q-1`
+    （**范围已收窄**：工具层运行时半已有证据，剩下的只是非工具层调用点）。
+  - **第 5 类（Windows / UNC / 盘符）**：本机为 Linux，`REQ-PLAT-01` 的多平台 job 未建；
+    **UNC 已判不构成独立绕过面**（Linux 下 `//` 折叠，实测 `Path("//server/share").resolve() ==
+    Path("/server/share")`）⇒ 缺口降为"多平台项"，见残余风险 4。
   - **第 4 类（前缀欺骗）已补（2026-09-18）**：`/tmp/foo` vs `/tmp/foobar` 这类
     "**字符串前缀为真、路径分量不为真**"的输入，按**参数化**覆盖 4 种兄弟目录名
     （`-evil` / `2` / `.bak` / `_backup`）＋ 3 种"位于根内、文件名与根同前缀"的**边界正确性**用例
