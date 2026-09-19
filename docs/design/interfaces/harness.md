@@ -2,6 +2,8 @@
 
 - 对应模块：`src/agent_sec_perf/harness/`（L3 编排层，8 件：`session` / `loop` / `prompts` /
   `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack`）
+  ——`ADR-0020`（**提议中**）另提出**第 9 件** `arguments.py`（手写 JSON-Schema 子集校验器，
+  见 §3.1 与 §7.2）；批准前**不得开工**
 - 上游决策：ADR-0015 §5.1.2（`UX ↔ HARNESS` 行 + `HARNESS ↔ CAPABILITY` 行 + 「关键约定」）、
   §5.3 自研模块 2/4/5、§5.4.1、§7.2（`S1`/`S3`）、§7.3
 - 依赖：`contracts/model.py`（`ModelResponse` / `ChatMessage` / `CapabilityTier`）、
@@ -489,7 +491,7 @@ class Session(Protocol):
 
 ## 3. `harness/` 内部接缝（"能并行"的前提）
 
-### 3.1 8 件的职责与对外签名
+### 3.1 8 件的职责与对外签名（`ADR-0020` 提议新增第 9 件：`arguments.py`）
 
 **哪些类型进 `contracts/`（判据，不得只记结论）**：
 
@@ -634,6 +636,19 @@ def load_pack(
 ```
 
 ```python
+# --- harness/arguments.py（ADR-0020 提议的第 9 件；纯函数式叶子）-------------
+class SubsetArgumentValidator:
+    """``ArgumentValidator`` 的最小子集实现（``V1``~``V6`` 见 §3.4）。
+
+    受支持子集 / 解析顺序 / 错误消息形状见 ``ADR-0020`` §5；
+    无状态、纯函数式（``V6``），只依赖 ``contracts`` + ``foundation.errors`` +
+    ``foundation.logging`` —— **不** import 任何 harness 兄弟模块（``H2``）。
+    """
+
+    def validate(self, *, spec: ToolSpec, arguments_json: str) -> Mapping[str, object]: ...
+```
+
+```python
 # --- harness/loop.py（循环 + 决策序列的唯一持有者）---------------------------
 class TaskLoop:
     """单任务 ReAct 循环；**事件流的唯一生产者**（含 seq / timestamp）。"""
@@ -690,7 +705,13 @@ class Session(SessionContract):  # contracts/harness.py 的 Protocol
 1. **装配期校验**（§2.8 三条，失败即拒绝启动）；
 2. `exposed = trimming.select_tools(registry.specs(), tier=config.capability_tier,
    allowlist=pack.tool_allowlist if pack else all_names)`；
-3. `system = prompts.build_system_message(tier=config.capability_tier)`；
+   ⚠️ `registry.specs()` 是**全量注册集（未裁剪）**——`T6` 已裁决（2026-09-19，见 §3.3 步 1 与 §8）；
+   裁剪只由 `trimming.select_tools` 承担，注册表**不**承担裁剪（依据见 `tools.md` §2.6）；
+3. `system = prompts.build_system_prompt(tier=config.capability_tier)` —— 取 **`str` 形态**
+   （与第 5 条一致；`context.assemble` 要的就是 `str`，`session.py` 即此写法）。
+   ⚠️ **本行于 2026-09-19 更正（第八版）**：原写 `prompts.build_system_message(...)`（消息形态），
+   与**同一节第 5 条**及已落地的 `session.py` 矛盾——"同一文件内两处表述打架"的**第四次**同形。
+   `build_system_message` 仍是 §3.1 要求存在的公开 builder（本轮 `src/` 内**无调用方**，仅单测覆盖）；
    **pack 片段不进 SYSTEM** —— 由 `prompts.pack_context_message(pack_name=pack.name,
    fragments=pack.prompt_fragments)` 装配成**一条独立的 `role=USER` 数据消息**
    （**空片段 / 仅空白 ⇒ `None`，不产消息**），经 `context.assemble` 的 `data_context` 形参接收
@@ -784,7 +805,7 @@ sequenceDiagram
 | 步 | 动作 | 入参类型 | 出参类型 | 失败 / 分支处置 |
 | --- | --- | --- | --- | --- |
 | 0 | `emit(SessionEvent(kind=TOOL_CALL, call_id, tool_name=call.name))` | `ToolCallRequest` | — | **无条件**：模型请求过就是事实（`name` 原样，不可信数据） |
-| 1 | **解析域判定**：`call.name` 是否属于 `exposed` 的名字集合 | `str` | `bool` | 不在 `exposed`：若该名字在 `registry.specs()` 里 ⇒ `denied_reason="not_exposed"`，否则 `"unknown_tool"` ⇒ **跳至步 6b**（**不**构造 `PolicyRequest`、**不**调 `decide()`、**不**调 `invoke()`）。⚠️ 若在 `exposed` 内却 `registry.resolve(name) is None` ⇒ **不变量被破** ⇒ `ERROR(INTERNAL)` + 终止（**不得**静默跳过） |
+| 1 | **解析域判定**：`call.name` 是否属于 `exposed` 的名字集合 | `str` | `bool` | 不在 `exposed`：若该名字在 `registry.specs()`（**全量注册集**，`T6` 裁决 2026-09-19）里 ⇒ `denied_reason="not_exposed"`，否则 `"unknown_tool"` ⇒ **跳至步 6b**（**不**构造 `PolicyRequest`、**不**调 `decide()`、**不**调 `invoke()`）。⚠️ 若在 `exposed` 内却 `registry.resolve(name) is None` ⇒ **不变量被破** ⇒ `ERROR(INTERNAL)` + 终止（**不得**静默跳过） |
 | 2 | **严格校验**：`validator.validate(spec=spec, arguments_json=call.arguments_json)` | `str`（不可信） | `Mapping[str, object]`（已校验的结构化参数） | 失败（`ToolArgumentsInvalidError`）⇒ `denied_reason="invalid_arguments"` ⇒ 步 6b。**不**构造 `PolicyRequest`（`architecture.md` §5.3 的 `VALID` 分支）；回喂内容 = 校验器的中文说明（**不得**回显原始 JSON） |
 | 3 | `PolicyRequest(session_id, call_id=call.call_id, tool_name=spec.name, arguments=<步 2 出参>, requested=spec.capabilities, domain_pack=pack_name)` ⇒ `policy.decide(request)` ⇒ `emit(SessionEvent(kind=POLICY_DECISION, decision=..., audit_id=decision.audit_id))` | `Mapping[str, object]` | `PolicyDecision` | ⚠️ **`spec.capabilities` 为空集 ⇒ 属工具声明缺陷**：视为 `denied_reason="invalid_arguments"`（**不得**构造空集请求——`policy.md` §2.3 的前置条件）；工具名必须用 `spec.name`（**不**用 `call.name`，两者在步 1 已确认一致，用 `spec.name` 可让审计的可信来源明确）。`decide()` 自身失败收敛为拒绝（`policy.md` §2.5），其异常**不**在 harness 侧被捕获 |
 | 4 | 执行判定：① `decision.requires_confirmation` ⇒ **先看通路**：`approval is None` ⇒ **跳至步 6b**（`denied_reason="approval_denied"`，**不产** `APPROVAL_RESULT`，§2.5.5 的 `R1`）；否则 `approval.request(ApprovalRequest(session_id, call_id, tool_name=spec.name, risk_level=decision.risk_level, reason=decision.reason, arguments_summary=summarize_arguments(<步 2 出参>)))` ⇒ 形状非法或抛异常 ⇒ **`R3`/`R4`**（`ERROR(INTERNAL)` + 终止）；否则 `emit(SessionEvent(kind=APPROVAL_RESULT, approval=<结果>, audit_id=<结果>.audit_id))`；② 不带确认的路径看 `decision.allow` | `PolicyDecision` | `ApprovalResult \| None` | ①`outcome is DENY` ⇒ `denied_reason="approval_denied"` ⇒ 步 6b；②`approval is None` ⇒ 同 ①（**不得**放行）；③`allow=False`（且不用确认）⇒ `denied_reason="policy_denied"` ⇒ 步 6b。**注意**：`requires_confirmation=True` **不论 `allow`** 都要问（`policy.md` §2.4 的四格：`False/True` 是"可升级拒绝"）；`arguments_summary` 的生成口径见 §2.5.3（**不得**回显原始 JSON） |
@@ -801,7 +822,7 @@ ChatMessage(role=Role.TOOL, content=<观察内容>, tool_call_id=call.call_id)
 `tool_call_id` **必须**等于 `call.call_id`：它是 `TOOL` 消息与 `ASSISTANT.tool_calls` 的唯一
 配对键，缺失会让回指断裂、审计无法回放（`model.md` §2.1 的不变式）。
 
-### 3.4 参数校验器（**新增 Protocol**；实现选型**待定，须停下上报**）
+### 3.4 参数校验器（**新增 Protocol**；实现选型：**手写 JSON-Schema 子集校验器** —— `ADR-0020`，提议中）
 
 ```python
 class ArgumentValidator(Protocol):
@@ -830,18 +851,24 @@ class ArgumentValidator(Protocol):
 但**不得**只保留其中一处（删入口 = 非法值以更晚、更隐蔽的形态出现；删兜底 = 工具依赖
 "上游一定校验过"）。这与 `policy.md` §2.5"入口 vs 兜底"是同一套分工。
 
-**实现选型未定 —— 决定者与触发时点（不得留成"看起来在等某个决定"）**：**由实现者在动手做
-`ArgumentValidator` 之前**（即装配 `cli/` 之前，§5.1 第 8 行）提出选型、**上报领导拍板**；
-在拍板前**不得开工**该校验器，也**不得**以"临时不校验/临时放行"绕过（§5.1 第 8 行的待解阻塞）。
-为便于拍板，候选与影响面如下：`ADR-0015` §5.2.2 的 `D2` 把 pydantic 的用途限定为
-"**信任边界校验** + 工具参数 JSON Schema 生成"，而 `src/` 中**尚无任何 `pydantic` import**
-（`architecture.md` §11 的 `G-2` 已登记该差异）。本轮**不代为选型**，只要求：
+**实现选型的状态（2026-09-19 更新：已提出，待批准）**：选型由
+[`ADR-0020`](../adr/0020-argument-validator-implementation.md) 处理 —— 它给出 **4 个候选**
+（手写 JSON-Schema 子集校验器 / pydantic 严格模式 + 自研 JSON-Schema→模型转换层 /
+pydantic 模型类作为唯一真源 / 引入 `jsonschema` 库）、加权对比（**131 / 72 / 56 / 90**）、
+被否决方案的理由，以及**推荐**：**手写 JSON-Schema 子集校验器**。
+该 ADR 同时登记 `ADR-0015` 的 `D2` **两处用途均不落地**（新增 ADR，`ADR-0015` 正文不改；
+只在其「修订记录」追加一行指针）。
 
-1. 无论选 **pydantic 严格模式** 还是 **手写校验器**，必须满足 V1~V6；
-2. 选定后**停下上报**（`CODEBUDDY.md` §10.2 规则 3）：
-   - 选 pydantic ⇒ 这是 `D2` 第一处用途的落点，须在 `ADR-0015` 修订记录登记（`G-2` 收敛一半）；
-   - 选手写 ⇒ 须**新增 ADR** 登记"`D2` 的第一处用途不落地"，理由与影响面一起写（ADR 只增不改）；
-3. 无论哪种，**不得**用 pydantic 承担配置解析或内部数据结构（`D2` 的用途限定）。
+⚠️ `ADR-0020` **仍是提议中（待领导批准）** ⇒ **批准前实现者不得开工**该校验器，
+也**不得**以"临时不校验 / 临时放行"绕过——§5.1 第 8 行的**待解阻塞仍然成立**，
+只是"上报物"已经具备（不再是"看起来在等某个决定"）。
+
+| # | 规定 |
+| --- | --- |
+| 1 | 无论最终采用哪一套机制，**必须满足 V1~V6**（本节已写死契约语义） |
+| 2 | 选 pydantic ⇒ 这是 `D2` 第一处用途的落点，须在 `ADR-0015` 修订记录登记（`G-2` 收敛一半）；选手写 ⇒ 须**新增 ADR** 登记"`D2` 的第一处用途不落地"——[`ADR-0020`](../adr/0020-argument-validator-implementation.md) 即该 ADR |
+| 3 | 无论哪种，**不得**用 pydantic 承担配置解析或内部数据结构（`D2` 的用途限定） |
+| 4 | **可实现细节以 `ADR-0020` §5 为准**（受支持子集 / 解析与校验顺序 / 错误消息形状 / 上限常量 / 子集外关键字一律拒绝）；本节**只写契约语义**，**不重复**那套细节——同一事实两处表述必然漂移（`interfaces/README.md` 的 `C10`） |
 
 ---
 
@@ -971,7 +998,7 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
 | 5 | `registry` | `ToolRegistry` | **无默认** | `cli/`：`ToolRegistry([ReadFileTool(sink), WriteFileTool(sink), ListDirTool(sink), ShellCommandTool(sink)])`（4 个内置工具的构造签名都是 `(sink)`） | `ToolRegistrationError`（重名 / 外部来源摘要缺失或不一致）⇒ 装配期失败，**不得**静默剔除该工具 |
 | 6 | `model` | `ModelClient` | **无默认** | `cli/`：`LocalLlamaClient(binary=…, model_path=…, log_path=…)`（云端客户端**未开工**） | `ModelUnavailableError`（起不来 / 未就绪）⇒ 装配期失败，非零退出 |
 | 7 | `approval` | `ApprovalGate \| None` | **`None`** | `cli/approval.py`（交互模式）；非交互模式**显式传 `None`** | `None` ⇒ 需确认的调用**一律拒绝**（§2.5.5 `R1`）；**不得**为"图方便"传一个恒放行的 gate |
-| 8 | `validator` | `ArgumentValidator` | **无默认** | `cli/`（实现选型见 §3.4，**未定 ⇒ 实现者停下上报**） | 选型未定即无法装配 ⇒ 属**待解阻塞**；**不得**以"临时不校验"绕过 |
+| 8 | `validator` | `ArgumentValidator` | **无默认** | `cli/`：`ADR-0020` 的 `SubsetArgumentValidator`（**提议中，未批准前不得开工**；选型与理由见 §3.4） | 批准前无法装配 ⇒ 属**待解阻塞**；**不得**以"临时不校验"绕过 |
 | 9 | `pack` | `DomainPack \| None` | **`None`** | `cli/`：`load_pack(directory, roots=<**显式给出**>, known_tools=frozenset(spec.name for spec in registry.specs()))` | `DomainPackError` / `PathNotAllowedError` ⇒ 装配期失败；**不得**降级为"无 pack 继续跑" |
 
 **`tool_risk` 的组装（`REQ-HARNESS-08` 的落点）**：把 pack 的 `security.risk_overrides`
@@ -1059,6 +1086,7 @@ with Session(
 | `H-7` | `harness/` 内部结构：H1（不 import L2/L4 实现）+ H2（叶子零依赖）两条机器检查 |
 | `H-8` | 装配期校验：`working_dir` 不在 `allowed_roots` 内 / `max_steps=0` / `tool_timeout_s=inf` ⇒ 构造期拒绝（§2.8） |
 | `H-9` | `Session.close()` **幂等**（连调两次只 teardown 一次）；`with` 退出后按序 teardown（用 fake 记录调用顺序）。**本轮的可观察顺序是两步**：`model.close()` → `sink.flush()`（§2.9 已如实登记"工具一步无载体"）——用例只断言这两步，**不得**断言一个不存在的工具 teardown |
+| `H-11` | **校验器的子集与 schema 守卫**（`ADR-0020` §7）：① 逐类边界（`type` / `required` / `additionalProperties` / 数值与长度边界 / 数组 `items`）各一条正例与反例；② **子集外**的校验关键字（如 `enum` / `pattern`）⇒ 抛 `ToolArgumentsInvalidError`（**不得**静默忽略），且有一条**元测试**证明该守卫真会触发；③ 机器检查：全部内置工具的 `parameters_schema` 的关键字集合 ⊆ `ADR-0020` §5.1 的白名单 |
 
 ### 6.2 对抗性用例（`tests/security/`，验证工程师；**不得由实现者自证**）
 
@@ -1089,6 +1117,8 @@ with Session(
 | `security/capabilities.py` | **新增**一个纯函数（建议 `narrow_granted(granted: CapabilitySet, allowlist: frozenset[Capability]) -> CapabilitySet`）实现"只能收窄"的交集；装配点必须经它 |
 | `tests/unit/test_harness_*.py` | §6.1 的 `H-1`~`H-10`（另需覆盖 §5.2 的渲染分支与退出码表：每一 `kind` 至少一条用例） |
 | `tests/security/test_harness_*.py` | §6.2 的 `S1` / `S1-b` / `S1-c` / `S3` / `S-new-1`~`6` |
+| `harness/arguments.py` | **新建**（`ADR-0020`，**提议中**）：手写 JSON-Schema 子集校验器的唯一实现（无状态；受支持子集 / 解析顺序 / 错误消息形状见 `ADR-0020` §5）。落地清单见 **§7.2** |
+| `contracts/tools.py` + `tools/registry.py` | **docstring 同步（`T6` 裁决）**：`ToolRegistry.specs()` 的口径由"裁剪后"改为"**全量注册集**"（`tools.md` §2.6 已更正）。**只改 docstring，不改行为**——实现本就返回全部已注册描述 |
 | `docs/design/interfaces/audit.md` | **已落**（2026-09-19，`be63b31`）：§2.2 的 kind→outcome 表把 `TOOL_CALL` 的允许集放宽为 `{OK, ERROR, DENY}` + `D1~D4` + 修订记录。**下游联动**：`contracts/audit.py` 与 `observability/audit.py` **均无需改动**（已读源码核实：成员本就存在；读取侧只校验枚举取值，不校验 kind×outcome 组合）；**0 处测试会因此翻红**（全仓无 kind→outcome 允许集断言） |
 | `docs/design/architecture.md` | **已落**（2026-09-19）：§2.4 表首行与 §5.2 同步为同步 `Iterator`，§12 登记修订 |
 
@@ -1112,6 +1142,18 @@ with Session(
 
 ⚠️ **顺序**：第 1、2 项（档位轴）**必须先于** `loop.py`，否则波 2 会建在错误的轴上。
 
+### 7.2 校验器落地清单（`ADR-0020`，**提议中**）
+
+> 与 §7.1 同格式：逐个可核对。⚠️ **`ADR-0020` 获批前不得开工**（§3.4 的待解阻塞）。
+
+| # | 文件 | 必做动作 | 关联 |
+| --- | --- | --- | --- |
+| 1 | `harness/arguments.py` | **新建** `SubsetArgumentValidator`：无状态、纯函数式；只依赖 `contracts` + `foundation.errors` + `foundation.logging`；**不** import 任何 harness 兄弟模块 | `ADR-0020` §5 |
+| 2 | `tests/unit/test_harness_arguments.py` | **新建**：§6.1 的 `H-3` 子集用例 + 新增的 `H-11` | `ADR-0020` §7 |
+| 3 | `tests/unit/test_harness_internals.py` | `LEAF_UNITS` 增加 `arguments` —— **否则 H2（叶子零依赖）对新模块不生效**（"检查集合与新模块漂移"正是本项目要防的形状） | `ADR-0020` §6 负面后果 3 |
+| 4 | `cli/` 装配点 | 注入该实现（§5.1 第 8 行） | `ADR-0020` §8 动作 4 |
+| 5 | `contracts/tools.py` + `tools/registry.py` | `specs()` 的 docstring 由"裁剪后"改为"**全量注册集**"（`T6` 裁决，见 §8 的 `T6`） | `T6` |
+
 ---
 
 ## 8. 本文件的修订记录与待同步项
@@ -1130,6 +1172,8 @@ with Session(
 
 | 2026-09-19 | **第七版（补三处实现侧必需但契约漏写的接口，并给 I1 开一处**可判定**的例外）**：① §3.1 的 `TaskLoop.__init__` 增加 **`registry: ToolRegistry`**、**`system: str`**、**`data_context: tuple[ChatMessage, ...] = ()`** 三个 keyword-only 入参，并在 §3.1 的 `session` 构造期清单补第 5 条说明来源（`TaskLoop` 原签名**无法实现 §3.3**：步 1 要 `registry.specs()` 才能区分 `not_exposed`/`unknown_tool`、步 5 要 `registry.resolve()` 才拿得到执行句柄，而 `exposed: tuple[ToolSpec, ...]` 是纯数据；`context.assemble` 的调用者是 `loop`（§3.2 的 `L --> C`），但 loop 原来既拿不到 `system` 也拿不到 `data_context`）；② §2.2 的 **I1** 增加**唯一例外**：三条"我方不变量/基础设施故障"路径（`R3`/`R4` 审批通路故障、`resolve` 返回 `None`、工具 `audit_id` 为空）**允许悬空 `TOOL_CALL`**，但**必须**伴随 `ERROR(INTERNAL)` + `TASK_FINISHED(FAILED)`，并给出**可机器检查的判据**（悬空只允许出现在 FAILED+INTERNAL 的流里）——**不补 `TOOL_RESULT` 的理由**：`D2` 的 `denied_reason` 是闭集且没有"通路故障"档，借用 `approval_denied` 会让"基础设施故障"与"人拒绝了"**同形**（`R3` 明令不得），路径③更根本没有 `audit_id` 可用；③ §2.9 如实登记**teardown 四步中只有两步有载体**（`Tool` Protocol 无 `close()` ⇒ 工具一步无可调用接口；`llama-server` 一步在 `ModelClient.close()` 内部），本轮可观察顺序为 `model.close()` → `sink.flush()`，`H-9` 同步。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 除 I1 的例外条款外一律不变**；`contracts/harness.py` **无需改动** | 实现侧 `impl-harness-core` 在写 `loop.py` 前的**阻塞上报**（附 §3.3 / §3.1 / §3.2 的内部证据）与**附带发现**（I1 与 `R3`/`R4` 不能同时成立）。⚠️ **注：`loop.py` 已按这三项新增入参先行入库（`a9f73ee`）**——本版是**事后追认**，不是"先批准后实现"；领导已核实它未改动 `contracts/` 且未触碰其它文件域，故判为**可追认**（不是"合规流程"的样板） |
 
+| 2026-09-19 | **第八版（复核领导代改的三版 + `T6` 裁决 + 一处自相矛盾更正 + 校验器选型指向 ADR）**：① **逐项复核并确认**第五版（`eb9f9ea`，`TaskLoop` 的 `pack_name`）、第六版（`03102b9`，H2 的 `errors` 汇点例外 + 机器检查）、第七版（`8ef3844`，`TaskLoop` 的 `registry` / `system` / `data_context` + I1 例外 + teardown 如实登记）——三版**均与已落地的源码一致**（`loop.py` 的构造签名与步 1 的两短码判定、`harness/errors.py` 的汇点性质与 `tests/unit/test_harness_internals.py` 的 `ast` 扫描**含** `TYPE_CHECKING`、`session.py` 传 `build_system_prompt` 与 `pack_name`、`context.assemble` 的 `role is USER` 结构性守卫），**无一处需要回退**；② **`T6` 裁决**：`ToolRegistry.specs()` 返回**全量注册集**（理由与被否决的替代见本表 `T6` 行），`tools.md` §2.6 已同步（含 §4 修订记录）；③ **更正一处自相矛盾（第四次同形）**：§3.1 第 3 条原写 `system = prompts.build_system_message(tier=…)`，与**同一节第 5 条**（`loop` 取 `str` 形态 = `build_system_prompt`）以及已落地的 `session.py`（`system = prompts.build_system_prompt(...)`）矛盾 ⇒ 已改为 `build_system_prompt`。**如实登记**：`build_system_message` 本轮在 `src/` 内**无调用方**（仅单测覆盖），它仍是 §3.1 要求存在的公开 builder 之一——若下轮仍无调用方，应作为"死代码"单独裁决，**本版不处理**；④ **`ArgumentValidator` 的选型**由新增的 [`ADR-0020`](../adr/0020-argument-validator-implementation.md) 提出（手写 JSON-Schema 子集校验器，**提议中**）：§3.4 由"选型未定"改为"已提出、待批准"，§5.1 第 8 行、§6.1 新增的 **`H-11`**、§7 的改动清单与新增的 **§7.2 落地清单**同步。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 逐项复核读源码核实：`harness/{loop,session,errors,domain_pack,context}.py`、`contracts/{harness,tools}.py`、`tests/unit/test_harness_internals.py`；`T6`：`tools.md` §2.6 与 `tools/registry.py::specs` 的实现（返回全部已注册描述）；更正：§3.1 第 3 条与第 5 条互斥（同一文件内两处打架）；`ADR-0020`：本节 §3.4 的处置路径 |
+
 | 2026-09-19 | **第八版（澄清 `I8` 与 `V4` 的张力：键名能不能进 `text`）**：实现侧上报——§3.3 步 2 要求"回喂内容 = 校验器的中文说明"、§3.4 的 `V4` 明文许可"只描述**哪个键**、期望什么类型"，而 §2.2 的 `I8` 又写"`text` 不得包含其**任何片段**"⇒ 两句字面冲突（"键名"正是 `arguments_json` 的片段）。**处置**：把判据从"是不是片段"换成"**由谁产生**"——① 参数**值** ❌；② **未声明的（未知）键名** ❌（**模型自带 ⇒ 不可信文本**；反例：模型可把 `{"\u001b[2J…": 1}` 当未知键，回显就是把攻击者可控字节送进干净字段、甚至终端控制序列）；③ `parameters_schema` **已声明的键名** ✅（我方 schema 产生、模型本就持有，且是"哪个键"唯一可用的表达），仍须 `sanitize_for_display` + 长度上限（`loop` 侧已有 `_VALIDATOR_DETAIL_LIMIT = 200`）。§2.2 的 I8 与 §3.4 的 `V4` **两处同步**。**§2 的类型 / 成员 / 不变式名称一律不变**（只澄清 I8 的判据）；`contracts/harness.py` **无需改动** | 实现侧 `impl-harness-core` 的主动上报（它按"任何**值**片段"落地并说明该读法与 `V4` 相容）。⚠️ **对 `cli/validator` 的约束**：这条必须在**校验器实现**里落地——`S1-c` 的 sentinel 用例只覆盖"值"，**未声明键名**这一面**尚无用例**（已列入波 4 的验证范围） |
 
 **待同步项**（本文件已给规范；逐项状态如下）：
@@ -1141,7 +1185,7 @@ with Session(
 | T3 | `ADR-0015` §5.1.2 的 `AsyncIterator` 表述 | **已完成**：只追加「修订记录」（正文不改），并与 `harness.md` §2.9、`architecture.md` §12 **三处对上** |
 | T4 | 威胁模型：§2.7 / §4.4 引用了 `T-03` / `T-04` / `T-10` / `T-11` / `T-12` | 本轮**不改**任何威胁条目与计数；映射与 §6.2 的新增用例由领导指派后在 `threat-model/` 登记 |
 | T5 | `interfaces/README.md` §6 的 `U9`：本文引入的四项未决（校验器选型 / `ALLOW_ALWAYS` 持久授权 / 检查点落点 / 领域包根） | 已登记；逐项解除走 `README.md` §7 的变更流程 |
-| T6 | **`ToolRegistry.specs()` 的"是否已裁剪"口径在 `tools.md` 与本文之间不一致**：`contracts/tools.py` 的 docstring 写"返回当前**裁剪后**、可暴露给模型的工具描述"，而本文 §3.1 第 2 条与 §3.3 步 1 是把 `registry.specs()` 当**全量注册集**用（`exposed = trimming.select_tools(registry.specs(), …)`；`not_exposed` = "在 `specs()` 里但不在 `exposed` 里"）。**若 `specs()` 已裁剪，则 `not_exposed` 这一档永远不可达** ⇒ `S1-b` 的第②问会变成空断言 | **登记，不在本版改**（属 `tools.md` / `contracts/tools.py` 的域）：须由架构师确认 `specs()` 返回**全量**还是**已裁剪**，并同步三处（`tools.md` §2.6、`contracts/tools.py` 的 docstring、本文 §3.3 步 1）。⚠️ **在裁决前按本文的用法实现**（全量），并把该假设写进 `loop.py` 的 docstring——**不得**让"这一档不可达"被静默容忍 |
+| T6 | **`ToolRegistry.specs()` 的"是否已裁剪"口径在 `tools.md` 与本文之间不一致**：`contracts/tools.py` 的 docstring 写"返回当前**裁剪后**、可暴露给模型的工具描述"，而本文 §3.1 第 2 条与 §3.3 步 1 是把 `registry.specs()` 当**全量注册集**用（`exposed = trimming.select_tools(registry.specs(), …)`；`not_exposed` = "在 `specs()` 里但不在 `exposed` 里"）。**若 `specs()` 已裁剪，则 `not_exposed` 这一档永远不可达** ⇒ `S1-b` 的第②问会变成空断言 | **已裁决（第八版，2026-09-19 架构师）**：`specs()` 返回 **全量注册集（未裁剪）**。依据三条：① **裁剪的判据不在 L2**（`ToolRegistry` 构造只有 `tools`，不知道 `capability_tier` / 领域包白名单；搬进 L2 就与 `trimming.select_tools` 形成两份必然漂移的判定）；② **裁剪的归属已定**（`trimming.select_tools`，`session` 调一次并把结果作为 `exposed` 传入 `loop`）；③ **可分辨性直接依赖它**（`not_exposed` / `unknown_tool` 就是"是否在 `specs()` 里"的两个方向，`R-4` 已裁定两者必须可分）。**被否决**：`specs()` 返回裁剪集 + 另加 `all_names()`（"注册表里有什么"变成两处表示）。**联动**：(a) [`tools.md`](tools.md) §2.6 已更正并补 §4 修订记录；(b) 本文 §3.1 第 2 条与 §3.3 步 1 已写明"全量注册集"；(c) **实现侧动作**——`contracts/tools.py` 与 `tools/registry.py::ToolRegistry.specs` 的 docstring 需改为"全量注册集"，`loop.py` docstring 里"`T6` 待架构师裁决"的措辞需改为"已裁决（全量）"（清单见 §7 与 §7.2 第 5 项） |
 
 **实现侧差异登记（`R-1`~`R-4`，2026-09-19）**：`implementer-harness-leaf` 在本契约撰写**同期**
 提交了三个叶子模块（`fe82cce` 分级错误 / `83835af` 提示分级 / `68ce680` 工具裁剪），与本契约有四处
