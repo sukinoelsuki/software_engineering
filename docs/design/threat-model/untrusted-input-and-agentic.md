@@ -2,8 +2,10 @@
 
 > 覆盖 `T-03` / `T-04` / `T-05` / `T-11` / `T-12`。本组的**共同根因**只有一条：
 > **不可信内容被当成了指令**（`SECURITY.md` §2 第 4 条）。
-> 本组也是**未缓解比例最高**的一组——因为承载它的 `harness/`、`security/`、`tools/`
-> 三个包都还没有实现。
+> 本组曾是**未缓解比例最高**的一组——当时承载它的 `harness/`、`security/`、`tools/` 三个包
+> 都还没有实现。**2026-09-19 现状**：这三个包**均已实现**，且 `T-11`/`T-12` 已因行为级用例
+> 入库（`S1`/`S3`）升为「部分缓解」；本组**仅剩 `T-03`/`T-04` 为未缓解**（`T-05` 亦为部分缓解）。
+> ⇒ **"该组未缓解比例最高"这句已不再成立**，保留改动记录以免读者按旧印象理解本组。
 >
 > 与 A 组的差别值得注意：A 组的攻击面是"执行"，本组是"**判断**"。
 > 在本项目里，判断比执行更难做对——因为判断发生在模型与代码之间，而模型输出天然形似指令。
@@ -198,8 +200,13 @@
 
 ## T-11 越权工具调用与工具滥用
 
-**状态**：**`未缓解`**（2026-09-18 登记"**平台特权工具**"这一使用面与 A 类事后报告这一
-**流程级缓解**：后者是**流程纪律、非机制**，且 `S1` 仍未落地 ⇒ **状态不升级**）
+**状态**：**`部分缓解`**（**2026-09-19 由「未缓解」升**——依据 `S1` 用例入库：
+`tests/security/test_harness_s1_authorization.py`（**5 例**，跑**真实** `Session.run`，含变异 / 对照组）
+＋ `test_s1_replayable_audit_link.py`（**真实** `JsonlAuditSink` 端到端 `query_by_id`，2 条变异探针）。
+⚠️ **只升到「部分缓解」**：本条**名义范围**里的「**工具滥用**」半**零行为层证据**，
+另有两条缺口——**三者逐条列于「验证方式」的 (a)(b)(c)，不得省略**。
+2026-09-18 登记的"**平台特权工具**"使用面与 A 类事后报告这一**流程级缓解**
+（后者是**流程纪律、非机制**）**仍然成立，且不替代上述行为级证据**）
 ｜ **主导类别**：STRIDE-E ｜ **智能体特有**：工具滥用与越权调用
 
 - **资产**：A-1/A-2（被越权访问/修改的文件）、A-3（被执行的危险命令）、A-6（审计）、A-8（用户信任）；
@@ -214,7 +221,12 @@
 - **攻击路径**：
   1. 模型返回 `tool_calls`，`name` 指向未授予 `EXECUTE_COMMAND` / `WRITE_FILE` 的工具；
   2. 若"未知工具 / 未授权能力"没有被显式拒绝 ⇒ 执行；
-  3. 变体 A：**诚实的能力请求被错误的策略放行**（策略求值出错却返回 allow）；
+  3. 变体 A：**诚实的能力请求被错误的策略放行**（策略求值出错却返回 allow）
+     ——⚠️ **证据落点校正（2026-09-19）**：该路径在 `PolicyEngine` **单元层已断言**
+     （`tests/security/test_policy_eval_failure.py`：注入 `CapabilitySet.missing` 抛错 ⇒
+     **真实**引擎收敛为 `allow=False` / `requires_confirmation=True` / `risk_level=CRITICAL`，
+     即 `../interfaces/policy.md` §2.5 的 `V4`；另有 `V5` 与"审计失败必须冒泡"），
+     **但未经 `Session.run` 端到端断言**（`S1` 注入 `FakePolicyEngine`）⇒ 端到端缺口见「验证方式」(a)；
   4. 变体 B：**审计缺失** ⇒ 越权发生了但无法回放（`REQ-SEC-06` 的验收对象）；
   5. **【新增·`ADR-0016`】平台特权工具被用在授权范围之外**：`cnb pulls merge-pull` /
      `cnb build start-build` / `cnb issues create-issue` 等命令即"**远端写**"。
@@ -222,7 +234,8 @@
      风险在**使用范围**（用在哪条分支、哪一类操作）。因此 `default-deny` 与 4 个 `Capability`
      **管不到它**：它**不在 `tools/` 注册表里**，而是**开发期的人 / 代理动作**。
 - **影响**：完整性 + 机密性 + 不可抵赖性；**不可逆性：高**（特权操作已执行）。
-- **现有缓解**（**契约完备、实现为零**；本轮另加**一条流程级缓解**，见末条）：
+- **现有缓解**（**契约完备；实现已落地**——`security/policy.py` `f7f7628`、
+  `observability/audit.py` `e78c221`；本轮另加**一条流程级缓解**，见末条）：
   - `default-deny` 默认值取向（`../interfaces/policy.md` §1 第 1 条）；
   - **四格语义**（`../interfaces/policy.md` §2.4）：`allow × requires_confirmation` 的四种组合，
     含 `False/False` = **硬拒绝**（`CRITICAL`：连人工确认也不接受）；
@@ -243,10 +256,17 @@
     **CI 看不到"是否事先批准 / 是否事后报告"**。⇒ 按本目录 §4.1 的口径它**只能算覆盖面不全**，
     **不构成**"本条已缓解"的依据。
 - **残余风险**：
-  1. **`security/policy.py` 未实现** ⇒ 上述全部为**纸面**；`REQ-SEC-01`
-     （"未授权操作拦截率 100%"）**当前拦截率不可测**；
-  2. **审计未实现** ⇒ "被拒绝**且**有可回放记录"这一**双条件**验收中，
-     第二个条件**必然失败**；
+  1. ~~**`security/policy.py` 未实现** ⇒ 上述全部为**纸面**~~ ⇒ **已于 2026-09-19 结清**：
+     实现落地（`f7f7628`）且 `S1` 用例通过（`e9e780c`）⇒ `REQ-SEC-01`（"未授权操作拦截率 100%"）
+     **已有可测载体**（{deny ⇒ `Tool.invoke` 未调用} × {审计含 `TOOL_CALL/DENY` +
+     `POLICY_DECISION`}，并配对照组证明非恒过）。
+     **剩余**：本条**名义范围**的「**工具滥用**」半**仍无行为层证据**（见「验证方式」(b)）；
+  2. ~~**审计未实现** ⇒ …第二个条件**必然失败**~~ ⇒ **已于 2026-09-19 结清（本半）**：
+     `AuditSink` 已实现（`e78c221`），且 `test_s1_replayable_audit_link.py` 用**真实**
+     `JsonlAuditSink` 端到端还原 `audit_id`（**成功与拒绝两条路径**）⇒ 双条件验收的第二个条件
+     在本半**已有证据**。
+     **剩余**：该证据落在**工具层** deny；**能力层**（`POLICY_DECISION`）deny 到真实 sink 的
+     端到端**仍只经 `RecordingSink`（假件）**断言（见「验证方式」(c)）；
   3. **审批门（"本次/总是/拒绝"）的持久授权表示仍是未决项**
      （`../interfaces/README.md` U3）⇒ "总是允许"一旦落地，可能是**长期越权面**，
      且**撤销路径未设计**；
@@ -259,27 +279,55 @@
      另：`A-11` 的"使用范围"（哪条分支可写、哪类操作需事先批准）**没有集中受控入口**，
      只能靠代理按 `git-workflow.md` §4 的分级表自律。
 - **验证方式**：
-  - **应有**（**缺验证**）——即 `ADR-0015 §7.2` 的 **`S1`**
+  - **已落地（2026-09-19）**——即 `ADR-0015 §7.2` 的 **`S1`**
     `test_unauthorized_tool_call_is_denied_and_audited`：
     ① 能力缺失时调用被拒；② **审计中存在可回放记录**（`audit_id` 能查回事件）。
-    **落地位置 `tests/security/`；当前 `S1` 未落地**——被测实现（`PolicyEngine`/`AuditSink`）
-    在仓库中**不存在** ⇒ 验证者**拒绝造测**（正确）。
-    （对比：`S2` 的"拒绝"半已于 `f436b0b` 落地，因为其被测对象 `foundation.paths.resolve_within`
-    真实存在。）
+    **落地位置 `tests/security/`**：
+    - `test_harness_s1_authorization.py`（**5 例**，跑**真实** `Session.run`）：deny 时
+      `Tool.invoke` **未被调用**、`TOOL_RESULT.result is None`、审计含 `TOOL_CALL/DENY`
+      （`denied_reason="policy_denied"`）+ `POLICY_DECISION`，且 `TOOL_RESULT.audit_id`
+      **对应 DENY 的 `event_id`**；另有 **`S1-b`** 两档（`unknown_tool` / `not_exposed`
+      **可分**）与**对照组**（放行时同一路径**真的执行**、`result` 非 `None`）
+      ⇒ 证明"未执行"断言**非恒过**；
+    - `test_s1_replayable_audit_link.py`：**真实** `JsonlAuditSink` + `ReadFileTool` 端到端
+      `query_by_id`（**成功与拒绝两条路径**），含 **2 条**变异探针（摘掉 `audit_tool_call`
+      ⇒ 断言翻红）。
+  - ⛔ **三条缺口（不得省略；这是本条"只升到部分缓解"的**全部**理由）**：
+    **(a) harness 路径未端到端跑真实 `PolicyEngine`**：`S1` 注入 `FakePolicyEngine`
+    （决策由替身返回）⇒ **"真实策略引擎求值 ⇒ `Session` 拒绝 ⇒ 审计"这条端到端链路无证据**。
+    注意区分：攻击路径 3（策略求值出错**却返回 allow**）**在 `PolicyEngine` 单元层已有断言**
+    （`test_policy_eval_failure.py`，`39cb7df`，见上方"攻击路径"3 的校正），**缺的是端到端那一段**；
+    **(b) 「工具滥用」半零行为层证据**：本条名义范围含"**工具滥用**"（已授权工具被用于其授权
+    范围之外的用途 / 平台特权工具的使用范围）——`S1` 只覆盖"**越权调用被拒**"，**不覆盖**该半。
+    ⚠️ **防错位**：`tests/security/test_g8_tool_defense.py` 覆盖的是**工具层**的
+    路径 / `argv` 形状（不经 shell）/ 隔离失败不回退 / 审计冒泡，其落点是 `T-02`/`T-01` 的领域，
+    **不是本条的"工具滥用"半**（不是同一落点，不可拿来充数）；
+    **(c) 能力层 deny 的真实 sink 端到端未断言**：`S1` 的审计断言只经 `RecordingSink`
+    （**假件**，内存列表）；真实 `JsonlAuditSink` 的端到端断言落在**工具层路径越权**
+    （`test_s1_replayable_audit_link.py` 的第 2 例），**不是** `POLICY_DECISION` 那一档
+    ⇒ "**能力层** deny ⇒ 落盘可回放"仍无证据。
   - **建议补足**（契约已给判据，可直接写）：把 §2.4 的**四格**逐一断言
     （`True/False`、`True/True`、`False/True`、`False/False`），
     而不是只断言 `allow` 一个布尔；并加一条
     `test_policy_evaluation_error_is_denied_not_allowed`（注入会抛异常的规则 → 断言 deny）；
-    再加一条 `test_audit_emit_failure_propagates_and_is_not_disguised_as_denial`
+    再加一条
+    `test_audit_emit_failure_propagates_and_is_not_disguised_as_denial`
     （审计故障**不得**被伪装成普通拒绝——这是契约里最容易实现错的一处）。
+    ⇒ **【2026-09-19 兑现情况】**：后两条**已在 `PolicyEngine` 单元层落地**
+    （`tests/security/test_policy_eval_failure.py`，`39cb7df`：`V4`/`V5` 收敛为 deny
+    ＋ `test_audit_failure_bubbles_not_swallowed`）；**"四格逐一断言"仍缺**，
+    且以上均**不经 `Session.run`**（见缺口 (a)）。
   - **【新增·可核对，但不可自动】**：下一次 A 类推送后，`docs/devlog/` 当前篇应存在该条报告，
     且其提交列表与 **`git log A..B` 一致**（`ADR-0016` §7 `V7`；**不一致 ⇒ 视为未报告**）；
     "不可回退类的拦截是否仍在"用 `ADR-0016` §7 `V8` 核对（`git grep` 断言
     `no-commit-to-branch --branch=main` 仍在，并在**临时假远端**上试推 `main` / 试强推均被拒）。
-    **落地位置**：`docs/devlog/`（记录员域）+ 人工核对——**`tests/security/` 无法承载**
-    （无可测实现，理由同上）。
-  - **`S1` 的状态不变**：本条**主要**缓解仍是 `PolicyEngine` + `AuditSink`；
-    上述流程级核对**不替代**它，也**不改变**本条的「未缓解」判定。
+    **落地位置**：`docs/devlog/`（记录员域）+ 人工核对——**`tests/security/` 无法承载**：
+    该判据是"是否事先批准 / 是否事后报告"，**CI 看不到**（`ADR-0016` §5.1 的已知边界）
+    ⇒ 不是"没有可测实现"，而是**原则上不可自动化**（按 §4.1 口径记为**覆盖面不全**）。
+  - **`S1` 的状态已更新（2026-09-19）**：本条**主要**缓解是 `PolicyEngine` + `AuditSink`，
+    二者均已实现且 `S1` 已落地 ⇒ 由「未缓解」升「**部分缓解**」；
+    上述流程级核对**不替代** `S1`，也**不改变**"只到部分缓解"这一结论
+    （缺口 (a)(b)(c) 未闭合）。
 - **相关**：`REQ-SEC-01`/`02`/`06`/`08`、`ADR-0015 §5.1.2`/§5.3（模块 3）/§7.2（`S1`）、
   `../interfaces/policy.md`、`../interfaces/audit.md`、`../interfaces/tools.md` §2.6；
   远端写入分级与平台特权工具：`ADR-0016` §5.1/§5.2/§5.6/§7（`V7`/`V8`）、
@@ -289,7 +337,11 @@
 
 ## T-12 领域包加载代码（动态导入不可信模块）
 
-**状态**：**`未缓解`** ｜ **主导类别**：STRIDE-E
+**状态**：**`部分缓解`**（**2026-09-19 由「未缓解」升**——依据 `S3` 用例入库：
+`tests/security/test_harness_s3_domain_pack.py`，**4 例 + 变异探针**。⚠️ **只升到「部分缓解」**：
+`.pth` 导入期执行、`.so` / ctypes 等**动态加载向量未显式断言**，且 `S3` **仅覆盖「领域包」
+这一载体**——缺口逐条列于「验证方式」）
+｜ **主导类别**：STRIDE-E
 
 - **资产**：A-3（宿主）、A-4（仓库）、A-8（用户信任）
 - **攻击者与前提**：攻击者能提供一个**领域包目录**（Domain Pack）。
@@ -301,7 +353,8 @@
   3. 此时**没有任何沙箱**在场——因为这是在主进程里 `import`，不走 `foundation.proc`；
   4. 后果：完全等同于在宿主上运行攻击者代码（并吞掉 `T-01` 的全部隔离）。
 - **影响**：机密性 + 完整性 + 可用性；**不可逆性：高**。
-- **现有缓解**（**规则已定，无实现**）：
+- **现有缓解**（**规则已定；`R5` 的实现载体已落地**——`harness/domain_pack.py` `14a7831`，
+  并以 `S3` 在行为层验证）：
   - **硬规则 `R5`**（`ADR-0015 §5.1.1`）：领域包**只加载声明式配置**（TOML/JSON），
     **禁止加载其中的 Python 代码**；
   - `SECURITY.md` §3 硬性规则："禁止动态导入来自不可信来源的模块"；
@@ -310,26 +363,39 @@
     （`ADR-0015 §5.3` 模块 5）；
   - pack 内容用 `D2` 的校验组件（pydantic）在**边界处**校验 schema。
 - **残余风险**：
-  1. **`harness/domain_pack.py` 不存在** ⇒ `R5` 目前**无被测对象**
-     （`devlog 0013` §7 已登记："R5 暂无代码可测"）；`tests/unit/test_architecture_layers.py`
-     的检查项里也**没有**"禁止动态导入"的检查。**补充事实（2026-09-18）**：
-     `tests/security/test_no_dynamic_code_in_src.py`（`5fddcfa`）已覆盖"`src/` 内无
-     `eval` / `exec` / `importlib` / `__import__`"这一**静态**面，但它**不等同于** `R5`
-     （"领域包内 `.py` **永不**被导入"是**行为**断言，且需 `domain_pack` 作为被测对象）；
-  2. **"只加载 TOML/JSON"这条约定本身无机器检查**：没有检查阻止有人写
-     `importlib.import_module(pack_dir / "hooks")`；
+  1. ~~**`harness/domain_pack.py` 不存在** ⇒ `R5` 目前**无被测对象**~~
+     ⇒ **已于 2026-09-19 结清**：`harness/domain_pack.py` 已落地（`14a7831`），
+     `R5` **已有被测对象**，且 `S3` 用例（`9a5689c`）在**行为层**断言"包内 `.py` 永不导入"
+     （副作用不发生 + 不入 `sys.modules` + `.pyc`/`__pycache__` 同拒）。
+     **剩余**：`S3` 只覆盖「**领域包**」这一载体，且 `.pth` / `.so` / ctypes 等向量未断言；
+     `tests/unit/test_architecture_layers.py` 的检查项里**仍没有**"禁止动态导入"这一条；
+  2. **"只加载 TOML/JSON"这条约定本身**仍有**未被机器检查覆盖的载体**：
+     `test_no_dynamic_code_in_src.py`（`5fddcfa`）拦的是 `src/` 内的
+     `eval` / `exec` / `importlib` / `__import__`（**静态**面），`S3` 拦的是**领域包目录**；
+     "别处（新载体）自建加载器并 `importlib.import_module(...)`"**仍不会被拦**；
   3. **pack 的 schema 校验失败必须拒绝（fail-secure）**——这条同样只在设计里。
 - **验证方式**：
-  - **应有**（**缺验证**）——即 `ADR-0015 §7.2` 的 **`S3`**
-    `test_domain_pack_python_code_is_never_imported`：
-    在 pack 目录里放一个**含副作用**的 `.py`（例如写一个哨兵文件），
-    加载后断言 ① 哨兵文件**不存在**（该文件从未被执行）；② 只接受声明式配置；
-    ③ 配置非法时**加载失败即拒绝**（fail-secure，不是"跳过该项继续"）。
-    **落地位置 `tests/security/`；当前 `S3` 未落地**，
-    且**在被测对象（`domain_pack`）落地之前无法先行**——这是本轮**唯一一条"依赖实现才能验证"**的条目。
+  - **已落地（2026-09-19）**——即 `ADR-0015 §7.2` 的 **`S3`**
+    `test_domain_pack_python_code_is_never_imported`
+    （`tests/security/test_harness_s3_domain_pack.py`，**4 例 + 变异探针**）：
+    ① 包内 `.py` **带副作用**（写标志文件）⇒ `load_pack` **抛 `DomainPackError`**、
+    **副作用标志文件不存在**（该文件从未被执行）、模块名**不在 `sys.modules`**；
+    用例内另有前置断言"该模块**确实可被导入**"（否则"不在 `sys.modules`"这一断言本就无意义）；
+    ② `.pyc` **同拒**；`__pycache__` 目录名**同拒**；
+    ③ **变异探针**：把 `_reject_python_content` 换成空操作后，**原拒绝断言翻红**
+    （`load_pack` 不再抛错，而是正常装配出 `DomainPack`）⇒ 拒绝断言**依赖真实保护、非恒过**。
+    **落地位置 `tests/security/`**；`14a7831` 之后 `domain_pack` 已存在
+    ⇒ **"依赖实现才能验证"这一阻塞已解除**。
+  - ⛔ **缺口（不得省略）**：① **`.pth` 导入期执行**（`.pth` 可在解释器启动时执行代码）
+    与 **`.so` / ctypes 等动态加载向量**——**未显式断言**；
+    ② `S3` **仅覆盖「领域包」这一载体**——若将来出现**别的**"读盘 + 加载"入口
+    （checkpoint、repo map、CLI 插件目录等），本条**不自动覆盖**它：
+    每新增一个载体，须按**同一判据**补用例（"不导入 ⇒ 无副作用 + 不入 `sys.modules`"）。
   - **已落地的静态守卫**（2026-09-18，`5fddcfa`）：`tests/security/test_no_dynamic_code_in_src.py`
     ——断言 `src/` 下不出现 `eval(` / `exec(` / `importlib` / `__import__`（词边界匹配）。
-    **定性（不得含糊）**：这是**结构性检查**，**不是行为断言** ⇒ **不改变本条状态**；
-    `S3`（行为级、需要 `domain_pack` 作为被测对象）**仍未落地**，本条仍为「未缓解」。
+    **定性（不得含糊）**：这是**结构性检查**，**不是行为断言**；它与 `S3` **互补、不互替**
+    ——本条**升级依据是 `S3`（行为级）**，**不是**这个静态守卫。
 - **相关**：`ADR-0015 §5.1.1`（`R5`）/§5.3（模块 5）/§7.1（R5 检查）/§7.2（`S3`）、
-  `SECURITY.md` §3、`docs/design/interfaces/README.md` §5/
+  `SECURITY.md` §3、`docs/design/interfaces/README.md` §5
+  （**修补说明**：原文本行以 `§5/` 结尾、引用被截断；本笔**只去掉悬空的斜杠**，
+  不代为补写不存在的章节号——如需精确到小节，请由作者补正。）
