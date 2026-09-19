@@ -17,15 +17,31 @@
    不回流（与 ``tests/security/test_spawn_credentials_canary.py`` 同一取证取向，
    但此处只做**我方通道**的检查，安全断言仍归 ``tests/security/``）。
 
+**可用性参数（实测依据，2026-09-19，本容器）**：模型日志里 ``tg`` 稳定在 ``3.5 t/s``，
+而 ``harness/loop.py`` 调 ``chat`` 时**不传** ``timeout_s`` ⇒ 每次补全都用
+``ModelClient`` 协议签名上的默认值 ``60.0`` ⇒ 无上限的补全必然以 ``ModelUnavailableError``
+结束（``loop`` 按 ``REQ-HARNESS-06`` 重试到预算耗尽 ⇒ ``TASK_FINISHED(FAILED)``）。
+故本模块必须显式给出**有界的完成上限**与**足够的请求超时**（取值依据见
+``_MAX_COMPLETION_TOKENS`` / ``_MODEL_REQUEST_TIMEOUT_S`` 的定义处）。
+这**不是**为让用例变绿而放宽断言：断言一字未改，改的只是"同一套断言在慢硬件上如何跑完"。
+
+**为什么给会话配一份最小领域包（``_PACK_TOML``）**：本项目的风险声明**只能**来自领域包
+（``harness.md`` §4、``REQ-HARNESS-08``）；不配包时 ``PolicyEngine`` 对**所有**工具取
+``DEFAULT_TOOL_RISK = HIGH``（``security/policy.py``）⇒ 每次调用都 ``requires_confirmation``，
+而本用例的会话是**非交互**的（``interactive=False``）⇒ ``R1`` 一律拒绝 ⇒ 工具**永远执行不了**，
+``test_text_mode_executes_a_real_tool_call`` 那条断言**根本无法成立**。因此这里走**产品设计的
+正规通路**：一份只读包，把 ``read_file`` / ``list_dir`` 声明为 ``low`` 风险。
+**没有**放宽任何校验——风险仍在 ``PolicyEngine`` 里逐次求值，拒绝与审计路径原样保留。
+
 **默认不跑（两条门槛，二者都满足才执行）**：
 
-* 标 ``slow``：``pyproject.toml`` 已注册该 marker，但 ``make test`` 目前只排除
-  ``benchmark`` ⇒ **``slow`` 尚未被默认排除**。把 ``slow`` 并入排除集属
-  "**改 CI 门禁强度（F 类）**"，必须由所有者事先确认 ⇒ 本文件**不**去改
-  ``pyproject.toml`` / ``Makefile``；
-* 环境变量开关 ``AGENT_SEC_PERF_E2E=1``：**未设置即 skip**。⇒ 在本仓库当前门禁下，
-  "标 ``slow`` + 默认不跑"这一对要求是**靠用例自带的 skip 实现**的，而不是靠
-  ``-m`` 的排除集；这一点**必须在仓库里如实登记**，不得表述为"门禁已排除 slow"。
+* 标 ``slow``：``pyproject.toml`` 已注册该 marker；``Makefile`` 的 ``make test`` /
+  ``make test-cov`` 已把 ``slow`` 并入默认排除集（``0b5def7``，F 类变更，所有者
+  2026-09-19 批准）⇒ 默认回归里不会被选中；
+* 环境变量开关 ``AGENT_SEC_PERF_E2E=1``：**未设置即 skip**。⇒ 排除集只挡住"默认回归"，
+  显式 ``-m integration`` 或直接指定本文件时 ``slow`` **仍会被选中**，而真实模型只在
+  本环境可用 ⇒ 这个开关是**第二道**门槛（两条门槛都满足才真的跑）。两者**互不替代**、
+  也**不得**把任一方的存在表述成"另一方已经不需要"。
 
 **注入与隔离（不绕过任何校验）**：``working_dir`` / ``allowed_roots`` 用 ``tmp_path``；
 审计落点用 ``JsonlAuditSink(tmp_path/"audit", roots=(tmp_path,))`` —— 走**构造器自带的
@@ -83,13 +99,48 @@ _MODEL_CANDIDATES: Final = (
 
 _HOST: Final = "127.0.0.1"
 
-#: 硬超时：``signal.setitimer`` 兜底。内层已有各自的上限（就绪 60s + 每次模型调用 60s），
-#: 这里只是"绝不挂住"的最后一层；正常一轮远小于它。
+#: 硬超时：``signal.setitimer`` 兜底。内层已有各自的上限（就绪超时 + ``_MODEL_REQUEST_TIMEOUT_S``
+#: 的每次模型调用），这里只是"绝不挂住"的最后一层。实测一轮会话约 2 分钟量级（见下），
+#: 600s 给出 3 倍以上余量。
 _HARD_TIMEOUT_S: Final = 600.0
 
 #: 触发一次真实工具调用所需的最小步数预算（读文件 → 复述内容 → 收尾）。
 _MAX_STEPS: Final = 4
 _TOOL_TIMEOUT_S: Final = 15.0
+
+#: 单次补全的 token 上限。**取值依据（2026-09-19，本容器实测）**：直接驱动
+#: ``LocalLlamaClient.chat``（同样的 SYSTEM 提示 + 任务 + ``read_file`` 工具描述，
+#: ``prompt_tokens=552``）时，模型在 ``max_tokens=256`` 处才产出
+#: ``finish_reason=tool_calls``（``tool_calls=['read_file']``，耗时 81.3 s）⇒ 取 384
+#: （约 1.5 倍余量）：既让模型能收尾，又给服务端一个**硬上限**——
+#: 没有上限时它会一直生成（``max_tokens=None`` 的那次实测在 60 s 处超时，n_gen 才到 210）。
+#: 上限**只影响生成长度**，不改变任何权限或校验语义。
+_MAX_COMPLETION_TOKENS: Final = 384
+
+#: 单次模型请求的超时（秒）。**取值依据（同上实测）**：``tg ≈ 3.5 t/s``，384 token 约 110 s；
+#: 加上最坏情况下的 prefill（实测 552 token 提示耗时约 12 s，第二轮提示更长）⇒ 上界约 140 s，
+#: 故取 240 s（不少于 1.7 倍余量）。**不得**回落成协议默认的 60 s：那正是本轮 5 failed 的根因
+#: （超时 ⇒ ``ModelUnavailableError`` ⇒ 重试耗尽 ⇒ ``FAILED``）。
+_MODEL_REQUEST_TIMEOUT_S: Final = 240.0
+
+#: 领域包：把工具**风险**声明出来（``harness.md`` §4 / ``REQ-HARNESS-08``）。
+#: 只读工具 + ``low`` 风险 ⇒ 非交互会话也能经策略求值后执行；理由见模块 docstring。
+_PACK_DIRNAME: Final = "e2e-readonly-pack"
+_PACK_TOML: Final = """\
+[pack]
+name = "e2e-readonly"
+version = "0.0.1"
+
+[tools]
+allowlist = ["read_file", "list_dir"]
+
+[security]
+capabilities = ["read_file"]
+
+[security.risk_overrides]
+read_file = "low"
+list_dir = "low"
+"""
 
 #: 工作目录里预置的哨兵文件（用于证明"工具真的读到了磁盘上的内容"）。
 _SENTINEL_FILE: Final = "hello.txt"
@@ -319,6 +370,10 @@ def _run_real_session(
 
     working_dir = tmp_path_factory.mktemp(f"e2e-{output_format}")
     (working_dir / _SENTINEL_FILE).write_text(f"{_SENTINEL}\n", encoding="utf-8")
+    # 领域包必须落在 allowed_roots 内（``load_pack`` 自己会经 ``resolve_within`` 校验）。
+    pack_directory = working_dir / _PACK_DIRNAME
+    pack_directory.mkdir()
+    (pack_directory / "pack.toml").write_text(_PACK_TOML, encoding="utf-8")
     audit_dir = working_dir / "audit"
     sink = JsonlAuditSink(audit_dir, roots=(working_dir,))
     model_log = working_dir / "llama-server.log"
@@ -329,6 +384,7 @@ def _run_real_session(
         working_dir=working_dir,
         allowed_roots=(working_dir,),
         output_format=output_format,
+        pack_directory=pack_directory,
         model_binary=str(binary),
         model_path=model_path,
         model_log=model_log,
@@ -336,6 +392,9 @@ def _run_real_session(
         port=port,
         max_steps=_MAX_STEPS,
         tool_timeout_s=_TOOL_TIMEOUT_S,
+        # 慢硬件的可用性参数（取值依据见常量定义处）；断言不因它们而改变。
+        max_completion_tokens=_MAX_COMPLETION_TOKENS,
+        model_request_timeout_s=_MODEL_REQUEST_TIMEOUT_S,
     )
     # 显式授予只读能力：BASIC 档的暴露面就是 read_file / list_dir（trimming 的档位预算），
     # 而 default-deny 的默认授予是空集（`AppConfig()`）⇒ 不显式给出的话每次调用都会被策略拒绝。
