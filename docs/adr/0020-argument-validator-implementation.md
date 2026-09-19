@@ -1,8 +1,8 @@
 # 0020. 工具参数校验器（`ArgumentValidator`）的实现选型：手写 JSON-Schema 子集校验器
 
-- **状态**：**提议中（待领导批准）**——批准动作只是把本行改为「已接受」并在
-  [`README.md`](README.md) 索引同步，**正文不改**（ADR 只增不改）。在批准前，
-  `harness/arguments.py` **不得开工**（`interfaces/harness.md` §3.4 的"停下上报"）。
+- **状态**：**已接受（2026-09-19，所有者批准）**——批准动作已执行：本行改为「已接受」并同步
+  [`README.md`](README.md) 索引，**正文不改**（ADR 只增不改）。⇒ `harness/arguments.py`
+  **可以开工**（落地清单见 `interfaces/harness.md` §7.2）。
 - **日期**：2026-09-19
 - **决策者**：Le0n3rd（授权代理提出候选与论证；**批准与否由领导/所有者拍板**）
 - **相关**：
