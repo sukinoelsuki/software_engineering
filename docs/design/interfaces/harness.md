@@ -137,6 +137,21 @@ class SessionEvent:
 - **I1（配对与串行）**：对每条 `MODEL_RESPONSE.response.tool_calls[i]`，流中**恰好一条**
   `TOOL_CALL` 与**恰好一条** `TOOL_RESULT`，二者 `call_id` 相同，`TOOL_CALL` 在前；
   同一 `MODEL_RESPONSE` 的多个 `tool_calls` **按 tuple 顺序串行处理完**（事件之间不交错）。
+  ⚠️ **唯一例外：流程被中止的路径**（**第七版新增**，由实现侧上报后追认）——
+  当以下三种"**我方不变量/基础设施**故障"发生时，`loop` 直接
+  `ERROR(error_kind=INTERNAL)` + `TASK_FINISHED(status=FAILED)` 终止，
+  该 `call_id` 上**允许没有 `TOOL_RESULT`**：① `ApprovalGate` 抛异常或返回形状非法（§2.5.5 的 `R3`/`R4`）；
+  ② 名字在 `exposed` 内却 `registry.resolve(name) is None`（§3.3 步 1 的不变量被破）；
+  ③ 工具返回的 `audit_id` 为空（无从构造 I3 要求的非空 `audit_id`）。
+  **为什么允许例外而不是补一条 `TOOL_RESULT`**：步 6b 的 `denied_reason` 被 §2.7 的 `D2`
+  限定为**闭集**，其中**没有**"审批通路故障"这一档 ⇒ 补事件就必须①给 `DENY` 审计编一个闭集外的短码，
+  或②借用 `approval_denied`——后者会把"**基础设施故障**"与"**人拒绝了**"在审计里弄成**同形**，
+  恰是 `R3` 明令**不得**做的事（本项目已因"同形"吃过两次教训）。而路径 ③ 更是**根本无从**
+  构造 I3 要求的非空 `audit_id`。
+  **可机器检查的判据（H-1 必须实现）**：**悬空 `TOOL_CALL` 只允许出现在"以 `FAILED` 终止
+  且流中至少一条 `ERROR(error_kind=INTERNAL)`"的事件流里**——即"没有 `TOOL_RESULT`"本身不能是
+  静默的，它必须伴随**响亮的终止**。反之，任何 `status is COMPLETED` / `LIMIT_REACHED` 的流
+  **必须**逐条满足配对。
 - **I2（决策与确认的相对位置）**：`TOOL_CALL` 与 `TOOL_RESULT` 之间**至多一条**
   `POLICY_DECISION` 与**至多一条** `APPROVAL_RESULT`（同一 `call_id`）；`POLICY_DECISION`
   在前。`APPROVAL_RESULT` 存在 **⇔** 「`decision.requires_confirmation` 为真 **且** 该会话
@@ -414,6 +429,15 @@ class Session(Protocol):
 具体类（`harness/session.py::Session`）还必须实现 `__enter__` / `__exit__`：
 `with Session(...) as s:` 的退出路径按序 teardown —— **工具 → 模型客户端 → `llama-server`
 进程 → `flush` 审计**（`ADR-0015` §5.1.2，逐序不可调换）。
+⚠️ **如实登记（第七版新增）：本轮四步里只有两步有载体。**
+`contracts/tools.py` 的 `Tool` Protocol 只有 `spec` / `invoke`（**无 `close()`**），
+`ToolRegistry` 也没有 ⇒ "**工具**"一步**没有可调用的 teardown 接口**；
+"`llama-server` 进程"一步由 `ModelClient.close()` **内部**承担（`model.md` 的 ExitStack，已读源码核实）。
+⇒ **本轮的可观察 teardown 是两步：`model.close()` → `sink.flush()`**，
+`Session.close()` 必须**幂等**，且 `H-9` 的 fake 只记录这两步。
+**不得**为凑四步而发明一个空的工具 teardown（那会让"关闭过"变成一句假话），
+也**不得**据此声称四步已实现——缺口登记为**已知欠账**（给 `Tool` 加 `close()` 属契约变更，
+须另开裁决）。
 
 | 项 | 规定 |
 | --- | --- |
@@ -612,11 +636,14 @@ class TaskLoop:
         session_id: str,
         config: SessionConfig,
         model: ModelClient,
+        registry: ToolRegistry,  # 步 1 判两短码；步 5 resolve 出可执行句柄（第七版新增）
         exposed: tuple[ToolSpec, ...],  # 由 session 用 trimming 算好后传入
         policy: PolicyEngine,
         approval: ApprovalGate | None = None,  # None ⇒ 需确认即拒绝（§2.5.5 的 R1）
         sink: AuditSink,
         validator: ArgumentValidator,
+        system: str,  # 唯一可信指令位，session 从 prompts 常量模板取出（第七版新增）
+        data_context: tuple[ChatMessage, ...] = (),  # 以数据进入上下文（第七版新增）
         pack_name: str | None = None,  # 只传名字：H2 禁止 loop import domain_pack
     ) -> None: ...
 
@@ -674,6 +701,14 @@ class Session(SessionContract):  # contracts/harness.py 的 Protocol
    `pack: DomainPack | None` 与 H2 及已落地的机器检查
    （`tests/unit/test_harness_internals.py`，`ast` 扫描**含** `TYPE_CHECKING` 块）
    矛盾 ⇒ 照原签名写会让门禁变红。
+5. **`session` 另外三项交给 `loop` 的东西**（**第七版新增**，实现侧上报后的追认）：
+   `registry=registry`（§3.3 步 1 的"两短码"判定与步 5 的 `resolve` 都需要它——
+   `exposed: tuple[ToolSpec, ...]` 是**纯数据，既无执行句柄也拿不到注册表全名集**）、
+   `system=prompts.build_system_prompt(tier=config.capability_tier)`（**取 `str` 形态**：
+   `context.assemble` 要的就是 `str`，且无 `None` 分支；它与 `build_system_message(tier)`
+   同源，后者 = `ChatMessage(SYSTEM, build_system_prompt(tier))`）、
+   `data_context=(pack_msg,) if pack_msg is not None else ()`。
+   `context.assemble` 的**调用者是 `loop`**（§3.2 的 `L --> C`），故这三项必须到达 `loop`。
 
 ### 3.2 调用方向（谁调用谁）与**禁止调用**
 
@@ -1006,7 +1041,7 @@ with Session(
 
 | # | 判据 |
 | --- | --- |
-| `H-1` | **不变式统一断言**：把 I1~I10 写成一个断言函数，对**每个**场景（正常 / 未知工具 / 未暴露 / 参数不合法 / 策略硬拒绝 / 审批拒绝 / 工具失败 / 后端不可达 / 步数用尽）复用一遍 |
+| `H-1` | **不变式统一断言**：把 I1~I10 写成一个断言函数，对**每个**场景（正常 / 未知工具 / 未暴露 / 参数不合法 / 策略硬拒绝 / 审批拒绝 / 工具失败 / 后端不可达 / 步数用尽）复用一遍。**另须实现 I1 例外的判据**（§2.2）：断言"悬空 `TOOL_CALL`"**只在**`FAILED` 且含 `ERROR(INTERNAL)` 的流里被允许，并对**审批通路故障**（`R3`/`R4`）单独跑一遍——即"**没有 `TOOL_RESULT` 必须伴随响亮终止**"是**被断言**的，不是被默认的 |
 | `H-2` | `seq` 从 0 连续无空洞；`TASK_FINISHED` 恰好一条且最后（I6/I9） |
 | `H-3` | 校验器：超大 JSON / 未知键 / 类型不符 / 缺必填 / 非法 JSON ⇒ 全部 `invalid_arguments`；且 `text` 中**不含**参数值 sentinel（I8 / V4） |
 | `H-4` | `trimming.select_tools`：同输入同输出、按 `name` 升序；`allowlist` 之外的工具**必须**不在输出里（"只收窄"）；**`tier` 的类型是 `CapabilityTier`**（断言"传入 `HardwareTier` 成员 ⇒ 拒绝/无此语义"，钉住 C1 的裁决，防回退到硬件档位轴） |
@@ -1015,7 +1050,7 @@ with Session(
 | `H-6` | `context.assemble` 在超预算输入下**不切断** `ASSISTANT(tool_calls)` 与 `TOOL(tool_call_id)` 的配对 |
 | `H-7` | `harness/` 内部结构：H1（不 import L2/L4 实现）+ H2（叶子零依赖）两条机器检查 |
 | `H-8` | 装配期校验：`working_dir` 不在 `allowed_roots` 内 / `max_steps=0` / `tool_timeout_s=inf` ⇒ 构造期拒绝（§2.8） |
-| `H-9` | `Session.close()` 幂等；`with` 退出后按序 teardown（用 fake 记录调用顺序） |
+| `H-9` | `Session.close()` **幂等**（连调两次只 teardown 一次）；`with` 退出后按序 teardown（用 fake 记录调用顺序）。**本轮的可观察顺序是两步**：`model.close()` → `sink.flush()`（§2.9 已如实登记"工具一步无载体"）——用例只断言这两步，**不得**断言一个不存在的工具 teardown |
 
 ### 6.2 对抗性用例（`tests/security/`，验证工程师；**不得由实现者自证**）
 
@@ -1085,6 +1120,8 @@ with Session(
 
 | 2026-09-19 | **第六版（更正第三处自相矛盾：H2 与 `DomainPackError` 的落点打架）**：§3.1 的 `errors.py` 段把 **`DomainPackError` 定义在 `harness/errors.py`**（§7 改动清单同此），§4.3 又要求 `load_pack` 在各失败模式下**抛 `DomainPackError`**；但 §3.2 的 **H2** 原文是"六个叶子**两两之间互不 import**"，§3.1 的 `domain_pack` 段又写"**只依赖 contracts + foundation**" ⇒ **`domain_pack → errors` 同时被两处禁止**，而它是 §4.3 的**硬要求**。该矛盾**已被已落地的机器检查当场抓出**（`tests/unit/test_harness_internals.py::test_leaf_modules_have_no_mutual_dependencies` 报 `domain_pack.py -> errors`），且**发生在共享工作树上 ⇒ 两名成员的门禁同时变红**。**处置**：给 H2 开**唯一例外**——`harness/errors.py` 是**汇点**，任何 harness 模块可 import 其异常类型，而 `errors` 自身**不得** import 任何 harness 内部模块；§3.1 的 `domain_pack` 依赖说明同步。**被否决**：把 `DomainPackError` 搬到 `foundation/errors.py`（会让 L3 语义漂到共享层，且与既有落点裁决冲突）。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 实现侧按契约写 `domain_pack.py` 时**被机器检查拦下**（不是被人读出来）。⇒ 两处教训：① 这是**第三次**同一形状（同一文件内两处表述打架：`prompts` 旧写法 / `TaskLoop.pack` / `DomainPackError`），**H2 这类"禁止式"条款容易与其它条款的硬要求对撞**；② **判据写进测试之后，文档矛盾的代价从"评审时被发现"变成"门禁当场变红"**——这次的代价是**共享工作树上所有人的门禁一起红**（§3.4(c) 的老问题），但**红得早**远比**埋到实现里**好 |
 
+| 2026-09-19 | **第七版（补三处实现侧必需但契约漏写的接口，并给 I1 开一处**可判定**的例外）**：① §3.1 的 `TaskLoop.__init__` 增加 **`registry: ToolRegistry`**、**`system: str`**、**`data_context: tuple[ChatMessage, ...] = ()`** 三个 keyword-only 入参，并在 §3.1 的 `session` 构造期清单补第 5 条说明来源（`TaskLoop` 原签名**无法实现 §3.3**：步 1 要 `registry.specs()` 才能区分 `not_exposed`/`unknown_tool`、步 5 要 `registry.resolve()` 才拿得到执行句柄，而 `exposed: tuple[ToolSpec, ...]` 是纯数据；`context.assemble` 的调用者是 `loop`（§3.2 的 `L --> C`），但 loop 原来既拿不到 `system` 也拿不到 `data_context`）；② §2.2 的 **I1** 增加**唯一例外**：三条"我方不变量/基础设施故障"路径（`R3`/`R4` 审批通路故障、`resolve` 返回 `None`、工具 `audit_id` 为空）**允许悬空 `TOOL_CALL`**，但**必须**伴随 `ERROR(INTERNAL)` + `TASK_FINISHED(FAILED)`，并给出**可机器检查的判据**（悬空只允许出现在 FAILED+INTERNAL 的流里）——**不补 `TOOL_RESULT` 的理由**：`D2` 的 `denied_reason` 是闭集且没有"通路故障"档，借用 `approval_denied` 会让"基础设施故障"与"人拒绝了"**同形**（`R3` 明令不得），路径③更根本没有 `audit_id` 可用；③ §2.9 如实登记**teardown 四步中只有两步有载体**（`Tool` Protocol 无 `close()` ⇒ 工具一步无可调用接口；`llama-server` 一步在 `ModelClient.close()` 内部），本轮可观察顺序为 `model.close()` → `sink.flush()`，`H-9` 同步。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 除 I1 的例外条款外一律不变**；`contracts/harness.py` **无需改动** | 实现侧 `impl-harness-core` 在写 `loop.py` 前的**阻塞上报**（附 §3.3 / §3.1 / §3.2 的内部证据）与**附带发现**（I1 与 `R3`/`R4` 不能同时成立）。⚠️ **注：`loop.py` 已按这三项新增入参先行入库（`a9f73ee`）**——本版是**事后追认**，不是"先批准后实现"；领导已核实它未改动 `contracts/` 且未触碰其它文件域，故判为**可追认**（不是"合规流程"的样板） |
+
 **待同步项**（本文件已给规范；逐项状态如下）：
 
 | # | 待同步 | 状态与处置 |
@@ -1094,6 +1131,7 @@ with Session(
 | T3 | `ADR-0015` §5.1.2 的 `AsyncIterator` 表述 | **已完成**：只追加「修订记录」（正文不改），并与 `harness.md` §2.9、`architecture.md` §12 **三处对上** |
 | T4 | 威胁模型：§2.7 / §4.4 引用了 `T-03` / `T-04` / `T-10` / `T-11` / `T-12` | 本轮**不改**任何威胁条目与计数；映射与 §6.2 的新增用例由领导指派后在 `threat-model/` 登记 |
 | T5 | `interfaces/README.md` §6 的 `U9`：本文引入的四项未决（校验器选型 / `ALLOW_ALWAYS` 持久授权 / 检查点落点 / 领域包根） | 已登记；逐项解除走 `README.md` §7 的变更流程 |
+| T6 | **`ToolRegistry.specs()` 的"是否已裁剪"口径在 `tools.md` 与本文之间不一致**：`contracts/tools.py` 的 docstring 写"返回当前**裁剪后**、可暴露给模型的工具描述"，而本文 §3.1 第 2 条与 §3.3 步 1 是把 `registry.specs()` 当**全量注册集**用（`exposed = trimming.select_tools(registry.specs(), …)`；`not_exposed` = "在 `specs()` 里但不在 `exposed` 里"）。**若 `specs()` 已裁剪，则 `not_exposed` 这一档永远不可达** ⇒ `S1-b` 的第②问会变成空断言 | **登记，不在本版改**（属 `tools.md` / `contracts/tools.py` 的域）：须由架构师确认 `specs()` 返回**全量**还是**已裁剪**，并同步三处（`tools.md` §2.6、`contracts/tools.py` 的 docstring、本文 §3.3 步 1）。⚠️ **在裁决前按本文的用法实现**（全量），并把该假设写进 `loop.py` 的 docstring——**不得**让"这一档不可达"被静默容忍 |
 
 **实现侧差异登记（`R-1`~`R-4`，2026-09-19）**：`implementer-harness-leaf` 在本契约撰写**同期**
 提交了三个叶子模块（`fe82cce` 分级错误 / `83835af` 提示分级 / `68ce680` 工具裁剪），与本契约有四处
