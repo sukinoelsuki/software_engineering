@@ -617,7 +617,7 @@ class TaskLoop:
         approval: ApprovalGate | None = None,  # None ⇒ 需确认即拒绝（§2.5.5 的 R1）
         sink: AuditSink,
         validator: ArgumentValidator,
-        pack: DomainPack | None,
+        pack_name: str | None = None,  # 只传**名字**：H2 禁止 loop 依赖 domain_pack（数据以参数传入）
     ) -> None: ...
 
     def run(self, task: str) -> Iterator[SessionEvent]: ...
@@ -665,6 +665,15 @@ class Session(SessionContract):  # contracts/harness.py 的 Protocol
    **§7.1 第 2 项**矛盾，是第二版 `R-2` 收口时的**旧措辞残留**。权威签名以本节 §3.1 的 `prompts` 段与 §7.1 第 2 项为准。
    **`exposed` 在会话内固定**（启动时算一次）：与 `REQ-PERF-06`"运行中不调整"一致，
    也让"解析域"（§3.3 步 1）成为稳定集合，可被单测钉住。
+4. **传给 `loop` 的是 `pack_name`，不是 `pack` 对象**：
+   `pack_name = pack.name if pack else None`。`loop` 只需要
+   `PolicyRequest.domain_pack` 的取值（§3.3 步 3），而 §3.2 的 **H2** 明令
+   `loop` **不得**依赖 `domain_pack` —— 故按"数据以参数传入"的同一口径传名字
+   （与 `trimming` 收 `allowlist`、`prompts` 收 `fragments` 同构）。
+   ⚠️ **本行与 §3.1 的 `TaskLoop` 签名于 2026-09-19 第五版更正**（详见 §8）：原签名
+   `pack: DomainPack | None` 与 H2 及已落地的机器检查
+   （`tests/unit/test_harness_internals.py`，`ast` 扫描**含** `TYPE_CHECKING` 块）
+   矛盾 ⇒ 照原签名写会让门禁变红。
 
 ### 3.2 调用方向（谁调用谁）与**禁止调用**
 
@@ -734,7 +743,7 @@ sequenceDiagram
 | 0 | `emit(SessionEvent(kind=TOOL_CALL, call_id, tool_name=call.name))` | `ToolCallRequest` | — | **无条件**：模型请求过就是事实（`name` 原样，不可信数据） |
 | 1 | **解析域判定**：`call.name` 是否属于 `exposed` 的名字集合 | `str` | `bool` | 不在 `exposed`：若该名字在 `registry.specs()` 里 ⇒ `denied_reason="not_exposed"`，否则 `"unknown_tool"` ⇒ **跳至步 6b**（**不**构造 `PolicyRequest`、**不**调 `decide()`、**不**调 `invoke()`）。⚠️ 若在 `exposed` 内却 `registry.resolve(name) is None` ⇒ **不变量被破** ⇒ `ERROR(INTERNAL)` + 终止（**不得**静默跳过） |
 | 2 | **严格校验**：`validator.validate(spec=spec, arguments_json=call.arguments_json)` | `str`（不可信） | `Mapping[str, object]`（已校验的结构化参数） | 失败（`ToolArgumentsInvalidError`）⇒ `denied_reason="invalid_arguments"` ⇒ 步 6b。**不**构造 `PolicyRequest`（`architecture.md` §5.3 的 `VALID` 分支）；回喂内容 = 校验器的中文说明（**不得**回显原始 JSON） |
-| 3 | `PolicyRequest(session_id, call_id=call.call_id, tool_name=spec.name, arguments=<步 2 出参>, requested=spec.capabilities, domain_pack=pack.name if pack else None)` ⇒ `policy.decide(request)` ⇒ `emit(SessionEvent(kind=POLICY_DECISION, decision=..., audit_id=decision.audit_id))` | `Mapping[str, object]` | `PolicyDecision` | ⚠️ **`spec.capabilities` 为空集 ⇒ 属工具声明缺陷**：视为 `denied_reason="invalid_arguments"`（**不得**构造空集请求——`policy.md` §2.3 的前置条件）；工具名必须用 `spec.name`（**不**用 `call.name`，两者在步 1 已确认一致，用 `spec.name` 可让审计的可信来源明确）。`decide()` 自身失败收敛为拒绝（`policy.md` §2.5），其异常**不**在 harness 侧被捕获 |
+| 3 | `PolicyRequest(session_id, call_id=call.call_id, tool_name=spec.name, arguments=<步 2 出参>, requested=spec.capabilities, domain_pack=pack_name)` ⇒ `policy.decide(request)` ⇒ `emit(SessionEvent(kind=POLICY_DECISION, decision=..., audit_id=decision.audit_id))` | `Mapping[str, object]` | `PolicyDecision` | ⚠️ **`spec.capabilities` 为空集 ⇒ 属工具声明缺陷**：视为 `denied_reason="invalid_arguments"`（**不得**构造空集请求——`policy.md` §2.3 的前置条件）；工具名必须用 `spec.name`（**不**用 `call.name`，两者在步 1 已确认一致，用 `spec.name` 可让审计的可信来源明确）。`decide()` 自身失败收敛为拒绝（`policy.md` §2.5），其异常**不**在 harness 侧被捕获 |
 | 4 | 执行判定：① `decision.requires_confirmation` ⇒ **先看通路**：`approval is None` ⇒ **跳至步 6b**（`denied_reason="approval_denied"`，**不产** `APPROVAL_RESULT`，§2.5.5 的 `R1`）；否则 `approval.request(ApprovalRequest(session_id, call_id, tool_name=spec.name, risk_level=decision.risk_level, reason=decision.reason, arguments_summary=summarize_arguments(<步 2 出参>)))` ⇒ 形状非法或抛异常 ⇒ **`R3`/`R4`**（`ERROR(INTERNAL)` + 终止）；否则 `emit(SessionEvent(kind=APPROVAL_RESULT, approval=<结果>, audit_id=<结果>.audit_id))`；② 不带确认的路径看 `decision.allow` | `PolicyDecision` | `ApprovalResult \| None` | ①`outcome is DENY` ⇒ `denied_reason="approval_denied"` ⇒ 步 6b；②`approval is None` ⇒ 同 ①（**不得**放行）；③`allow=False`（且不用确认）⇒ `denied_reason="policy_denied"` ⇒ 步 6b。**注意**：`requires_confirmation=True` **不论 `allow`** 都要问（`policy.md` §2.4 的四格：`False/True` 是"可升级拒绝"）；`arguments_summary` 的生成口径见 §2.5.3（**不得**回显原始 JSON） |
 | 5 | `ctx = ExecutionContext(session_id, call_id, working_dir=config.working_dir, allowed_roots=config.allowed_roots, timeout_s=config.tool_timeout_s, network_allowed=False)` ⇒ `tool.invoke(args=<步 2 出参>, ctx=ctx)` | `Mapping[str, object]` + `ExecutionContext` | `ToolResult` | 工具抛**未预期异常** ⇒ 不当成 `ERROR` 事件了事：记一条 `TOOL_CALL` 审计（`outcome=ERROR`，`detail["failed_reason"]="tool_exception"`）+ 合成 `ToolResult(ok=False, content="", error="工具内部错误：<异常类型名>", truncated=False, audit_id=<该审计 id>)`。**不回显异常消息内容**（可能携带路径 / 不可信串）。⚠️ **`network_allowed` 本轮恒为 `False`**：出站白名单与云端客户端**均未实现**，`NETWORK_OUTBOUND` 已授予**不等于**可以出站（把它当"已可出站"是 fail-open，`T-10` 保持**未缓解**） |
 | 6a | 已执行 ⇒ `emit(TOOL_RESULT, result=result, audit_id=result.audit_id, text=None)`；观察内容 = `result.content`（成功）或 `result.error`（失败）——**不可信，按数据装配** | `ToolResult` | — | `result.content` / `result.error` 进消息历史时**不**加任何"以下是数据"之外的解释（`ChatMessage` 的信任规则见 `model.md` §2.1） |
@@ -1071,6 +1080,8 @@ with Session(
 | 2026-09-19 | **第三版（冻结稿；按领导对 `R-1`~`R-4` 的裁决收口）**：① **`R-2` 落地**——§3.1 的 `prompts` 改为 `build_system_prompt` / `build_system_message` / `build_user_message` / **`pack_context_message`**，`context.assemble` 增 `data_context` 形参与 **`role is USER` 的结构性守卫**，§4.2 字段表与 §4.4 第 2 条同步；② **`R-3` 落地**——`ErrorDisposition` 收敛为 `{RETRY, FEEDBACK, ABORT}` 并**留在 `harness/errors.py`**，删除 `ErrorPlan` / `plan_for`，新增 `error_kind(error, *, disposition)`；**写入"什么进 `contracts/`"的判据**（有跨信任边界的消费者，而非"是不是枚举"）；③ **`R-1`/`R-4` 的裁决结论与依据**写入 §8 的 `R` 表（**本节不再留"待裁决"**），并新增 **§7.1「裁决落地清单」**（7 项可核对动作 + "档位轴必须先于 `loop`"的顺序）；④ §2.4 澄清 `SessionErrorKind` 五个成员的**判定口径**（含 `TRANSIENT` 与 `STALLED` 的产出时机）与"`text` 不得取 `str(exc)`"；⑤ §2.7 的 `D2` 补 `not_exposed` / `unknown_tool` 的**判定点**；⑥ §6.1 补 `H-10`、§6.2 补 `S-new-6`（包片段进 SYSTEM 必须被结构性拒绝） | 领导的四项裁决（`R-1` 以契约为准改实现且不新增 ADR；`R-2`/`R-3` 采纳实现、授权契约修订；`R-4` 保留契约）+ "冻结稿不得留待裁决"的要求 + 契约类型归属判据（`ErrorDisposition` 留 `harness/errors.py`）。**§2 的字段 / 成员 / 不变式一律未改**（已先行落地的 `contracts/harness.py` 无需返工） |
 
 | 2026-09-19 | **第四版（更正一处自相矛盾）**：§3.1「`session.py` 构造期的三件事」第 3 条原写 `prompts.system_prompt(tier=…, fragments=…, tool_names=…)`，与本文件**同一节**的 `prompts` 签名（`build_system_prompt` / `build_system_message` / `build_user_message` / `pack_context_message`）**以及 §7.1 第 2 项**矛盾（第二版 `R-2` 收口时的**旧措辞残留**）。已改为 `build_system_message(tier=…)` + `pack_context_message(pack_name=…, fragments=…)`（**pack 片段走独立 `role=USER` 数据消息**，空片段 ⇒ `None`）。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 实现侧独立核实并上报（`implementer-harness-leaf2` 的 `回报：` 块，`5cd45f1`）；领导裁决「**以本节 §3.1 的 `prompts` 段与 §7.1 第 2 项为准**」 |
+
+| 2026-09-19 | **第五版（更正第二处自相矛盾）**：§3.1 的 `TaskLoop.__init__` 原写 `pack: DomainPack | None`，与 §3.2 的 **H2**（"`loop` 不 import `domain_pack`"，其自身理由即"**数据由 `session` 取出后以参数传入**"）矛盾——且该矛盾**已由机器检查钉住**：`tests/unit/test_harness_internals.py` 用 `ast` 扫描全部 import（**含 `if TYPE_CHECKING:` 块**）⇒ 照原签名写、即使只在 `TYPE_CHECKING` 下导入，门禁也会变红。改为 **`pack_name: str | None = None`**；§3.3 步 3 的 `domain_pack=pack.name if pack else None` 同步改为 `domain_pack=pack_name`；§3.1「`session.py` 构造期的三件事」补第 4 条写明传入口径。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 领导在开本轮开工令前核对契约时发现（与第四版同一形状：**"同一文件内两处表述打架"**）。⚠️ **本版由领导代改（`docs/design/` 属架构师产出域），待架构师在下一笔独立复核确认**；若不认可，须另开一处更正并说明理由（**不得**静默回退） |
 
 **待同步项**（本文件已给规范；逐项状态如下）：
 
