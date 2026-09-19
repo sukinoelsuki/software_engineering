@@ -879,9 +879,9 @@ pydantic 模型类作为唯一真源 / 引入 `jsonschema` 库）、加权对比
 该 ADR 同时登记 `ADR-0015` 的 `D2` **两处用途均不落地**（新增 ADR，`ADR-0015` 正文不改；
 只在其「修订记录」追加一行指针）。
 
-✅ `ADR-0020` **已于 2026-09-19 获所有者批准（状态：已接受）** ⇒ 实现者**可开工**该校验器，
-落地动作见 §7.2；⚠️ **仍未实现** ⇒ §5.1 第 8 行**在实现落地前无法装配**——这是
-"**未实现**"而不是"**未定选型**"。**仍然不得**以"临时不校验 / 临时放行"绕过。
+✅ `ADR-0020` **已于 2026-09-19 获所有者批准（状态：已接受）**，且该校验器**已实现并入库**
+（`harness/arguments.py`，`43a177c`）⇒ §5.1 第 8 行的装配阻塞**已解除**；落地清单见 §7.2。
+**仍然不得**以"临时不校验 / 临时放行"绕过。
 
 | # | 规定 |
 | --- | --- |
@@ -1018,7 +1018,7 @@ format = "markdown"                      # 可选；枚举固定小集合（本�
 | 5 | `registry` | `ToolRegistry` | **无默认** | `cli/`：`ToolRegistry([ReadFileTool(sink), WriteFileTool(sink), ListDirTool(sink), ShellCommandTool(sink)])`（4 个内置工具的构造签名都是 `(sink)`） | `ToolRegistrationError`（重名 / 外部来源摘要缺失或不一致）⇒ 装配期失败，**不得**静默剔除该工具 |
 | 6 | `model` | `ModelClient` | **无默认** | `cli/`：`LocalLlamaClient(binary=…, model_path=…, log_path=…)`（云端客户端**未开工**） | `ModelUnavailableError`（起不来 / 未就绪）⇒ 装配期失败，非零退出 |
 | 7 | `approval` | `ApprovalGate \| None` | **`None`** | `cli/approval.py`（交互模式）；非交互模式**显式传 `None`** | `None` ⇒ 需确认的调用**一律拒绝**（§2.5.5 `R1`）；**不得**为"图方便"传一个恒放行的 gate |
-| 8 | `validator` | `ArgumentValidator` | **无默认** | `cli/`：`ADR-0020` 的 `SubsetArgumentValidator`（**已接受（2026-09-19）**，尚未实现；选型与理由见 §3.4） | **实现未落地前无法装配** ⇒ 阻塞性质从"未定选型"变为"未实现"；**不得**以"临时不校验"绕过 |
+| 8 | `validator` | `ArgumentValidator` | **无默认** | `cli/`：`ADR-0020` 的 `SubsetArgumentValidator`（**已实现**，`harness/arguments.py`，`43a177c`；选型与理由见 §3.4） | 装配阻塞**已解除**（实现已落地）；**不得**以"临时不校验"绕过 |
 | 9 | `pack` | `DomainPack \| None` | **`None`** | `cli/`：`load_pack(directory, roots=<**显式给出**>, known_tools=frozenset(spec.name for spec in registry.specs()))` | `DomainPackError` / `PathNotAllowedError` ⇒ 装配期失败；**不得**降级为"无 pack 继续跑" |
 
 **`tool_risk` 的组装（`REQ-HARNESS-08` 的落点）**：把 pack 的 `security.risk_overrides`
@@ -1162,9 +1162,11 @@ with Session(
 
 ⚠️ **顺序**：第 1、2 项（档位轴）**必须先于** `loop.py`，否则波 2 会建在错误的轴上。
 
-### 7.2 校验器落地清单（`ADR-0020`，**已接受**）
+### 7.2 校验器落地清单（`ADR-0020`，**已接受、已落地**）
 
-> 与 §7.1 同格式：逐个可核对。✅ **`ADR-0020` 已于 2026-09-19 获所有者批准** ⇒ 本清单可开工（落地后 §5.1 第 8 行的装配阻塞才解除）。
+> 与 §7.1 同格式：逐个可核对。✅ **`ADR-0020` 已于 2026-09-19 获所有者批准，且本清单已落地**
+> （`harness/arguments.py`，`43a177c`；单测 `tests/unit/test_harness_arguments.py`）⇒ §5.1 第 8 行的
+> 装配阻塞**已解除**。
 
 | # | 文件 | 必做动作 | 关联 |
 | --- | --- | --- | --- |
@@ -1199,6 +1201,8 @@ with Session(
 | 2026-09-19 | **第十版（`ADR-0020` 获批准：选型定案为手写 JSON-Schema 子集校验器）**：所有者 2026-09-19 **批准**该 ADR ⇒ `ADR-0020` 的状态行改为「**已接受**」、`docs/adr/README.md` 索引同步；本文件内**全部**「提议中 / 未批准前不得开工」表述**同步翻转**（§3 头部、§3.4 标题与其状态段、§5.1 第 8 行、§7 的 `harness/arguments.py` 行、§7.2 标题与前言）。⚠️ **阻塞性质变化要写清**：§5.1 第 8 行原来的"**未定选型**"阻塞**已解除**，改为"**未实现**"（`SubsetArgumentValidator` 尚未落地）⇒ 仍是 fail-secure 的**拒绝启动**，**不得**以"临时不校验"绕过。**§2 的类型 / 成员 / 不变式一律不变**；`contracts/harness.py` **无需改动** | 所有者批准（领导推荐：手写子集校验器——`V4` 的"不可信内容不回流"因此是**结构性质**而非纪律；`ADR-0020` §1.3 的实测证据：`pydantic` 的 `str(e)` 默认回显 `input_value`，与 `V4` 直接冲突）。⚠️ **编号更正**：架构师把 2026-09-19 的复核行也标为"第八版"，与已推送的第八版（`I8`/`V4` 澄清，`7721658`）**撞号** ⇒ 该行改为**第九版**，本文件内对它的两处引用（§3.1 第 3 条的"更正（第八版）"）同步。⚠️ **仍未复核项**：第九版只复核了第五/六/七版，**第八版（`I8`/`V4` 澄清）尚未经架构师独立复核**，登记在案 |
 
 | 2026-09-19 | **第十一版（澄清 `I8` 与本文件字段表的自相矛盾：原始 `arguments_json` 的位置）**：§1 第 1/5 条与 §2.2 的 `I8` 写"**不得承载原始 `arguments_json`**"，而 §2.2 的**字段表要求** `response: ModelResponse | None`（`contracts/model.py` 的 `ToolCallRequest.arguments_json` 就是原始 JSON 文本）⇒ **两处不可同时满足**；§2.6 第 3 条又要求 `response` **按字段表递归展开**。**处置**：把判据**按位置**写清——① 事件的**独立字段**（含新增字段）❌；② `text` / 审计 `detail` / 日志 ❌（与第八版一致）；③ `response` **内部** ✅（"模型响应整体"这一**不可信数据**，§2.6 第 3 条的递归展开即含它）；④ 面向终端的**渲染** ❌（不显示参数值，§5.2 只渲染 `tool_name`）。**被否决**：在序列化时把 `arguments_json` 剔除——`response.content` 同样是不可信文本且**同样进 JSONL** ⇒ 属**同形不同处理**，收益极小，却让"按字段表序列化"这条唯一路径失效、并需要一份**必然漂移的自定义投影**。**§2 的字段 / 成员 / 不变式名称一律不变**（只澄清 `I8` 的判据）；`contracts/harness.py` **无需改动** | 实现侧 `implementer-cli` 在按 §2.6 落地 `cli/render.py` 时的**主动上报**（它按 §2.6 如实展开、并把该张力登记在代码 docstring，**没有**自改契约）。⚠️ **同批已核实**：`harness/loop.py`（已入库）本就把完整 `ModelResponse` 放进 `MODEL_RESPONSE` 事件，其单测对 `I8` 的判据是**结构性**的（"事件没有 `arguments_json` 字段 + sentinel 不在 `text`/`tool_name`"）⇒ **无需返工** |
+
+| 2026-09-19 | **第十二版（实现状态同步：`SubsetArgumentValidator` 已落地）**：`ADR-0020` 获批准后，手写 JSON-Schema 子集校验器**已实现并入库**（`harness/arguments.py`，`43a177c`）⇒ 本文件的**实现状态**表述同步翻转：§3.4 的状态段、§5.1 第 8 行、§7.2 的标题与前言，原写「尚未实现 / 仍未实现 / 实现未落地前无法装配」处一律改为「**已实现**」；§5.1 第 8 行的**装配阻塞已解除**（`cli/` 可注入该校验器）。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动**；本版**只同步实现状态事实，不改任何设计结论**。 | 逐项读源码与提交核实：`harness/arguments.py`（`43a177c`）、`tests/unit/test_harness_arguments.py`、`tests/unit/test_harness_internals.py`（`LEAF_UNITS` 已含 `arguments`）、`git log -- src/agent_sec_perf/harness/arguments.py` |
 
 **待同步项**（本文件已给规范；逐项状态如下）：
 
