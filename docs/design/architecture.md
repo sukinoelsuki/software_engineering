@@ -356,17 +356,18 @@ flowchart LR
 | `docs/design/diagrams/` | 独立图源文件 | **未建立**（**本次图一律内联**在本文中，理由：可 diff、可评审、可版本管理，且不新建目录） | `docs/design/README.md` 设计要求 2 |
 | `tests/unit/` | 单测 | **已建立**（22 个模块） | `tests/unit/` |
 | `tests/security/` | 对抗性用例（含 `corpus/`） | **已建立**（11 个模块 + `corpus/`，`corpus/` 目前**只有路径穿越语料，无注入语料**） | `tests/security/`；`threat-model/README.md` §0 |
-| `tests/integration/` | 端到端 1 条（可标记 `slow`） | **未建立** | 目录不存在（`ADR-0015` §5.4.2 列为 B 阶段要落） |
+| `tests/integration/` | 端到端 1 条（可标记 `slow`） | **已建立**（1 条真模型端到端；标 `slow`、默认不跑） | `tests/integration/test_end_to_end.py`（`fba8c4c` / `b1fc35a`） |
 | `tests/benchmark/` | — | **不新增**（性能基准由 `bench/` 轮次与 `bench/data` 分支承担） | `ADR-0015` §5.4.2 |
 
 ---
 
 ## 5. 数据流（关键路径：数据结构 + 算法，不是方块图）
 
-> **本节的可信度声明**：§5.1 的各段**均有实现**，但**它们之间的串接（`Session` 装配）尚不存在**；
-> §5.2 的时序图是**规划态**，其中标注了每一段的实现状态。读本节时请把"规划"与"已实现"分开看。
+> **本节的可信度声明**：§5.1 的各段**均有实现**，且**串接（`Session` 装配）已由 `cli/app.py` 落地**
+> （`4baa9e8`）；§5.2 的时序图仍按"规划态"逐段标注实现状态——**串接存在 ≠ 端到端已跑通**
+> （是否跑通以 `tests/integration/` 与 `docs/devlog/` 为准）。读本节时请把"规划"与"已实现"分开看。
 
-### 5.1 装配阶段（会话建立之前，各段**已实现**，串接点**未实现**）
+### 5.1 装配阶段（会话建立之前，各段**已实现**，串接点由 `cli/app.py` 落地）
 
 | 步 | 动作 | 实现处 | 失败时的行为 |
 | --- | --- | --- | --- |
@@ -468,9 +469,9 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     START["模型请求工具调用<br/>ToolCallRequest.arguments_json = 原始 JSON 文本"] --> RESOLVE{"ToolRegistry.resolve(name)"}
-    RESOLVE -- "None：模型幻觉的工具" --> DENY0["默认拒绝 + 审计<br/>【HARNESS 侧，未开工】"]
+    RESOLVE -- "None：模型幻觉的工具" --> DENY0["默认拒绝 + 审计<br/>【HARNESS 侧，已实现】"]
     RESOLVE -- "Tool" --> VALID{"按 parameters_schema 严格校验并解析原始 JSON"}
-    VALID -- "不合法" --> DENY2["不构造 PolicyRequest；以 ToolResult(ok=False) 回喂<br/>【HARNESS 侧，未开工】"]
+    VALID -- "不合法" --> DENY2["不构造 PolicyRequest；以 ToolResult(ok=False) 回喂<br/>【HARNESS 侧，已实现】"]
     VALID -- "合法" --> EVAL{"decide() 分支顺序 1a → 1b → 1c"}
     EVAL -- "1a requested 为空集" --> HARD["硬拒绝 False/False + CRITICAL<br/>仍必须 emit"]
     EVAL -- "1b 含非 Capability 成员" --> HARD
@@ -557,16 +558,16 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | --- | --- | --- |
 | `T-01` 子进程执行与逃逸 | `foundation/proc.py`、`tools/shell.py`、`security/sandbox/`（未开工） | 部分缓解 |
 | `T-02` 路径穿越 | `foundation/paths.py`、`tools/registry.resolve_tool_path`、`observability/audit.py`（落点白名单） | 部分缓解（`S2` **拒绝**半已落地；"且留审计"半未落地） |
-| `T-03` 指令-数据混淆 | `harness/`（未开工）、`contracts/model.py`（信任规则） | **未缓解** |
-| `T-04` 提示注入与上下文污染 | `harness/{context,prompts}`（未开工）、`tests/security/corpus/`（无注入语料） | **未缓解** |
+| `T-03` 指令-数据混淆 | `harness/`（已实现）、`contracts/model.py`（信任规则） | **未缓解** |
+| `T-04` 提示注入与上下文污染 | `harness/{context,prompts}`（已实现）、`tests/security/corpus/`（无注入语料） | **未缓解** |
 | `T-05` 子代理输出是不可信输入 | 流程纪律（`CODEBUDDY.md` §10.4） | 部分缓解 |
 | `T-06` 安全豁免被静默放宽 | `tests/unit/test_bench_encapsulation.py` | 部分缓解（只扫 `src/`） |
 | `T-07` 共享 git 索引跨域混入 | 流程纪律（`git commit -o`） | 部分缓解（靠人执行） |
 | `T-08` 凭据暴露（`CNB_TOKEN`） | `foundation/proc.minimal_env`、`bench/runner.py` | 部分缓解（`run(isolation="root")` 仍继承） |
 | `T-09` 供应链投毒 | `tools/registry.description_digest`、`uv.lock`、`foundation/assets`（未开工） | 部分缓解 |
 | `T-10` 网络出站默认拒绝失效 | `model/client.py`（回环）、`model/router.py`（未开工） | **未缓解** |
-| `T-11` 越权工具调用与工具滥用 | `security/policy.py`、`tools/registry.py`、`harness/`（未开工） | **未缓解**（`S1` 未落地） |
-| `T-12` 领域包加载代码 | `harness/domain_pack`（未开工） | **未缓解**（静态守卫已落地，行为断言 `S3` 未落地） |
+| `T-11` 越权工具调用与工具滥用 | `security/policy.py`、`tools/registry.py`、`harness/`（已实现） | **未缓解**（`S1` 未落地） |
+| `T-12` 领域包加载代码 | `harness/domain_pack`（已实现） | **未缓解**（静态守卫已落地，行为断言 `S3` 未落地） |
 | `T-13` 隔离机制静默失效 | `security/sandbox/`（未开工）、`foundation/proc.py` | 部分缓解 |
 
 > **状态分布合计：已缓解并验证 0 / 部分缓解 8 / 未缓解 5。**
@@ -625,13 +626,13 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | # | 事项 | 类别 | 现状与依据 | 解除方式（可以是验证方式） |
 | --- | --- | --- | --- | --- |
 | `G-1` | **硬件探测（`REQ-PERF-05/06`）在 `foundation/` 无落点** | **设计缺口** | `ADR-0015` §5.1.3 把 `PERF` 分组的硬件探测归到 `foundation/`，但 §5.4.1 的目录树**未列出**对应模块名（现有 5 件为 `errors`/`paths`/`proc`/`config`/`logging`）；`contracts/model.py` 已定义 `HardwareTier`（`S`/`M`/`L`）但**生产方与消费方（`model/assets.py`）均未开工** | 实现 `REQ-PERF-05/06` 时确定模块名与落点；**若新增目录/文件**按规则**先补 ADR 或修订登记**。验证方式：`S/M/L` 三段记录（探测值 → 决策 → 生效配置）的用例 |
-| `G-2` | **`D2`（pydantic 的两处用途）无载体，且 `parameters_schema` 是手写 dict** | **设计 ↔ 实现口径差异** | 撰写时的事实（**不变**）：`src/` 中无 `pydantic` 的 import（唯一第三方运行期 import 是 `foundation/logging.py` 的 `structlog`）；内置工具的 `parameters_schema` 由**手写 dict** 给出（`tools/files.py`、`tools/shell.py`），而 `ADR-0015` §5.2.2 的落法是"由 pydantic 模型类生成" | **已处置（2026-09-19，待批准）**：新增 [`ADR-0020`](../adr/0020-argument-validator-implementation.md) —— ① 信任边界校验改用**手写 JSON-Schema 子集校验器**（`harness/arguments.py`）；② `parameters_schema` **保留手写 dict**；两者合起来登记为"**`D2` 两处用途均不落地**"（`ADR-0015` 正文不改，只追加修订记录指针）。⚠️ **`ADR-0020` 提议中** ⇒ 获批前本行**不得**按已关闭处理；`pyproject.toml` 的 `pydantic` 去留属 **`F` 类**，见该 ADR §8 动作 6 |
+| `G-2` | **`D2`（pydantic 的两处用途）无载体，且 `parameters_schema` 是手写 dict** | **设计 ↔ 实现口径差异** | 撰写时的事实（**不变**）：`src/` 中无 `pydantic` 的 import（唯一第三方运行期 import 是 `foundation/logging.py` 的 `structlog`）；内置工具的 `parameters_schema` 由**手写 dict** 给出（`tools/files.py`、`tools/shell.py`），而 `ADR-0015` §5.2.2 的落法是"由 pydantic 模型类生成" | **已处置（2026-09-19，`ADR-0020` 已接受）**：新增 [`ADR-0020`](../adr/0020-argument-validator-implementation.md) —— ① 信任边界校验改用**手写 JSON-Schema 子集校验器**（`harness/arguments.py`，已落地 `43a177c`）；② `parameters_schema` **保留手写 dict**；两者合起来登记为"**`D2` 两处用途均不落地**"（`ADR-0015` 正文不改，只追加修订记录指针）。✅ `ADR-0020` 已于 **2026-09-19 获所有者批准（已接受）** ⇒ 本行按**已处置**理解；⚠️ `pyproject.toml` 的 `pydantic` 去留**仍未决**，属 **`F` 类**，见该 ADR §8 动作 6 |
 | `G-3` | **本地回环客户端用标准库 `http.client`，未走 `urllib3`** | **实现选择（待登记）** | `model/client.py` 的 `LoopbackHttpTransport` 用 `http.client`（理由写在模块 docstring：只连本机已知端口，避开 `urllib` 的 scheme 注入面 `B310`）；`ADR-0015` §5.2.4 行 `HTTP-1` 写的是"本地 `llama-server` 走回环 HTTP，**可**与云端共用同一薄客户端" | 判读为**不冲突**（`urllib3` 的指定用途是**云端**；"可"非强制）。**验证方式**：云端客户端落地时确认是否复用同一 `HttpTransport` Protocol；若两条路径分叉出两套超时/上限语义，则须回到 `interfaces/model.md` 明确口径 |
 | `G-4` | 契约未决项 `U1`~`U4` | **契约未决** | `U1`：`CapabilityTier` 成员与档数【待定】（`SRS Q-3` 开放问题，`REQ-MODEL-06` 落地时定，变更走 ADR）；`U2`：`description_digest` 规范化口径（与 MCP 同期定）；`U3`：**"本次 / 总是 / 拒绝"的持久授权表示**（审批门设计时定）；`U4`：审计 `detail` 脱敏规则（`observability/` 设计时定） | 见 `interfaces/README.md` §6 各行 |
 | `G-5` | 审计落点的两项**策略待确认项** `A1` / `A2` | **需所有者拍板** | `A1`：是否允许 `ALLOWED_AUDIT_ROOTS` 含额外根（CI 挂载卷 / 演示归档）；`A2`：是否移除 `audit.directory` 键（只留 `filename`）。**未拍板前按最保守取值实现**（单一根 + 保留键） | 见 `interfaces/audit.md` §5。**注意**：无论哪一项，`P1`~`P7` 与 `W1`~`W8` **不随之变化** |
-| `G-6` | `tests/integration/` 未建立；端到端闭环无用例 | **测试缺口** | `ADR-0015` §5.4.2 要求 B 阶段落 1 条端到端（启动 `llama-server` → 读文件 → 调模型 → 执行工具 → 回喂），可标记 `slow` | 实现 `harness/` 后落地；`sdlc.md` §6 已把"集成"列入工件清单 |
+| `G-6` | **端到端闭环无用例（原测试缺口）** | **已解除** | `ADR-0015` §5.4.2 要求 B 阶段落 1 条端到端（启动 `llama-server` → 读文件 → 调模型 → 执行工具 → 回喂），可标记 `slow` | **已落**（`tests/integration/test_end_to_end.py`，`fba8c4c` / `b1fc35a`；标 `slow`、默认不跑）；**是否跑通以实跑记录为准**（`docs/devlog/`）。`sdlc.md` §6 的"集成"工件已具备 |
 | `G-7` | `S1` / `S3` / `S2` 的"审计"半仍未落地 | **安全覆盖缺口** | 被测实现（`harness/`、审批门、`domain_pack` 加载器）不存在 ⇒ 验证者**拒绝造测**（正确处置，口径见 `SECURITY.md` §4） | 相关实现落地后由验证工程师落 `tests/security/`；**落地前不得视为已覆盖** |
-| `G-8` | 契约层无法强制的两条前置条件 | **已登记的部分缓解** | `PolicyRequest.requested` 的"非空"与"元素必须是 `Capability` 实例"在**类型层面表达不了**（`frozenset` 表达不了非空；`contracts/` 零行为不能加 `__post_init__`） | 兜底由 `PolicyEngine` 的防御分支负责（**已实现**：`1a`/`1b`）；上游由 `harness/` 构造点保证（**未开工**）。按威胁模型口径记为**部分缓解** |
+| `G-8` | 契约层无法强制的两条前置条件 | **已登记的部分缓解** | `PolicyRequest.requested` 的"非空"与"元素必须是 `Capability` 实例"在**类型层面表达不了**（`frozenset` 表达不了非空；`contracts/` 零行为不能加 `__post_init__`） | 兜底由 `PolicyEngine` 的防御分支负责（**已实现**：`1a`/`1b`）；上游由 `harness/` 构造点保证（**已实现**）。按威胁模型口径记为**部分缓解** |
 
 ---
 
@@ -643,3 +644,4 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | 2026-09-19 | **表述同步（`async` → 同步）**：§2.4 表首行 `AsyncIterator[SessionEvent]` → **同步 `Iterator[SessionEvent]`**，并补全该行的错误语义（"逃逸的三类"含**审计写入失败必须冒泡**）；§5.2 在时序图后补"事件流的形态"说明（同步迭代器 + 审批回传通路的落点）。**不改任何决策**：§2.3 的依赖白名单、`R1`~`R5`、§4 的实现状态表、§7 的威胁落位一律不变 | `ADR-0015` §5.1.2 同一格已规定"单会话单线程；事件流**串行**产出"，`AsyncIterator` 与之自相矛盾且 `src/` 下**无任何 `async def`** ⇒ 由 [`interfaces/harness.md`](interfaces/harness.md) §2.9 裁决为同步（含被否决方案）；`ADR-0015` 已以「修订记录」登记同一更正。获批记录：领导于 2026-09-19 批准两处待同步并扩展本轮产出白名单至本文件 |
 | 2026-09-19 | **现状同步（`harness/` 已实现）+ `G-2` 处置登记**：① 状态刷新——§0 第 1 条、§0 第 2 段、§1.1 的 `HARNESS` 节点、§4.1 的 `contracts/` 行、§4.3 的 `harness/` 行、§4.4 的 `interfaces/` 行、§5.2 时序图的两个参与者、§6 的 `Session` 行、§7.1 的 `HARNESS` / `PERF` 行：`harness/` 由"未开工"更正为**已实现（8 件）**（依据：源码 128~846 行 × 8、9 个单测模块共 4029 行、提交哈希见 §4.3）；`contracts/` 由 5 → **6 模块**；`interfaces/` 由 5 → **6 份**；未决项由 `U1`~`U7` → **`U1`~`U9`**。⇒ **`cli/` 成为唯一整层未开工的层**，§0 第 2 段随之改写为"端到端闭环尚未跑通一次"。⚠️ **"已实现" ≠ "已跑通"**。② **`G-2` 处置**：新增 [`ADR-0020`](../adr/0020-argument-validator-implementation.md)（校验器选型 + `D2` 两处用途不落地的登记），本行只登记指针，**获批前不按已关闭处理**。**不改任何决策**：§2.1 的 `R1`~`R5`、§2.3 的依赖白名单、§3 的组件选型、§5 的算法与路径一律不变 | 读源码与提交核实（`src/agent_sec_perf/harness/*`、`tests/unit/test_harness_*.py`、`git log --oneline`）；[`interfaces/harness.md`](interfaces/harness.md) §3.4 / §7.2 / §8 的第八版；[`ADR-0020`](../adr/0020-argument-validator-implementation.md) |
 | 2026-09-19 | **现状同步（`cli/` 已实现）**：§0 第 1 条的"已实现 / 未开工"两个清单、§0 第 2 段（端到端由"尚未跑通一次"改为"已有可跑路径，实跑结果以 `docs/devlog/` 为准"）、§1.1 的 `UX` 节点、§3.1 的 `cli/` 行、§4.3 的 `harness/` 行注记与 `cli/` 行、§5.1 的"装配点归属"、§5.2 时序图的两个参与者、§7.1 的 `UX` 行：`cli/` 由"未开工 / 尚不存在"更正为**已实现（3 件）**（依据：`src/agent_sec_perf/cli/{app,render,approval}.py`、`tests/unit/test_cli_*.py`、提交 `4baa9e8` / `b4a7213` / `663c266`）；端到端用例 `tests/integration/test_end_to_end.py`（`fba8c4c`）**已建立**（真模型、标 `slow`、默认不跑）。**不改任何决策**：§2.1 的 `R1`~`R5`、§2.3 的依赖白名单、§3 的组件选型、§5 的算法与路径、§7.2 的威胁落位与状态一律不变（**"已实现" ≠ "已缓解"**）。 | 读源码与提交核实（`git log --oneline -- src/agent_sec_perf/cli tests/integration`；`ls src/agent_sec_perf/cli tests/integration`）；领导 2026-09-19 明确授权本项同步 |
+| 2026-09-19 | **现状同步（`harness/` 相关实现状态 + `tests/integration` + `G-2`/`G-6`/`G-8`）**：① §4.4 的 `tests/integration/` 行由"未建立"改为**已建立**（`tests/integration/test_end_to_end.py`，`fba8c4c`），`G-6` 由"测试缺口"改为**已解除**；② §5 的可信度声明与 §5.1 标题：串接（`Session` 装配）**已由 `cli/app.py` 落地**（`4baa9e8`），但**"串接存在 ≠ 端到端已跑通"**；③ §5.3 的拒绝路径 flowchart 两个 `【HARNESS 侧，未开工】` 节点改为**已实现**；④ §7.2 威胁落位表的**模块列**：`T-03`/`T-04`/`T-11`/`T-12` 的 `harness/`·`harness/domain_pack` 标注由"未开工"改为**已实现**（`cb3157e` / `a9f73ee` / `14a7831`）；⑤ `G-2` 由"待批准"改为**已接受**（`ADR-0020` 已获批准、`harness/arguments.py` 已落地）；`G-8` 的上游 `harness/` 构造点由"未开工"改为**已实现**。⚠️ **本笔只改实现状态**：§7.2 的**状态列**（`T-XX` 部分缓解 / 未缓解）、§7.2 的状态分布合计（0 / 8 / 5）、`T-11` 的"（`S1` 未落地）"与 `T-12` 的"（`S3` 未落地）"、`G-7`、以及 §0 第 2 条的 `S1`/`S3` 表述**一律未动**（涉 `T-XX` 结论与计数，按领导 2026-09-19 指示**只出提案**） | 读源码与提交核实（`git log --oneline -- tests/integration src/agent_sec_perf/cli src/agent_sec_perf/harness`；`ls tests/integration`）；`threat-model/README.md` §7 与 `interfaces/harness.md` 的对应记录 |
