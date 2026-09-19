@@ -87,13 +87,19 @@ def event_to_payload(event: SessionEvent) -> dict[str, object]:
     * 枚举写**值**（``kind.value`` 等）；
     * ``response`` / ``decision`` / ``approval`` / ``result`` 递归展开，**不** ``repr``。
 
-    ⚠️ **如实登记一处契约张力（上报领导裁决，本模块不自改契约）**：契约 §1.1 与 §2.2 的
-    ``I8`` 写"事件**不得承载**原始 ``arguments_json``"，而 §2.6 第 3 条又要求 ``response``
-    **按契约字段表递归展开**——``ModelResponse.tool_calls[].arguments_json`` 正是原始 JSON 文本。
-    两条字面冲突。本实现依 §2.6 第 3 条**如实展开**（这也是已入库的 ``harness/loop.py``
-    把完整 ``ModelResponse`` 放进事件的既有事实：``_assert_invariants`` 对 ``I8`` 的判据是
-    结构性的——"事件没有 ``arguments_json`` 字段，且 sentinel 不出现在 ``text`` / ``tool_name``"）。
-    若领导裁决为"序列化面上也须剔除 ``arguments_json``"，属**契约变更**，需回改本函数与测试。
+    原始 ``arguments_json`` 的可见性**按位置**判定（``harness.md`` §2.2 的 ``I8``
+    **第十一版澄清**，2026-09-19 领导裁决；本模块实现与该裁决一致，**无需返工**）：
+
+    * 事件的**独立字段** ❌ —— ``arguments_json`` **不得**被提升为 ``SessionEvent`` 的字段；
+    * ``text`` / 审计 ``detail`` / 日志 ❌；
+    * ``response`` **内部** ✅ —— 它是"模型响应整体"这一**不可信数据**，§2.6 第 3 条的
+      **递归展开**即含它（``response.content`` **同样是**不可信文本、**同样**进 JSONL；
+      只剔除 args 属"同形不同处理"，收益极小却让"按字段表序列化"这条**唯一路径**失效）；
+    * 面向**终端**的**渲染** ❌ —— 本模块的 :func:`render_event` **不显示任何参数值**
+      （§5.2 的 ``TOOL_CALL`` 只渲染 ``tool_name``，且先净化）。
+
+    真正的护栏不在"序列化时剔除"，而在：**审计面永不承载**（``MODEL_RESPONSE`` 不审计）+
+    ``text`` 的禁区 + 渲染净化（§2.6 第 5 条）+ 消费侧"数据当数据"（``C9`` / ``T-04``）。
     """
     return {
         "kind": event.kind.value,
@@ -249,8 +255,8 @@ def _response_payload(response: ModelResponse) -> dict[str, object]:
 
 
 def _tool_call_payload(call: ToolCallRequest) -> dict[str, object]:
-    """``ToolCallRequest`` 的字段表；``arguments_json`` 是**原始 JSON 文本**（见
-    :func:`event_to_payload` 的张力登记）。"""
+    """``ToolCallRequest`` 的字段表；``arguments_json`` 是**原始 JSON 文本**——
+    它在 ``response`` **内部**是**允许**的（判据见 :func:`event_to_payload` 的按位置判定）。"""
     return {
         "call_id": call.call_id,
         "name": call.name,
