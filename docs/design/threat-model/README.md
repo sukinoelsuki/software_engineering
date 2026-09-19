@@ -15,11 +15,14 @@
 
 ## 0. 先读这一段：三条结论
 
-1. **安全设计是齐的，实现载体基本为空。** 需求（SRS `REQ-SEC-01~09`）、契约
-   （[`../interfaces/`](../interfaces/README.md)）、决策（ADR-0006/0007/0015）都已落定；
-   但 `security/`、`observability/`、`tools/`、`harness/` 四个包**尚无实现**
-   （`src/agent_sec_perf/` 下只有 `bench/`、`foundation/`、`contracts/`）。
-   ⇒ 13 条里 **5 条未缓解**，原因是"缓解措施还只在纸面"，不是"忘了做"。
+1. **安全设计是齐的；实现载体已部分到位，但多数缓解仍无可执行的行为级验证。** 需求
+   （SRS `REQ-SEC-01~09`）、契约（[`../interfaces/`](../interfaces/README.md)）、
+   决策（ADR-0006/0007/0015）都已落定；`security/{capabilities,policy}`、`observability/audit`、
+   `tools/{registry,files,shell}`、`harness/`（**9 件**）**均已实现**
+   （`f7f7628` / `e78c221` / `f90e051` / `43a177c` 等），但 `security/sandbox/`、
+   `security/refusal.py`、`model/{router,probe,assets}.py`、`tools/search.py` 仍**未开工**。
+   ⇒ 13 条里 **5 条未缓解**（**计数与 §4.1 一致，本次同步不改变任何条目状态**）；
+   未缓解项的成因仍是"缓解无实现载体**或**无可执行验证"，不是"忘了做"。
 
 2. **真正生效的安全机制有两类：结构性机器检查 + 第一组行为层用例。**
    - **结构性**：`tests/unit/test_bench_encapsulation.py`（唯一子进程入口、无 `shell=True`、
@@ -80,7 +83,10 @@
 
 **覆盖范围**（本轮）：可执行路径 + 工程流程 + 供应链，共 13 条。
 具体地——`foundation/`（已实现）、`bench/` 数据流水线（已实现）、
-`security/`/`tools/`/`harness/`/`model/`（**已设计未实现**，按下述口径登记）、
+`security/`（`capabilities` / `policy` 已实现；`sandbox/` / `refusal` 未开工）、
+`tools/`（`registry` / `files` / `shell` 已实现；`search` 未开工）、
+`observability/audit`（已实现）、`harness/`（**9 件已实现**）、
+`model/`（本地 `client` 已实现；`router` / `probe` / `assets` 未开工）、
 协作流程（共享 git 索引、子代理输出）。
 
 **明确未覆盖**（诚实标注，避免"看起来覆盖了"）：
@@ -124,11 +130,11 @@ flowchart LR
     end
 
     subgraph TB["信任边界（校验点）"]
-        H["HARNESS：按 parameters_schema 校验（未实现）"]
-        P["PolicyEngine.decide()（未实现）"]
+        H["HARNESS：按 parameters_schema 校验（已实现）"]
+        P["PolicyEngine.decide()（已实现）"]
         PA["foundation.paths.resolve_within()（已实现）"]
         PR["foundation.proc.run()（已实现）"]
-        REG["ToolRegistry + description_digest（未实现）"]
+        REG["ToolRegistry + description_digest（已实现）"]
     end
 
     U1 --> H
@@ -259,9 +265,9 @@ flowchart LR
 
 | # | 待办 | 阻塞于 | 解除条件 |
 | --- | --- | --- | --- |
-| 1 | **`security/` 策略引擎 + 能力模型**（`T-11`/`T-03`） | 设计已定（`interfaces/policy.md`），实现未开始 | 落地 `PolicyEngine` 实现 + `S1` 用例通过 |
-| 2 | **`tools/` 的路径与命令执行侧**（`T-02`/`T-01`） | `tools/` 未实现 | 落地 `tools/files.py`、`shell.py` 且全部经 `paths`/`proc` + `S2` **审计半**通过（**拒绝半已于 `f436b0b` 验证**） |
-| 3 | **`observability/` 审计落盘**（`T-11`/`T-02`/`T-13` 的"且留审计"一半） | 未实现 | `AuditSink` 实现 + `flush()` 语义 + 用例断言审计事件存在 |
+| 1 | **`security/` 策略引擎 + 能力模型**（`T-11`/`T-03`） | **实现已落地**（`f7f7628`）。⚠️ **本项未关闭**：解除条件中的 `S1` 用例已入库（`tests/security/test_harness_s1_authorization.py`），但按 §1 规则 2 的**状态升级须由架构师另行判定**（本笔只同步实现状态，不动 `T-11` 结论） | 落地 `PolicyEngine` 实现 + `S1` 用例通过 |
+| 2 | **`tools/` 的路径与命令执行侧**（`T-02`/`T-01`） | **实现已落地**（`f90e051`）；`S2` **审计半**用例仍缺 | 落地 `tools/files.py`、`shell.py` 且全部经 `paths`/`proc` + `S2` **审计半**通过（**拒绝半已于 `f436b0b` 验证**） |
+| 3 | **`observability/` 审计落盘**（`T-11`/`T-02`/`T-13` 的"且留审计"一半） | **实现已落地**（`e78c221`）；行为级用例仍缺 | `AuditSink` 实现 + `flush()` 语义 + 用例断言审计事件存在 |
 | 4 | **注入语料集 + 输出侧防护**（`T-03`/`T-04`） | `ADR-0015 §5.2.6` 已明确"工具（LLM Guard / garak）要建立在威胁模型之上" | 本目录建成（**本轮已完成**）⇒ 可进入选型 |
 | 5 | **`urllib3` 出站超时 / 响应体上限 / 白名单**（`T-10`） | 依赖未写入 `pyproject.toml`（`ADR-0015 §7.4` 未验证完） | `V-m`/`V-o` 核验通过 + 客户端实现 + 用例 |
 
@@ -411,3 +417,23 @@ flowchart LR
   **两项策略待确认项**（属所有者拍板面，架构侧未代决，`../interfaces/audit.md` §5）：
   `A1` 是否允许额外根（如 CI 挂载卷，未拍板前按"单一根"实现）、`A2` 是否移除 `audit.directory` 键
   （只留 `filename`，面更小但属配置 schema 的破坏性变更）。
+
+- **2026-09-19（实现状态同步 · **不改任何条目结论与计数**）**：按"文档宣称必须与实现一致"的口径，
+  把本文件中已过期的**实现状态描述**同步为当前真实状态（逐处读源码与 `git log` 核实）：
+  ① §0 结论 1 与 §2「覆盖范围」原称 `security/` / `observability/` / `tools/` / `harness/`
+  "尚无实现 / 已设计未实现" ⇒ 改为如实分列（`harness/` **9 件**、`security/{capabilities,policy}`、
+  `observability/audit`、`tools/{registry,files,shell}` 已实现；`sandbox/`、`refusal.py`、
+  `model/{router,probe,assets}.py`、`tools/search.py` 未开工）；
+  ② §3 的信任边界 mermaid 三个节点（HARNESS 参数校验 / `PolicyEngine.decide()` / `ToolRegistry`）
+  由"未实现"改为"已实现"；
+  ③ §6「未缓解项清单」第 1/2/3 项的**阻塞于**列由"实现未开始 / 未实现"改为"**实现已落地**"
+  （`f7f7628` / `f90e051` / `e78c221`），并在第 1 项注明**该项未关闭**（状态升级须另行判定）。
+  ⚠️ **本笔只改"实现状态"这类事实性描述**：**不改**任何 `T-XX` 条目的结论与计数
+  （§4.1 的状态分布仍为 **已缓解并验证 0 / 部分缓解 8 / 未缓解 5**），**不**把"机制已实现"
+  表述为"威胁已缓解"。**仍成立故保留原样**：§5 的 `T-09` 行"机制未实现"（权重 / 二进制摘要
+  校验无载体）与 `T-10` 行"执行机制未实现"（未授权出站的执行机制尚无载体）。
+  **本次未改、待领导裁决的相邻过期点**（触及结论面，本笔不代改）：§4 的 `T-11` 行 / §5 的 `T-11` 行 /
+  §5.1 的 `S1` 行仍写"`S1` 未落地"，而 `S1` 用例**已入库**
+  （`tests/security/test_harness_s1_authorization.py`）⇒ 该条与 §5「缺行为层验证」的计数需一并复核；
+  `assets.md` 的 `B-3` / `B-5` / `B-7` 三行与 §2.1 的边界实现状态汇总仍按旧状态书写（`B-5` 的
+  `harness/domain_pack.py` 已落地）。
