@@ -37,16 +37,14 @@
   ``ChatMessage`` 也没有"协议错误"位）。故模型调用路径上：``RETRY`` ⇒ 原地重试，
   其余 ⇒ 终止。工具路径的"回喂"由 ``ChatMessage(role=TOOL, tool_call_id=...)`` 承担。
 
-**一条必须先写出来的假设（契约 §8 的 ``T6``）**：本模块把 ``ToolRegistry.specs()`` 当作
-**全量注册集**用——步 1 的"两短码"判定就是 ``specs()`` 与 ``exposed`` 的**差集**：
+**``T6`` 已裁决（2026-09-19）：``ToolRegistry.specs()`` 是**全量注册集（未裁剪）****。
+本模块据此实现步 1 的"两短码"判定——它就是 ``specs()`` 与 ``exposed`` 的**差集**：
 在 ``specs()`` 里但不在 ``exposed`` 里 ⇒ ``not_exposed``（**我们把它裁掉了**），
 两边都没有 ⇒ ``unknown_tool``（**模型幻觉**）。
-⚠️ ``contracts/tools.py`` 的 docstring 写的是"返回当前**裁剪后**、可暴露给模型的工具描述"，
-与契约 §3.1 第 2 条 / §3.3 步 1 的用法**不一致**（已登记为 ``T6``，待架构师裁决）。
-**若 ``specs()`` 真的是"已裁剪"的，则 ``not_exposed`` 这一档永远不可达**，
-契约 §6.2 的 ``S1-b`` 第②问会退化成**空断言** ⇒ 该假设**不得**被静默容忍：
-裁决后必须同步三处（``tools.md`` §2.6、``contracts/tools.py`` 的 docstring、本文 §3.3 步 1），
-并相应调整本模块的判定点。
+裁决依据与被否决的替代方案见 ``docs/design/interfaces/harness.md`` §8 的 ``T6`` 行；
+三处口径（``tools.md`` §2.6、``contracts/tools.py`` 的 docstring、本模块）**已一致**。
+反之若 ``specs()`` 返回"已裁剪"集合，``not_exposed`` 这一档就永远不可达、契约 §6.2 的
+``S1-b`` 第②问会退化成**空断言** ⇒ 这条口径**不得**被静默改动。
 
 **重试与步数**：``max_steps`` 计的是**模型往返**（ReAct 的"步"）。一次瞬时故障的重试
 **不**新开一步——它仍在同一步内，重试次数由 ``errors.MAX_TRANSIENT_RETRIES`` 独立兜住，
@@ -295,8 +293,8 @@ class TaskLoop:
             registry: 工具注册表。步 1 用它区分"**被裁剪**"（``not_exposed``）与
                 "**模型幻觉**"（``unknown_tool``），步 5 用它解析可执行句柄。以**构造注入的
                 Protocol** 到达（``H1``）：本模块不 import ``tools/`` 的实现模块。
-                ⚠️ 本处**假设** ``specs()`` 返回**全量注册集**（若它返回的是"已裁剪"集合，
-                ``not_exposed`` 这一档就永远不可达）——依据与联动见模块 docstring 的 ``T6`` 段。
+                ``specs()`` **已裁决**为返回**全量注册集（``T6``，2026-09-19）**——否则
+                ``not_exposed`` 这一档永远不可达；依据与联动见模块 docstring 的 ``T6`` 段。
             exposed: 由 ``session`` 用 ``trimming.select_tools`` 算好的暴露集合
                 （会话内固定，契约 §3.1 第 3 条）。
             system: 系统提示原文（**唯一可信的指令位**），由 ``session`` 从 ``prompts`` 的常量
