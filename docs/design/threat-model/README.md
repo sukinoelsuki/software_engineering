@@ -435,5 +435,51 @@ flowchart LR
   **本次未改、待领导裁决的相邻过期点**（触及结论面，本笔不代改）：§4 的 `T-11` 行 / §5 的 `T-11` 行 /
   §5.1 的 `S1` 行仍写"`S1` 未落地"，而 `S1` 用例**已入库**
   （`tests/security/test_harness_s1_authorization.py`）⇒ 该条与 §5「缺行为层验证」的计数需一并复核；
-  `assets.md` 的 `B-3` / `B-5` / `B-7` 三行与 §2.1 的边界实现状态汇总仍按旧状态书写（`B-5` 的
-  `harness/domain_pack.py` 已落地）。
+  **补记（同日，`daa0d47`）**：`assets.md` 的 `B-3` / `B-5` 已同步为「已实现」
+  （`harness/context` `cb3157e`、`harness/domain_pack.py` `14a7831`），§2.1 的边界实现状态汇总
+  随之改为「**5 条承载 / 2 条纪律 / 1 条未实现（`B-7`）**」；`B-7`（未授权出站）**仍成立故保留**。
+  涉 `T-XX` 结论/计数的两项**只出提案**，见 §8。
+
+---
+
+## 8. 待裁决提案（**只登记，不改任何数字**；2026-09-19）
+
+> 依据 §1 规则 2「**状态变更必须有验证证据**」与领导 2026-09-19 的指示：`S1` 用例已入库，
+> **可能**意味着 `T-11` 该上移、且 §5「缺行为层验证」的计数该减。**本节的职责只是把证据映射
+> 写清楚、给出建议，等领导裁决**；**裁决前 §4.1 的状态分布（0 / 8 / 5）与 §5 的计数一律不动。**
+
+### 8.1 提案 `P-1`：`S1` 落地是否足以改变 `T-11` 的状态与 §5 计数
+
+**证据映射（`S1` 的每条用例 → `T-11` 缓解的哪一半）**：
+
+| `S1` 用例（`tests/security/`） | 覆盖 `T-11` 缓解的哪一半 | 断言（可核） |
+| --- | --- | --- |
+| `test_harness_s1_authorization.py::test_s1_unauthorized_tool_not_executed` | ①**未授权调用不执行**；②**审计可回放** | `Tool.invoke` 未被调用 + `TOOL_RESULT.result is None` + 审计含 `TOOL_CALL/DENY`（`denied_reason="policy_denied"`）与 `POLICY_DECISION`，且 `TOOL_RESULT.audit_id == DENY.event_id` |
+| 同上 `::test_s1_control_policy_allowed_invokes_tool` | **变异 / 对照组**（证明上条非恒过） | 放行时同一路径**真的执行**、`result` 非 `None` |
+| 同上 `::test_s1b_hallucinated_tool_is_unknown` | 越权的**另一档**：模型幻觉工具名 | 未执行 + `denied_reason="unknown_tool"` + **不产生** `POLICY_DECISION` |
+| 同上 `::test_s1b_existing_but_not_exposed` | 越权的**另一档**：存在但被裁剪 | 未执行 + `denied_reason="not_exposed"`（与 `unknown_tool` 可分） |
+| `test_s1_replayable_audit_link.py::test_authorized_tool_call_audit_is_replayable` / `::test_denied_tool_call_is_audited_and_replayable`（+ 2 条变异探针） | **可回放链路**（`JsonlAuditSink.query_by_id` 端到端） | 真实 `ReadFileTool` + 真实 sink；`audit_id` 落盘后可从文件还原（成功与拒绝两条路径） |
+
+**我的判断与建议**（`T-11` 现状 = 「未缓解」）：
+1. `S1` / `S1-b` 覆盖的是"**未授权调用不执行 _且_ 留可回放审计**"这**一条**缓解——正是
+   `ADR-0015` §7.2 为 `T-11` 写下的验收对象 ⇒ 按 §4.1 定义，它**已构成"可执行的行为级证据"**
+   （含变异 / 对照组与"`unknown_tool` / `not_exposed` 可分"）。
+2. **但** `T-11` 的名义范围是"越权工具调用**与工具滥用**"。`S1` 覆盖"越权调用被拒"；
+   **"工具滥用"（已授权工具被用于其授权范围之外的用途，如 `ShellCommandTool` 的载荷层）
+   不在 `S1` 内**——其载体（`tests/security/test_g8_tool_defense.py` 与工具内部再校验）
+   **本提案未评估**。
+3. ⇒ **建议**：`T-11` 由「未缓解」→「**部分缓解**」（**不是**「已缓解并验证」：覆盖面不全 +
+   载荷层未评估）；§5 把 `T-11` 移出"缺行为层验证"⇒ **计数 10 → 9**；§4.1 分布 **0 / 9 / 4**。
+4. ⚠️ **若领导认为依据不足**（例如认为 `S1` 覆盖的是**调用链**、而非 `T-11` 的隔离面），
+   **建议维持原状**——本提案不主张必然上移。
+
+**同族但本提案未评估的两项**（供领导一并决定，不在本节结论内）：
+- `S3`（`tests/security/test_harness_s3_domain_pack.py` 已入库）可能同样支持 `T-12` 上移、
+  并使 §5 再减一条（若与 `P-1` 同时执行则 10 → 8）；
+- `T-02` 的"**且留审计**"半（载体 `observability/audit.py` + `test_audit_landing_whitelist.py`）
+  是否已构成该半的验证。
+
+> **附带发现（不在架构师文件域，未改，供领导派活）**：`tests/security/test_s1_replayable_audit_link.py`
+> 的 docstring 仍写「`src/agent_sec_perf/harness/` **尚未开工**」与「`S1` 完整语义…**仍属阻塞**」——
+> 该文件撰写时记录的两条阻塞，在 `harness/` 落地与 `S1` 用例入库后**已解除**；其正文需由
+> 实现 / 验证侧同步（`tests/` 不是架构师产出域）。
