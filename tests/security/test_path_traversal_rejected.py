@@ -4,8 +4,10 @@
 
 被测对象（只读）：``agent_sec_perf.foundation.paths.resolve_within`` —— 全项目唯一的路径
 校验入口（ADR-0015 §7.1 接缝）。本文件只验证「拒绝行为」这一可独立复现的部分；
-「拒绝被正确审计记录」一半目前**无法验证**，因为 ``AuditSink`` 的实现
-（``observability/audit.py``）尚未落地（见回报 §遗留）。
+「拒绝被正确审计记录」一半**现已可验证**：``AuditSink``（``observability/audit.py``）已落地，
+运行时路径穿越被拒的审计落盘由 ``tests/security/test_t02_path_traversal_audit.py`` 与
+``tests/security/test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable``
+行为级钉死（真实 sink + 真实工具、含变异探针证明非恒过）。
 
 所有用例均为攻击者视角：把恶意文件名当作工具收到的参数，构造相对于允许根目录的候选路径，
 断言它**不会**被解析到白名单之外、且以异常形式被拒绝（绝不静默放行）。
