@@ -33,15 +33,19 @@
 正规通路**：一份只读包，把 ``read_file`` / ``list_dir`` 声明为 ``low`` 风险。
 **没有**放宽任何校验——风险仍在 ``PolicyEngine`` 里逐次求值，拒绝与审计路径原样保留。
 
-**默认不跑（两条门槛，二者都满足才执行）**：
+**默认不跑（两道锁，二者都满足才执行）**：
 
-* 标 ``slow``：``pyproject.toml`` 已注册该 marker；``Makefile`` 的 ``make test`` /
-  ``make test-cov`` 已把 ``slow`` 并入默认排除集（``0b5def7``，F 类变更，所有者
-  2026-09-19 批准）⇒ 默认回归里不会被选中；
-* 环境变量开关 ``AGENT_SEC_PERF_E2E=1``：**未设置即 skip**。⇒ 排除集只挡住"默认回归"，
-  显式 ``-m integration`` 或直接指定本文件时 ``slow`` **仍会被选中**，而真实模型只在
-  本环境可用 ⇒ 这个开关是**第二道**门槛（两条门槛都满足才真的跑）。两者**互不替代**、
-  也**不得**把任一方的存在表述成"另一方已经不需要"。
+* **锁一（门禁侧）**：``pyproject.toml`` 已注册 ``slow`` marker，且 ``Makefile`` 的
+  ``make test`` / ``make test-cov`` 已把 ``slow`` 并入默认排除集（``0b5def7``，F 类变更，
+  所有者 2026-09-19 批准）⇒ 默认回归**不会**选中本模块
+  （口径同步见 ``docs/engineering/testing-strategy.md`` §8）；
+* **锁二（用例侧）**：环境变量开关 ``AGENT_SEC_PERF_E2E=1``，**未设置即 skip**。它拦的正是
+  门禁侧拦不住的那条路：显式 ``uv run pytest -m integration``（或直接指定本文件）时 ``slow``
+  **仍会被选中**——只有锁一时，**误起真模型**不会被拦下（真模型只在本环境可用；
+  耗时口径以 ``docs/engineering/testing-strategy.md`` §8 为准，本文件不复制第二份数字）。
+
+两道锁**互不替代**，**不得**只留一道：删掉锁一 ⇒ 丢掉"默认回归不跑真模型"；删掉锁二 ⇒
+丢掉"显式指定 marker 也会被拦"。同样**不得**写成"门禁已排除 ``slow`` ⇒ 不需要 env 开关"。
 
 **注入与隔离（不绕过任何校验）**：``working_dir`` / ``allowed_roots`` 用 ``tmp_path``；
 审计落点用 ``JsonlAuditSink(tmp_path/"audit", roots=(tmp_path,))`` —— 走**构造器自带的
