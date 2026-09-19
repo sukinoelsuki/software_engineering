@@ -9,6 +9,9 @@
 * **``R1`` 经 CLI 成立**：非交互模式**显式传 ``None``** ⇒ 需确认的调用被拒、
   ``TOOL_RESULT(result=None)``、且**不产生** ``APPROVAL_RESULT``；
 * **装配失败即拒绝启动**：领域包缺失 ``pack.toml`` ⇒ 退出码 ``3``（不降级为"无 pack 继续跑"）；
+* **可用性参数可配置**：``--max-completion-tokens`` 进 ``chat(max_tokens=...)``、
+  ``--model-request-timeout-s`` 进每次 ``chat(timeout_s=...)``、``--model-ready-timeout-s``
+  进 ``LocalLlamaClient``；非法取值 ⇒ 装配期拒绝（``3``），**不**拖成"任务失败"（``1``）；
 * Typer 应用注册可用（``--help``）。
 
 替身全部**手写**：用生产代码构造就等于让被测对象自己出题。
@@ -25,6 +28,7 @@ from typing import Final
 import pytest
 from typer.testing import CliRunner
 
+from agent_sec_perf.cli import app as cli_module
 from agent_sec_perf.cli.app import (
     EXIT_ASSEMBLY,
     EXIT_AUDIT,
@@ -41,6 +45,7 @@ from agent_sec_perf.contracts.model import (
     ChatMessage,
     FinishReason,
     ModelResponse,
+    Role,
     TokenUsage,
 )
 from agent_sec_perf.contracts.tools import ToolCallRequest, ToolSpec
@@ -66,7 +71,11 @@ class _ScriptedModel:
     ) -> None:
         self._script = list(script)
         self._close_error = close_error
-        self.requests: list[tuple[tuple[ChatMessage, ...], tuple[ToolSpec, ...]]] = []
+        #: 每次请求的 ``(messages, tools, max_tokens, timeout_s)``——可用性参数必须可断言，
+        #: 否则"选项接到了没有"只能靠读代码。
+        self.requests: list[
+            tuple[tuple[ChatMessage, ...], tuple[ToolSpec, ...], int | None, float]
+        ] = []
         self.closed = False
 
     def chat(
@@ -78,7 +87,7 @@ class _ScriptedModel:
         max_tokens: int | None = None,
         timeout_s: float = 60.0,
     ) -> ModelResponse:
-        self.requests.append((tuple(messages), tuple(tools or ())))
+        self.requests.append((tuple(messages), tuple(tools or ()), max_tokens, timeout_s))
         if not self._script:
             raise AssertionError("模型脚本已用尽：用例给出的响应数少于循环实际请求数")
         item = self._script.pop(0)
@@ -293,6 +302,109 @@ def test_unexpected_exception_exits_five(tmp_path: pathlib.Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 可用性参数（慢硬件可被配置：完成上限 + 请求超时 + 就绪超时）
+#
+# 背景（2026-09-19 实测）：``harness/loop.py`` 调 ``chat`` 时不传 ``timeout_s``，于是每次
+# 补全都用协议默认的 60s；而本容器的实测生成速度约 3.5 tok/s ⇒ 无上限的补全必然超时。
+# 以下四条钉住"这些参数真的接到了下层"以及"非法取值在装配期被拒"。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_max_completion_tokens_reaches_the_model_client(tmp_path: pathlib.Path) -> None:
+    """``max_completion_tokens`` 必须**真的**变成 ``chat(max_tokens=...)``（完成上限侧）。"""
+    model = _ScriptedModel([_response(content="done")])
+
+    code, _, _ = _run(
+        _request(tmp_path, max_completion_tokens=384),
+        model=model,
+        sink=_RecordingSink(),
+    )
+
+    assert code == EXIT_OK
+    assert model.requests[0][2] == 384
+
+
+@pytest.mark.unit
+def test_request_timeout_layer_applies_the_configured_value() -> None:
+    """``_RequestTimeoutModel`` 把 CLI 配置的请求超时应用到**每一次** ``chat``，并透传关闭。"""
+    inner = _ScriptedModel([_response(content="done")])
+    wrapped = cli_module._RequestTimeoutModel(inner, request_timeout_s=240.0)
+
+    wrapped.chat([ChatMessage(role=Role.USER, content="hi")])
+    wrapped.close()
+
+    assert inner.requests[0][3] == 240.0, "请求超时未生效（仍是协议默认 60s？）"
+    assert inner.closed is True, "close() 必须透传到内层（否则 llama-server 进程不会被回收）"
+
+
+@pytest.mark.unit
+def test_cli_availability_options_are_mapped_into_the_run_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``cli run`` 的三个可用性选项必须**原样**落到 ``RunRequest``（不静默取默认值）。
+
+    这里只替换 ``execute``（**不是**替换模型）：被钉住的是"命令行 → RunRequest"这一段映射，
+    一旦断掉，用户设的值会被悄悄丢掉而命令仍以默认参数运行。
+    """
+    captured: list[RunRequest] = []
+
+    def _capture(request: RunRequest, *, stdout: object, stderr: object) -> int:
+        del stdout, stderr
+        captured.append(request)
+        return EXIT_OK
+
+    monkeypatch.setattr(cli_module, "execute", _capture)
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "任务",
+            "--working-dir",
+            str(tmp_path),
+            "--max-completion-tokens",
+            "384",
+            "--model-request-timeout-s",
+            "240",
+            "--model-ready-timeout-s",
+            "300",
+        ],
+    )
+
+    assert result.exit_code == EXIT_OK
+    assert len(captured) == 1
+    request = captured[0]
+    assert request.max_completion_tokens == 384
+    assert request.model_request_timeout_s == 240.0
+    assert request.model_ready_timeout_s == 300.0
+
+
+@pytest.mark.unit
+def test_invalid_availability_knobs_refuse_to_start(tmp_path: pathlib.Path) -> None:
+    """非法可用性参数 ⇒ 装配期 ``ConfigError`` ⇒ ``3``。
+
+    **不得**拖到第一次模型调用才炸：那会被 ``harness/loop.py`` 归为任务失败（``1``），
+    把"配置错了"伪装成"模型/任务故障"。
+    """
+    invalid_overrides: tuple[dict[str, object], ...] = (
+        {"model_request_timeout_s": 0.0},
+        {"model_request_timeout_s": float("inf")},
+        {"model_request_timeout_s": "60"},
+        {"model_ready_timeout_s": -1.0},
+        {"max_completion_tokens": 0},
+        {"max_completion_tokens": True},
+    )
+    for overrides in invalid_overrides:
+        code, out, _ = _run(
+            _request(tmp_path, **overrides),
+            model=_ScriptedModel([]),
+            sink=_RecordingSink(),
+        )
+        assert code == EXIT_ASSEMBLY, overrides
+        assert out == "", overrides
+
+
+# ---------------------------------------------------------------------------
 # 输出通道（§5.2 的两条硬规定）
 # ---------------------------------------------------------------------------
 
@@ -407,7 +519,10 @@ def test_cli_application_registers_a_run_subcommand() -> None:
     runner = CliRunner()
 
     top = runner.invoke(app, ["--help"])
-    sub = runner.invoke(app, ["run", "--help"])
+    # ``COLUMNS=200``：默认 80 列时 Rich 会把帮助面板截断，尾部的选项根本不进 ``output``
+    # ⇒ 断言会退化成"测试环境的列宽"而不是"选项是否注册"（实测：不设它时
+    # ``--max-completion-tokens`` 拿不到）。
+    sub = runner.invoke(app, ["run", "--help"], env={"COLUMNS": "200"})
 
     assert top.exit_code == 0
     assert "run" in top.output
@@ -415,3 +530,6 @@ def test_cli_application_registers_a_run_subcommand() -> None:
     assert "--output-format" in sub.output
     assert "--model-path" in sub.output
     assert "--interactive" in sub.output
+    assert "--max-completion-tokens" in sub.output
+    assert "--model-request-timeout-s" in sub.output
+    assert "--model-ready-timeout-s" in sub.output

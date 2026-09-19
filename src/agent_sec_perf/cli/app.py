@@ -42,9 +42,10 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Annotated, Final
@@ -60,9 +61,9 @@ from agent_sec_perf.contracts.harness import (
     SessionEventKind,
     TaskStatus,
 )
-from agent_sec_perf.contracts.model import CapabilityTier, ModelClient
+from agent_sec_perf.contracts.model import CapabilityTier, ChatMessage, ModelClient, ModelResponse
 from agent_sec_perf.contracts.policy import RiskLevel
-from agent_sec_perf.contracts.tools import Tool
+from agent_sec_perf.contracts.tools import Tool, ToolSpec
 from agent_sec_perf.foundation.config import AppConfig, load_config
 from agent_sec_perf.foundation.errors import BenchError, ConfigError
 from agent_sec_perf.foundation.logging import configure_logging, get_logger, sanitize_for_display
@@ -131,6 +132,11 @@ class RunRequest:
     ``allowed_roots`` 省略（空元组）时由装配点取 ``(working_dir,)``——这是**最保守的
     非空集合**（只允许工作目录自己）；契约 §2.8 要求"空允许根集合 ⇒ 拒绝启动"，
     而 CLI 侧不给出一个可用的默认就等于"这个命令永远跑不起来"，两者的分界在此。
+
+    ``max_completion_tokens`` / ``model_request_timeout_s`` / ``model_ready_timeout_s``
+    是**可用性参数**（不是权限参数）：弱硬件上生成速度可能只有 3.5 tok/s，一次无上限的
+    补全会远超客户端默认的 60s 请求超时。三者默认值都与下层既有默认值**逐字相同**
+    ⇒ 不给这些选项时行为不变；给了则按给定值生效（不做"猜一个更合理值"的修正）。
     """
 
     task: str
@@ -151,6 +157,10 @@ class RunRequest:
     host: str = "127.0.0.1"
     port: int = 8080
     approval_timeout_s: float = 120.0
+    #: 单次模型请求的超时（秒）。默认 ``60.0`` = ``ModelClient`` 协议签名上的默认值。
+    model_request_timeout_s: float = 60.0
+    #: 模型服务就绪等待上限（秒）。默认 ``60.0`` = ``LocalLlamaClient`` 的构造默认值。
+    model_ready_timeout_s: float = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +325,13 @@ def _assemble(
     """
     json_mode = _validated_output_format(request.output_format)
 
+    # 可用性参数在**装配期**校验：非法取值属"配置错了"（退出码 3），必须在这里拒绝启动。
+    # 若拖到第一次模型调用，它会以 ``ValueError`` 形式被 ``harness/loop.py`` 归为任务失败（1）
+    # ⇒ 把"配置故障"伪装成"模型/任务故障"，与本模块退出码表的分工相悖。
+    _require_finite_positive(request.model_request_timeout_s, name="model_request_timeout_s")
+    _require_finite_non_negative(request.model_ready_timeout_s, name="model_ready_timeout_s")
+    _require_positive_int_or_none(request.max_completion_tokens, name="max_completion_tokens")
+
     working_dir = Path(request.working_dir)
     roots: tuple[Path, ...] = tuple(request.allowed_roots)
     if not roots:
@@ -383,8 +400,54 @@ def _assemble(
     return _Assembly(session=session, recorder=audited, json_mode=json_mode)
 
 
+class _RequestTimeoutModel(ModelClient):
+    """把 CLI 配置的**单次请求超时**应用到本地模型客户端的每一次 ``chat``。
+
+    为什么需要这一层（2026-09-19 实测根因）：``harness/loop.py`` 调 ``chat`` 时**不传**
+    ``timeout_s``，于是每次补全都落到 :class:`~agent_sec_perf.contracts.model.ModelClient`
+    协议签名上的默认值 ``60.0``。而本地弱硬件上实测生成速度约 ``3.5 tok/s``（一次 256 token
+    的有界补全耗时 81 s）⇒ 60 s 必然以 ``ModelUnavailableError`` 结束，``loop`` 按
+    ``REQ-HARNESS-06`` 重试到预算耗尽 ⇒ ``TASK_FINISHED(FAILED)``。
+
+    为什么做在 CLI 侧而不是改下层：超时是**可用性参数**（不是权限），而"本次部署有多慢"
+    只有 CLI 知道。给 ``contracts.SessionConfig`` 加字段或改 ``model/client.py`` 的默认值
+    都属**接口变更**（不归本层）；本包装只承载"把 CLI 的取值应用到每一次 ``chat``"。
+
+    ``timeout_s`` 形参**必须保留**（``ModelClient`` 的结构化子类型检查要求签名一致），
+    但其取值由本层决定：CLI 已给出本次部署统一的可用性参数，这里不再叠加第二层默认值
+    （两处默认值必然漂移）。
+    """
+
+    def __init__(self, inner: ModelClient, *, request_timeout_s: float) -> None:
+        self._inner = inner
+        self._request_timeout_s = request_timeout_s
+
+    def chat(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+        timeout_s: float = 60.0,
+    ) -> ModelResponse:
+        """转发一次补全；请求超时取本层配置值（见类 docstring）。"""
+        del timeout_s
+        return self._inner.chat(
+            messages,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=self._request_timeout_s,
+        )
+
+    def close(self) -> None:
+        """透传关闭（进程型后端由内层回收；本层不持有任何资源）。"""
+        self._inner.close()
+
+
 def _build_local_model(request: RunRequest, *, working_dir: Path) -> ModelClient:
-    """构造本地模型客户端；未给模型路径 ⇒ **拒绝启动**（不猜一个默认模型）。"""
+    """构造本地模型客户端（并入 CLI 的可用性参数）；未给模型路径 ⇒ **拒绝启动**（不猜默认模型）。"""
     if request.model_path is None:
         raise ConfigError("未指定模型路径：请用 --model-path 指定 GGUF 模型（不猜默认值）")
     log_path = (
@@ -392,13 +455,15 @@ def _build_local_model(request: RunRequest, *, working_dir: Path) -> ModelClient
         if request.model_log is not None
         else working_dir / (DEFAULT_MODEL_LOG_NAME)
     )
-    return LocalLlamaClient(
+    client = LocalLlamaClient(
         binary=request.model_binary,
         model_path=Path(request.model_path),
         log_path=Path(log_path),
         host=request.host,
         port=request.port,
+        ready_timeout_s=request.model_ready_timeout_s,
     )
+    return _RequestTimeoutModel(client, request_timeout_s=request.model_request_timeout_s)
 
 
 def _build_approval(
@@ -430,6 +495,51 @@ def _validated_output_format(value: str) -> bool:
         return False
     shown = sanitize_for_display(value, limit=_LABEL_LIMIT)
     raise ConfigError(f"未知的输出格式：{shown!r}（只接受 {OUTPUT_TEXT} | {OUTPUT_JSON}）")
+
+
+def _require_finite_positive(value: object, *, name: str) -> float:
+    """要求**有限正数**（``None`` / ``nan`` / ``inf`` / 非正数一律拒绝）。
+
+    口径与 ``model/client.py`` 的 ``_validated_positive_float`` 一致：``inf`` 不是"很大的
+    超时"，而是"**没有**超时"（一次挂起的调用会永久占住会话）；``None`` 也不得被当作无限等待。
+    这里**重复**这条判定的理由只是归因：同样的非法值在装配期是 ``ConfigError``（退出码 3），
+    在第一次调用时只会是 ``ValueError``（被 loop 归为任务失败 1）——两者的用户信号不同。
+    """
+    number = _finite_number(value, name=name)
+    if number <= 0:
+        raise ConfigError(f"{name} 必须为正数，收到 {value!r}")
+    return number
+
+
+def _require_finite_non_negative(value: object, *, name: str) -> float:
+    """要求**有限非负数**（允许 ``0``）。
+
+    ``ready_timeout_s = 0`` 的语义是"不等待，假定已就绪"（``model/client.py`` 的既有约定），
+    这里与它保持一致，不额外收紧。
+    """
+    number = _finite_number(value, name=name)
+    if number < 0:
+        raise ConfigError(f"{name} 不得为负，收到 {value!r}")
+    return number
+
+
+def _finite_number(value: object, *, name: str) -> float:
+    """把取值校验成有限数值（``bool`` 不算数值：它是开关，不是数量）。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{name} 必须是有限数值，收到 {type(value).__name__}")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ConfigError(f"{name} 必须有限（nan / inf 一律拒绝），收到 {value!r}")
+    return number
+
+
+def _require_positive_int_or_none(value: object, *, name: str) -> int | None:
+    """``None`` 合法（= 不设完成上限，用服务端默认）；否则必须是正整数。**不静默修正。**"""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{name} 必须是正整数，或省略以使用服务端默认，收到 {value!r}")
+    return value
 
 
 def _write_event(event: SessionEvent, *, stdout: IO[str], json_mode: bool) -> None:
@@ -498,6 +608,30 @@ def run(
     max_prompt_tokens: Annotated[
         int, typer.Option("--max-prompt-tokens", min=1, help="提示 token 预算")
     ] = 8192,
+    max_completion_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--max-completion-tokens",
+            min=1,
+            help="单次补全的 token 上限（省略 = 用服务端默认；弱硬件建议显式给上限）",
+        ),
+    ] = None,
+    model_request_timeout_s: Annotated[
+        float,
+        typer.Option(
+            "--model-request-timeout-s",
+            min=0.001,
+            help="本地模型单次请求超时秒（慢硬件需调大；默认 60 与协议默认值一致）",
+        ),
+    ] = 60.0,
+    model_ready_timeout_s: Annotated[
+        float,
+        typer.Option(
+            "--model-ready-timeout-s",
+            min=0.0,
+            help="本地模型服务就绪等待上限秒（0 = 不等待，假定已就绪）",
+        ),
+    ] = 60.0,
     model_binary: Annotated[
         str, typer.Option("--model-binary", help="llama-server 可执行文件")
     ] = "llama-server",
@@ -525,12 +659,15 @@ def run(
         max_consecutive_failures=max_consecutive_failures,
         tool_timeout_s=tool_timeout_s,
         max_prompt_tokens=max_prompt_tokens,
+        max_completion_tokens=max_completion_tokens,
         model_binary=model_binary,
         model_path=model_path,
         model_log=model_log,
         host=host,
         port=port,
         approval_timeout_s=approval_timeout_s,
+        model_request_timeout_s=model_request_timeout_s,
+        model_ready_timeout_s=model_ready_timeout_s,
     )
     raise typer.Exit(code=execute(request, stdout=sys.stdout, stderr=sys.stderr))
 
