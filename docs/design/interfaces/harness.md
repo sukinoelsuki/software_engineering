@@ -583,7 +583,7 @@ def from_payload(payload: Mapping[str, object]) -> SessionState: ...  # 严格�
 ```
 
 ```python
-# --- harness/domain_pack.py（唯一读盘者；只依赖 contracts + foundation）-----
+# --- harness/domain_pack.py（唯一读盘者；只依赖 contracts + foundation + 汇点 errors）
 @dataclass(frozen=True)
 class DomainPack:
     name: str
@@ -706,7 +706,7 @@ flowchart TD
 | # | 禁止项 | 理由 |
 | --- | --- | --- |
 | H1 | `harness/**` **不得** import `model` / `tools` / `security` / `observability` / `cli` 的**任何实现模块** | 它们全部以**构造注入的 Protocol** 到达（§3.1 的构造签名）。这条比对 `architecture.md` §2.3 的白名单**更严**（白名单是**允许**而不是**必须**）：它让"只读契约写 fake 跑单测"（`ADR-0015` §7.3）成为可能，并挡住"顺手 `from ...tools.files import ReadFileTool`"这类把 L3 与 L2 实现焊死的改动 |
-| H2 | **叶子模块之间零依赖**：`prompts` / `trimming` / `context` / `checkpoint` / `domain_pack` / `errors` 两两之间**互不 import**；`loop` 不 import `session`，`loop` 不 import `domain_pack` | 数据由 `session` 从 `domain_pack` 取出后**以参数传入**（§3.1 的签名已体现：`trimming` 收 `allowlist`，`prompts` 收 `fragments`）。harness 内部若长成一张网，8 件模块的并行开工立刻退化为串行 |
+| H2 | **叶子模块之间零依赖**：`prompts` / `trimming` / `context` / `checkpoint` / `domain_pack` 两两之间**互不 import**；`loop` 不 import `session`，`loop` 不 import `domain_pack`。**唯一例外是 `harness/errors.py`（汇点）**：任何 harness 模块**可以** import 它的异常类型（`HarnessError` / `HarnessInternalError` / `DomainPackError`——异常只有一份定义），但 **`errors` 自身不得 import 任何 harness 内部模块**（否则汇点性质被破、可能出现环） | 数据由 `session` 从 `domain_pack` 取出后**以参数传入**（§3.1 的签名已体现：`trimming` 收 `allowlist`，`prompts` 收 `fragments`）。harness 内部若长成一张网，8 件模块的并行开工立刻退化为串行。**为什么给 `errors` 开口子**：`domain_pack` 必须抛 `DomainPackError`（§4.3），而该类按 §3.1 / §7 的裁决**就定义在 `harness/errors.py`**；`errors` 本身零 harness 内部依赖 ⇒ 指向它的边**不引入环**，是"共享词汇"而不是"网"。**被否决的替代方案**：把 `DomainPackError` 搬到 `foundation/errors.py` 以维持 H2 字面严格——否决理由：它会把 L3 子系统的语义漂到全项目共享层，且 `harness/errors.py` 的落点已由既有裁决固定 |
 | H3 | **需要直接 import L2 实现时停下上报**，不得默认放宽 H1 | 与"接口先行"的流程一致：改接口先过架构师（`CODEBUDDY.md` §10.2 规则 3） |
 
 **建议的机器检查**（`tests/unit/test_harness_internals.py`，实现者落）：H1 一条（扫描 `harness/`
@@ -1082,6 +1082,8 @@ with Session(
 | 2026-09-19 | **第四版（更正一处自相矛盾）**：§3.1「`session.py` 构造期的三件事」第 3 条原写 `prompts.system_prompt(tier=…, fragments=…, tool_names=…)`，与本文件**同一节**的 `prompts` 签名（`build_system_prompt` / `build_system_message` / `build_user_message` / `pack_context_message`）**以及 §7.1 第 2 项**矛盾（第二版 `R-2` 收口时的**旧措辞残留**）。已改为 `build_system_message(tier=…)` + `pack_context_message(pack_name=…, fragments=…)`（**pack 片段走独立 `role=USER` 数据消息**，空片段 ⇒ `None`）。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 实现侧独立核实并上报（`implementer-harness-leaf2` 的 `回报：` 块，`5cd45f1`）；领导裁决「**以本节 §3.1 的 `prompts` 段与 §7.1 第 2 项为准**」 |
 
 | 2026-09-19 | **第五版（更正第二处自相矛盾）**：§3.1 的 `TaskLoop.__init__` 原写 `pack: DomainPack | None`，与 §3.2 的 **H2**（"`loop` 不 import `domain_pack`"，其自身理由即"**数据由 `session` 取出后以参数传入**"）矛盾——且该矛盾**已由机器检查钉住**：`tests/unit/test_harness_internals.py` 用 `ast` 扫描全部 import（**含 `if TYPE_CHECKING:` 块**）⇒ 照原签名写、即使只在 `TYPE_CHECKING` 下导入，门禁也会变红。改为 **`pack_name: str | None = None`**；§3.3 步 3 的 `domain_pack=pack.name if pack else None` 同步改为 `domain_pack=pack_name`；§3.1「`session.py` 构造期的三件事」补第 4 条写明传入口径。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 领导在开本轮开工令前核对契约时发现（与第四版同一形状：**"同一文件内两处表述打架"**）。⚠️ **本版由领导代改（`docs/design/` 属架构师产出域），待架构师在下一笔独立复核确认**；若不认可，须另开一处更正并说明理由（**不得**静默回退） |
+
+| 2026-09-19 | **第六版（更正第三处自相矛盾：H2 与 `DomainPackError` 的落点打架）**：§3.1 的 `errors.py` 段把 **`DomainPackError` 定义在 `harness/errors.py`**（§7 改动清单同此），§4.3 又要求 `load_pack` 在各失败模式下**抛 `DomainPackError`**；但 §3.2 的 **H2** 原文是"六个叶子**两两之间互不 import**"，§3.1 的 `domain_pack` 段又写"**只依赖 contracts + foundation**" ⇒ **`domain_pack → errors` 同时被两处禁止**，而它是 §4.3 的**硬要求**。该矛盾**已被已落地的机器检查当场抓出**（`tests/unit/test_harness_internals.py::test_leaf_modules_have_no_mutual_dependencies` 报 `domain_pack.py -> errors`），且**发生在共享工作树上 ⇒ 两名成员的门禁同时变红**。**处置**：给 H2 开**唯一例外**——`harness/errors.py` 是**汇点**，任何 harness 模块可 import 其异常类型，而 `errors` 自身**不得** import 任何 harness 内部模块；§3.1 的 `domain_pack` 依赖说明同步。**被否决**：把 `DomainPackError` 搬到 `foundation/errors.py`（会让 L3 语义漂到共享层，且与既有落点裁决冲突）。**§2 的类型 / 成员 / 不变式 `I1`~`I10` 一律不变**；`contracts/harness.py` **无需改动** | 实现侧按契约写 `domain_pack.py` 时**被机器检查拦下**（不是被人读出来）。⇒ 两处教训：① 这是**第三次**同一形状（同一文件内两处表述打架：`prompts` 旧写法 / `TaskLoop.pack` / `DomainPackError`），**H2 这类"禁止式"条款容易与其它条款的硬要求对撞**；② **判据写进测试之后，文档矛盾的代价从"评审时被发现"变成"门禁当场变红"**——这次的代价是**共享工作树上所有人的门禁一起红**（§3.4(c) 的老问题），但**红得早**远比**埋到实现里**好 |
 
 **待同步项**（本文件已给规范；逐项状态如下）：
 

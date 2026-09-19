@@ -10,8 +10,10 @@
 
 * 在 ``harness/`` 任一文件里加 ``from agent_sec_perf.tools.files import ReadFileTool`` ⇒
   :func:`test_harness_does_not_import_l2_l4_implementations` 失败；
-* 在 ``trimming.py`` 里加 ``from agent_sec_perf.harness.errors import ErrorDisposition`` ⇒
-  :func:`test_leaf_modules_have_no_mutual_dependencies` 失败；
+* 在 ``trimming.py`` 里加 ``from agent_sec_perf.harness.prompts import build_user_message`` ⇒
+  :func:`test_leaf_modules_have_no_mutual_dependencies` 失败
+  ——⚠️ 反之，import ``harness.errors`` 的异常类型是**刻意开的例外**（H2 第六版）⇒ **不该**变红；
+* 在 ``errors.py`` 里加任一 harness 内部 import ⇒ :func:`test_the_errors_module_is_a_sink` 失败；
 * 把 ``select_tools`` 的 ``tier`` 注记改回 ``HardwareTier`` ⇒
   :func:`test_capability_tier_axis_is_not_replaced_by_the_hardware_axis` 失败。
 """
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import sys
 
 import pytest
 
@@ -35,6 +38,12 @@ FORBIDDEN_LAYERS = frozenset({"model", "tools", "security", "observability", "cl
 
 #: H2：叶子模块集合。两两之间**互不 import**（数据由 ``session`` 取出后以参数传入）。
 LEAF_UNITS = frozenset({"prompts", "trimming", "context", "checkpoint", "domain_pack", "errors"})
+
+#: H2 的**唯一例外**（契约 §3.2 的 H2，第六版）：``errors`` 是**汇点**——
+#: 任何 harness 模块**可以** import 它的异常类型（``DomainPackError`` 必须只有一份定义，
+#: 而 ``domain_pack`` 按 §4.3 必须抛它），但 ``errors`` 自身**不得** import 任何 harness
+#: 内部模块，否则"汇点"退化为环的入口（由 :func:`test_the_errors_module_is_a_sink` 钉住）。
+ERRORS_UNIT = "errors"
 
 #: 已落地的叶子模块：用于保证上面的检查**不是空集通过**。
 LANDED_LEAF_FILES = ("errors.py", "prompts.py", "trimming.py")
@@ -182,8 +191,12 @@ def test_the_landed_leaf_modules_are_all_present() -> None:
 
 @pytest.mark.unit
 def test_leaf_modules_have_no_mutual_dependencies() -> None:
-    """``prompts`` / ``trimming`` / ``context`` / ``checkpoint`` / ``domain_pack`` / ``errors``
+    """``prompts`` / ``trimming`` / ``context`` / ``checkpoint`` / ``domain_pack``
     两两**互不 import**（数据由 ``session`` 取出后以参数传入）。
+
+    **唯一例外是 ``errors``**：它是汇点，任何模块都可 import 它的异常类型
+    （契约 §3.2 的 H2，第六版）；例外的前提条件由
+    :func:`test_the_errors_module_is_a_sink` 单独钉住。
 
     harness 内部若长成一张网，8 件模块的并行开工立刻退化为串行（契约 §3.2 的 H2）。
     """
@@ -194,10 +207,54 @@ def test_leaf_modules_have_no_mutual_dependencies() -> None:
             continue
         offenders.extend(
             f"{path.relative_to(SRC_ROOT)} -> {other}"
-            for other in sorted(_imported_units(path) & (LEAF_UNITS - {own}))
+            for other in sorted(_imported_units(path) & (LEAF_UNITS - {own, ERRORS_UNIT}))
         )
 
     assert offenders == [], f"叶子模块之间出现了依赖（H2）：{offenders}"
+
+
+def _assert_errors_module_is_a_sink() -> None:
+    """``harness/errors.py`` 不 import 任何 harness 内部模块（H2 例外的前提条件）。"""
+    path = HARNESS_ROOT / "errors.py"
+    assert path.is_file(), f"{path} 不存在：本守卫的前提被破坏"
+    imported = sorted(_imported_units(path))
+
+    assert imported == [], f"errors 是被依赖的汇点，不得依赖 harness 内部模块：{imported}"
+
+
+@pytest.mark.unit
+def test_the_errors_module_is_a_sink() -> None:
+    """``harness/errors.py`` **不得 import 任何 harness 内部模块**。
+
+    这是 H2 例外（"任何模块可以 import ``errors``"）的**前提条件**：`errors` 一旦依赖别的
+    harness 单元，例外就从"DAG 的汇点"变成**环的入口**——而环正是 H2 要防的东西。
+    """
+    _assert_errors_module_is_a_sink()
+
+
+@pytest.mark.unit
+def test_the_sink_guard_can_actually_fire(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """元测试：汇点守卫对"``errors.py`` 里出现 harness 内部 import"是**可触发**的。
+
+    没有这一条，上面那条断言在"扫描器失效（例如 ``_imported_units`` 恒返回空集）"时
+    会**静默通过**——与本文件其它守卫的元测试同一取向（声称的缓解必须能被实测）。
+    """
+    module = sys.modules[__name__]
+    package = tmp_path / "agent_sec_perf"
+    harness = package / "harness"
+    harness.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (harness / "__init__.py").write_text("", encoding="utf-8")
+    (harness / "errors.py").write_text(
+        "from agent_sec_perf.harness.trimming import select_tools\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(module, "PACKAGE_ROOT", package)
+    monkeypatch.setattr(module, "HARNESS_ROOT", harness)
+
+    with pytest.raises(AssertionError):
+        _assert_errors_module_is_a_sink()
 
 
 @pytest.mark.unit
