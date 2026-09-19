@@ -188,3 +188,109 @@ def test_assembly_layer_is_independent(
             user_file=tmp_path / "no_user.toml",
             project_file=project,
         )
+
+
+# ---------------------------------------------------------------------------
+# W3（缺漏补齐）：允许根**内**建一个指向根**外**的符号链接，``directory`` 指向该链接。
+# 既有 W 系列只覆盖 W1/W2/W4~W8（见文件头注释与上方用例），W3 此前缺失。
+# 分配置期（``load_config``）与装配期（``JsonlAuditSink``）两层，各带变异探针。
+# ---------------------------------------------------------------------------
+
+
+def _symlink_inside_root_pointing_out(
+    tmp_path: pathlib.Path,
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """在 ``ALLOWED_AUDIT_ROOTS[0]``（真实常量根）内建一个指向根外的符号链接。
+
+    Returns:
+        ``(link_path, outside_target)``。``link_path`` 词法上位于允许根内、
+        但 ``resolve()`` 会跟随软链落到 ``outside_target``（根外）。
+
+    注意（副作用）：会在真实审计根内创建一个软链；调用方负责在 ``finally`` 里 ``unlink``
+    （测试不污染真实审计目录）。根目录本身用 ``mkdir(parents=True)`` 保证存在
+    （幂等，不影响既有内容）。
+    """
+    root = config_module.ALLOWED_AUDIT_ROOTS[0]
+    root.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside_root"
+    outside.mkdir()
+    link = root / "link_to_outside_w3"
+    link.symlink_to(outside)
+    return link, outside
+
+
+@pytest.mark.security
+def test_w3_config_symlink_in_root_pointing_out_is_rejected(tmp_path: pathlib.Path) -> None:
+    """W3（配置期）：允许根内指向根外的软链作为 ``audit.directory`` ⇒ ``ConfigError``。
+
+    ``resolve()`` 会跟随符号链接，故软链在词法上「根内」、解析后「根外」⇒ 必须被拒。
+    """
+    link, _ = _symlink_inside_root_pointing_out(tmp_path)
+    try:
+        project = _write_project_config(tmp_path, directory=str(link))
+        with pytest.raises(ConfigError):
+            config_module.load_config(
+                user_file=tmp_path / "no_user.toml",
+                project_file=project,
+            )
+    finally:
+        link.unlink(missing_ok=True)
+
+
+@pytest.mark.security
+def test_w3_assembly_symlink_in_root_pointing_out_is_rejected(tmp_path: pathlib.Path) -> None:
+    """W3（装配期）：``JsonlAuditSink(根内软链)`` ⇒ ``PathNotAllowedError``，且不向根外落盘。
+
+    与 W5（根外目录）互补：这里软链「词法在根内」，靠 ``resolve()`` 跟随软链后判越界；
+    ``audit.md`` §2.5 P4（先校验后 mkdir）⇒ 越界时不得在根外位置创建审计文件。
+    """
+    link, outside = _symlink_inside_root_pointing_out(tmp_path)
+    try:
+        with pytest.raises(PathNotAllowedError):
+            JsonlAuditSink(link)
+        # 越界 ⇒ 不得把审计写入根外目标（防「先建后拒」/ 越界写）。
+        assert not (outside / audit_module.DEFAULT_AUDIT_FILENAME).exists()
+    finally:
+        link.unlink(missing_ok=True)
+
+
+@pytest.mark.security
+def test_w3_symlink_rejection_depends_on_symlink_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """W3 变异探针：若 ``resolve()`` 不跟随符号链接（只做词法判定），根内软链会被误判「根内」⇒
+    配置期不再拒、攻击得手 ⇒ 证明 W3 的拦截来自「resolve 展开软链后判越界」，而非词法前缀匹配。"""
+
+    # 词法-only：只 expanduser、不 resolve（不跟随软链）。
+    def _lexical_only(candidate: object, *args: object, **kwargs: object) -> pathlib.Path:
+        return pathlib.Path(candidate).expanduser()  # type: ignore[arg-type]
+
+    monkeypatch.setattr(config_module, "resolve_within", _lexical_only)
+    monkeypatch.setattr(audit_module, "resolve_within", _lexical_only)
+
+    link, _ = _symlink_inside_root_pointing_out(tmp_path)
+    try:
+        project = _write_project_config(tmp_path, directory=str(link))
+        # 不跟随软链 ⇒ 词法上 link 在根内 ⇒ 不再抛 ConfigError（攻击得手）。
+        cfg = config_module.load_config(
+            user_file=tmp_path / "no_user.toml",
+            project_file=project,
+        )
+        assert cfg is not None
+    finally:
+        link.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# UNC（第 5 类）核实结论（**登记为缺口而非补弱断言**，依据见下，不写弱测试）：
+#
+# 本机（Linux）实测 ``pathlib.Path("//server/share/audit").resolve()`` → ``/server/share/audit``，
+# ``Path("//home/user/.cache/audit").resolve()`` == ``Path("/home/user/.cache/audit").resolve()``
+# （pathlib 把前导 ``//`` 折叠成单 ``/``）。故 UNC / 双前导斜杠审计目录值会：
+#   1. 解析为绝对路径；
+#   2. 要么落在根外（``/server/share/audit``）→ 已被 W1（根外）拦截；
+#   3. 要么折叠成与允许根等价的单斜杠路径 → 等同「指向允许根」，属合法落点而非越权。
+# 即 POSIX 上 UNC 不构成独立的绕过面；与 W1 的「根外即拒」同源，无需单列弱断言
+# （写一条「UNC 被拒」只会重复 W1、且因「根外」才被拒而属恒过式弱断言，违反「不为凑数写弱断言」）。
+# 若未来要覆盖 Windows 运行态，需在彼平台单独立项核实（属平台相关、不在本验证范围）。
+# ---------------------------------------------------------------------------
