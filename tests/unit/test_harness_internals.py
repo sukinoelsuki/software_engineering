@@ -37,7 +37,9 @@ HARNESS_LAYER = "harness"
 FORBIDDEN_LAYERS = frozenset({"model", "tools", "security", "observability", "cli"})
 
 #: H2：叶子模块集合。两两之间**互不 import**（数据由 ``session`` 取出后以参数传入）。
-LEAF_UNITS = frozenset({"prompts", "trimming", "context", "checkpoint", "domain_pack", "errors"})
+LEAF_UNITS = frozenset(
+    {"prompts", "trimming", "context", "checkpoint", "domain_pack", "errors", "arguments"}
+)
 
 #: H2 的**唯一例外**（契约 §3.2 的 H2，第六版）：``errors`` 是**汇点**——
 #: 任何 harness 模块**可以** import 它的异常类型（``DomainPackError`` 必须只有一份定义，
