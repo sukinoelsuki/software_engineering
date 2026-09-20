@@ -25,7 +25,8 @@ packages = ["src/agent_sec_perf"]
 [project]
 name = "agent-sec-perf"
 # 版本号**不由提交历史推导**：它只能取 `[tool.lowspec.releases]` 台账里列出的里程碑值。
-# 当前 `0.0.0` = **尚未到达第一个里程碑**（第一个里程碑是 `0.0.1`「框架搭完」）。
+# 当前值见下一行 `[project].version`；可用里程碑及其判据见下方
+# `[tool.lowspec.releases]` 台账（本注释**不复制具体值**——复制必然漂移）。
 # 落定方式：`make release VERSION=x.y.z`（流程见 docs/engineering/git-workflow.md §5，
 # 决策见 docs/adr/0019-release-and-version-policy.md）；`make bump` 已被改为拒绝执行。
 # 本值有 **4 处副本**（本行 / [tool.commitizen].version / src/agent_sec_perf/__init__.py /
