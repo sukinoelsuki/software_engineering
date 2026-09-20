@@ -233,4 +233,4 @@
 - `Fixed` 缺陷修复
 - `Security` 安全相关修复与加固
 
-[Unreleased]: https://cnb.cool/Mybase_Le0n3rd/software_engineering/-/compare/main...develop
+[Unreleased]: https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems/-/compare/main...develop
