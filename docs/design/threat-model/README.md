@@ -9,6 +9,9 @@
 > **缺行为层验证 8 条**（**口径已写死于 §5**，并说明历次数字的差异来源；
 > 已有行为级用例者：`T-01`/`T-02`/`T-08`/`T-11`/`T-12`——⚠️ **`T-02` 的升级不改变本计数**，
 > 理由见 §5 的计数沿革）；
+> **【2026-09-20 追加，仅增不改】**上句的 **8** 已按 §5 的**既有口径**重算为 **6**
+> （`T-03`/`T-09` 移出；**旧值 8 保留不改**，依据与"**移出 ≠ 覆盖**"见 §5 的 2026-09-20 复核段），
+> 已有行为级用例者相应增列 `T-03`/`T-09` ⇒ 由 5 条变为 **7 条**；
 > `T-01`/`T-02`/`T-06` 另有**结构性**机器检查。
 >
 > **2026-09-18 复核（`ADR-0016` 联动更新）**：`T-04`/`T-07`/`T-08`/`T-09`/`T-11` 各新增
@@ -192,13 +195,13 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | [`T-01`](execution-and-isolation.md#t-01-子进程执行与逃逸) | 子进程执行与逃逸 | STRIDE-E / 智能体特有 | 部分缓解 | **部分**：`test_rlimit_isolation.py`（超限分配，行为 + 变异探针，`5fddcfa`）；越界写 / 出站 / `IsolationError` 不回退仍**无** |
 | [`T-02`](execution-and-isolation.md#t-02-路径穿越) | 路径穿越（`..` / 符号链接 / 白名单逃逸） | STRIDE-E | **已缓解并验证**（2026-09-20 由「部分缓解」升；所有者裁决 `P-2`） | **证据（两半均已落地）**：`S2` **拒绝**半（`f436b0b`，**18 个行为用例**〔含 4 种前缀欺骗 + 3 个边界正确性〕+ 2 个接缝用例）；**审计**半**【2026-09-19 更正：载体已实现 + 已有两处行为层证据】**——载体：`tools/files.py::_fail` → `tools/registry.py::audit_tool_call` → `JsonlAuditSink.emit`；证据：`test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`（真实 sink 端到端 `query_by_id`）＋ `test_t02_path_traversal_audit.py`（`4a35c61`，含变异探针）；⚠️ **原"审计半无载体"表述有误**（见 `P-2` 与 §7 的假声明事故登记）；**非工具层调用点已定案**：`resolve_within` 的**非工具层**调用点（配置期 / 装配期）按 `Q-1`（2026-09-20 所有者裁决）为「**范围外**」（fail-closed、无审计，见 [`../interfaces/audit.md`](../interfaces/audit.md) §2.6）；**UNC** 作为**登记缺口保留**（跨平台未验，见条目残余风险 4）；**防误引登记（保留并精化）**：`tests/security/test_audit_landing_whitelist.py` **仍不构成**该半的证据（它断言的是**审计落点目录白名单**——不可信 `.lowspec.toml` 的 `[audit] directory` 不得指向任意路径追加写，属**另一攻击面**）——**但该半的证据在别处**（见上行两处用例），**不得**因"这份文件不是证据"误读为"该半无证据"；`test_path_traversal_rejected.py`（`S2` 主体 18 例）的**旧 docstring** 曾写「拒绝被正确审计记录」一半**无法验证**，**那是假声明**，已由 `b79f383` 修正（详见 §7）；**配置面落点白名单（`ALLOWED_AUDIT_ROOTS`，`../interfaces/audit.md` §2.5）**：实现已落地（`foundation/config.py` + `observability/audit.py`），`W1`/`W2`/`W4`~`W8` **用例已落地**（`tests/security/test_audit_landing_whitelist.py`，`91ea9d5`）；**`W3`（根内符号链接指向根外）本轮已补**（`9b37e99`）⇒ **`W1`~`W8` 全部落地**；**UNC（第 5 类）仍缺显式用例但已判不构成独立绕过面**（Linux 下 `//` 折叠） ⚠️ 该文件是**攻击面 6（配置面落点）**的证据，**不是**"且留审计"半的证据 |
-| [`T-03`](untrusted-input-and-agentic.md#t-03-不可信输入被当作指令指令-数据混淆) | 不可信输入被当作指令（指令-数据混淆） | STRIDE-T / 智能体特有 | **未缓解** | **无** |
+| [`T-03`](untrusted-input-and-agentic.md#t-03-不可信输入被当作指令指令-数据混淆) | 不可信输入被当作指令（指令-数据混淆） | STRIDE-T / 智能体特有 | **未缓解** | **无**〔**2026-09-20 更正**：另有 `S-new-6`（`test_harness_snew.py`，`@pytest.mark.security`）覆盖"领域包片段 → SYSTEM"；**核心攻击路径 (a)(b)(c) 仍无**——见条目与 §5〕 |
 | [`T-04`](untrusted-input-and-agentic.md#t-04-提示注入直接--间接与上下文污染) | 提示注入（直接 / 间接）与上下文污染 | STRIDE-T / 智能体特有 | **未缓解** | **无**（**注入**语料集仍不存在；`corpus/` 目录现有但只有路径穿越语料）；**新增**：经 Skill `description` 的**常驻**注入面已登记（`ADR-0016`），其验证**不可由 CI 断言** |
 | [`T-05`](untrusted-input-and-agentic.md#t-05-子代理输出是不可信输入) | 子代理输出是不可信输入 | STRIDE-S / 智能体特有 | 部分缓解 | **无** |
 | [`T-06`](supply-chain-and-process.md#t-06-安全豁免被静默放宽) | 安全豁免被静默放宽 | 流程完整性 | 部分缓解 | **有**：`test_bench_encapsulation.py::test_exemption_markers_declare_exactly_the_expected_rules`（结构性，非行为） |
 | [`T-07`](supply-chain-and-process.md#t-07-共享-git-索引导致跨域混入) | 共享 git 索引导致跨域混入 | 流程完整性 | 部分缓解 | **无**（仅人工纪律）；**新增交叉引用**：A 类事后报告须与 `git log A..B` 区间一致（同源判据） |
 | [`T-08`](supply-chain-and-process.md#t-08-基准数据分支的凭据暴露cnb_token) | 基准数据分支的凭据暴露（`CNB_TOKEN`） | STRIDE-I | 部分缓解 | **有**：行为 canary + 静态守卫（`5fddcfa`+`8e047e6`）；**`run(isolation="root")` 继承路径仍无**；**新增**：CLI 作为令牌消费者（**预登记**，无检查；`cnb` 当前不存在） |
-| [`T-09`](supply-chain-and-process.md#t-09-供应链投毒依赖--权重--二进制--工具描述) | 供应链投毒（依赖 / 权重 / 二进制 / 工具描述） | STRIDE-T / 智能体特有 | 部分缓解 | **无**；**新增**：`cnb-cli` 包与官方 `cnb-skill` **文本**（同时是依赖与指令来源）——缓解为**预登记、无载体** |
+| [`T-09`](supply-chain-and-process.md#t-09-供应链投毒依赖--权重--二进制--工具描述) | 供应链投毒（依赖 / 权重 / 二进制 / 工具描述） | STRIDE-T / 智能体特有 | 部分缓解 | **无**〔**2026-09-20 更正**：`description_digest` 实现（`tools/registry.py`）+ 4 条 fail-secure 单测（`test_tools_registry.py`）已存在；**无防护对象**（`MCP` 未接入），见条目与 §5〕；**新增**：`cnb-cli` 包与官方 `cnb-skill` **文本**（同时是依赖与指令来源）——缓解为**预登记、无载体** |
 | [`T-10`](execution-and-isolation.md#t-10-网络出站默认拒绝失效) | 网络出站默认拒绝失效 | STRIDE-I | **未缓解** | **无** |
 | [`T-11`](untrusted-input-and-agentic.md#t-11-越权工具调用与工具滥用) | 越权工具调用与工具滥用 | STRIDE-E / 智能体特有 | 部分缓解（2026-09-19 由「未缓解」升） | **部分**：`S1` **已落地**（`test_harness_s1_authorization.py` 5 例〔真实 `Session.run`，含变异 / 对照组〕+ `test_s1_replayable_audit_link.py` 真实 sink 端到端 + 2 变异探针）；**缺口见条目**：① `S1` 注入 `FakePolicyEngine`（harness 路径未端到端跑真实引擎）② 「**工具滥用**」半零行为层证据（`test_g8_tool_defense.py` 属 `T-02`/`T-01` 落点，**不是同一落点**）③ 能力层 deny 的真实 sink 端到端**未断言**（仅 `RecordingSink` 假件）；**流程级**：平台特权工具使用面 + A 类事后报告（**人工核对、非自动**） |
 | [`T-12`](untrusted-input-and-agentic.md#t-12-领域包加载代码动态导入不可信模块) | 领域包加载代码（动态导入不可信模块） | STRIDE-E | 部分缓解（2026-09-19 由「未缓解」升） | **部分**：`S3` **已落地**（`test_harness_s3_domain_pack.py` 4 例 + 变异探针：`.py`/`.pyc`/`__pycache__` 同拒、副作用不发生、不入 `sys.modules`）；静态守卫 `test_no_dynamic_code_in_src.py`（`5fddcfa`）；**缺口**：`.pth` 导入期执行、`.so`/ctypes 等动态加载向量**未显式断言**，且 `S3` 仅覆盖「领域包」这一载体 |
@@ -282,11 +285,13 @@ flowchart LR
 `make check` / `make test-security` 执行的"行为级（对抗性）用例"**；**结构性机器检查不计入**
 ——它证明"代码长成约定要求的样子"，**不证明"攻击被挡住"**。
 
-**按此定义计数：13 条中 8 条缺行为层验证。**
-**已有行为级用例的 5 条**：`T-02`（`S2` **拒绝**半 `f436b0b`；**工具层审计**半
+**按此定义计数：13 条中 6 条缺行为层验证。**（**2026-09-20 重算**：由 8 降为 6——
+`T-03`/`T-09` 移出，依据见本节的 2026-09-20 复核段；**旧值 8 保留**于下方计数沿革）
+**已有行为级用例的 7 条**：`T-02`（`S2` **拒绝**半 `f436b0b`；**工具层审计**半
 `4a35c61`／`05cb0af`，2026-09-19）、`T-01`（超限分配行为断言 + 变异探针，
 `5fddcfa`）、`T-08`（凭据 canary，`5fddcfa`+`8e047e6`）、**`T-11`**（`S1` + 可回放链路，2026-09-19）、
-**`T-12`**（`S3`，2026-09-19）。
+**`T-12`**（`S3`，2026-09-19）、**`T-03`**（`S-new-6`，2026-09-20）、
+**`T-09`**（`description_digest` fail-secure 单测，2026-09-20）。
 **计数沿革（同一定义，避免"数字变了却不知为何"）**：`f436b0b` 前 = **13**；`f436b0b` 后 = **12**
 （`T-02` 移出）；`5fddcfa`/`8e047e6` 后 = **10**（`T-01`、`T-08` 移出）；
 **2026-09-19 = 8**（`T-11`、`T-12` 移出，依据 `S1`/`S3` 用例入库；见 §4.1 的 2026-09-19 复核）。
@@ -307,17 +312,46 @@ flowchart LR
 前者只问"**有无**行为级用例"，后者问"缓解**是否已实现且有证据证明生效**"，
 `T-02` 的变化只发生在后者。清单如下：
 
+**2026-09-20 复核（`T-03` / `T-09` 移出）：按同一口径重算，计数 8 → 6。**
+**依据**（本清单只认"有无可通过 `make check` / `make test-security` 执行的**行为级对抗性用例**"）：
+- **`T-03` 移出** ← `tests/security/test_harness_snew.py` 的 **`S-new-6`**（`:452-509`，**3 例 + 1 条变异探针**）：
+  标 `@pytest.mark.security`、**被 `make test-security` 收集**；输入是**对抗性的**（`data_context` 试图以
+  `SYSTEM` 角色进入 / 合法 `USER` 数据的内容**不得**出现在 SYSTEM 位）；**行为级**（跑真实 `assemble`
+  装配路径，且含 `test_snew6_rejection_depends_on_guard` 变异探针证明**非恒过**）⇒ 满足本清单口径。
+- **`T-09` 移出** ← `tests/unit/test_tools_registry.py`（`:174-197`）：**`make check` 可执行**；
+  输入是**对抗性的**（**被篡改的**工具描述 / 外部来源**缺摘要**）；**行为级**（构造 `ToolRegistry`
+  ⇒ 触发 `_verify_digest` ⇒ `ToolRegistrationError`，含 `test_digest_mismatch_blocks_the_whole_registration`
+  的 **fail-secure** 断言：拒绝启动、**不**静默剔除被篡改的工具）⇒ 满足本清单口径。
+  ⚠️ **该用例标 `@pytest.mark.unit`（非 `@pytest.mark.security`）**——本清单的口径是"**可通过
+  `make check` / `make test-security` 执行**"，**并不要求**必须是 security 标记；故它**算**行为级对抗性用例。
+⇒ "已有行为级用例的 5 条"据此**变为 7 条**（增列 `T-03`/`T-09`，见上）；两条对应的**表格"现状"栏已同步**。
+> ⚠️ **移出 ≠ 覆盖**（**必须连读**，防误读为"这两条已获验证"）：
+> - **`T-03` 的核心攻击路径仍无用例**——(a) 观察文本（`TOOL` 角色）改变工具选择 / 控制流、
+>   (b) `arguments` 字符串拼接进命令 / 路径 / 正则、(c) 工具内二次 `json.loads`，**三条路径逐条仍缺**；
+>   `S-new-6` 只覆盖"领域包片段 → SYSTEM"这**一个**落点；**注入语料集仍不存在**（见下 `T-03`/`T-04` 行）。
+> - **`T-09` 的四类载体仍无**——权重 / 二进制摘要、Skill / CLI 的版本·commit·摘要锁定**均无载体**；
+>   `description_digest` 的**防护对象为零**（`MCP` 未接入 ⇒ 运行期无任何外部来源工具），
+>   且缺 `@pytest.mark.security` 的对抗性**端到端**用例。
+> - **本清单的计数只认"有无行为级用例"，不认状态档位**（同下 2026-09-19 段的纪律）：`T-03`/`T-09`
+>   移出**不改变**二者在 §4.1 的档位（仍 `未缓解` / `部分缓解`，见 §4.1 与各自条目）。
+**计数沿革（追加一行，同一定义）**：`f436b0b` 前 = 13；`f436b0b` 后 = 12（`T-02` 移出）；
+`5fddcfa`/`8e047e6` 后 = 10（`T-01`、`T-08` 移出）；**2026-09-19 = 8**（`T-11`、`T-12` 移出）；
+**2026-09-20 = 6**（`T-03`、`T-09` 移出）——与 `T-11`/`T-12` 那次**同构**：同是"行为级用例入库
+⇒ 移出本清单"，只是**不同批次**。
+> **一处历史引用说明**：上文 2026-09-20 的 `T-02` 复核段里引用的"已有行为级用例的 5 条"是该段
+> **当时**的标题原文；重算后该处已为 **7 条**（本段更新）。历史段落按"**只增不改**"**保留原文**。
+
 | 编号 | 缺失的验证 | 应落到哪 | 现状 |
 | --- | --- | --- | --- |
 | T-01 | 逃逸尝试（越界写、越界出站、超限分配）必须被拒绝 | `tests/security/` | **超限分配已落地**（行为 + 变异探针，`5fddcfa`）；**越界写 / 越界出站 / `IsolationError` 不回退**仍缺 |
 | T-02 | `../../etc/passwd`、符号链接、绝对路径、UNC 的拒绝行为 | `tests/security/`（**S2**） | **拒绝半已落地**（`f436b0b`，**18 用例**〔含 4 种前缀欺骗 + 3 个边界正确性〕+ 接缝 2 用例）；**"且留审计"半（工具层）已落地**——⚠️ **2026-09-19 更正**：原写"仍缺"，**有误**；证据两处：`test_s1_replayable_audit_link.py::test_denied_tool_call_is_audited_and_replayable`、`test_t02_path_traversal_audit.py`（`4a35c61`，含变异探针）；**已定案**：`resolve_within` 的**非工具层**调用点（配置期 / 装配期）按 `Q-1`（2026-09-20 所有者裁决）为「**范围外**」（fail-closed、无审计，见 `../interfaces/audit.md` §2.6）；**UNC（第 5 类）仍为登记缺口**（缺显式用例，已判不构成独立绕过面，Linux `//` 折叠）；⚠️ **防误引（保留并精化）**：`test_audit_landing_whitelist.py` **仍不构成**"且留审计"半的证据（它断言**审计落点目录白名单**，属另一攻击面）——**但该半的证据在别处**；`test_path_traversal_rejected.py` 的**旧 docstring** 曾**自述**该半**无法验证**，**那是假声明**，已由 `b79f383` 修正（详见 §7）；**配置面落点**（`.lowspec.toml` 的 `[audit] directory`）的 `W1`~`W8`（根外目录 / `..` 上跳 / 根内符号链接 / 绕过配置 / **拒绝时不创建目录** / **不回退默认** / 变异探针 / 两层各删一层）：**`W1`~`W8` 全部落地**（`W1`/`W2`/`W4`~`W8` 于 `91ea9d5` 含 W7 变异探针与 W8 两层各自独立；**`W3` 于 `9b37e99` 补：配置期 + 装配期 + 变异探针**） |
-| T-03 | 注入语料进入上下文后不得改变控制流 / 权限判定 | `tests/security/` + `tests/security/corpus/` | **注入**语料集不存在（`corpus/` 已建，仅路径穿越语料） |
+| T-03 | 注入语料进入上下文后不得改变控制流 / 权限判定 | `tests/security/` + `tests/security/corpus/` | **已落地（2026-09-20）**：`S-new-6`（`test_harness_snew.py:452-509`，3 例 + 变异探针）覆盖"领域包片段 → SYSTEM"这一落点；**仍缺**：三条攻击路径 (a)(b)(c) 的专例 + **注入**语料集（`corpus/` 已建，仅路径穿越语料） |
 | T-04 | 同上（直接注入 / 间接注入分列） | `tests/security/corpus/` | **注入**语料集不存在（同上）；**新增**：经 Skill `description` 的**常驻**注入面（`ADR-0016`）已登记，其验证**不可由 CI 断言**（人工抽查 + 构建期钉 commit） |
 | T-05 | 成员回报中的注入指令不得影响权限决策 | `tests/security/` | 不存在（去毒是上游行为，不可回归） |
 | T-06 | ① 检查覆盖 `tests/` `docs/` `scripts/` `.cnb.yml`；② `E1`~`E3` 纳入自动断言 | `tests/unit/` + `Makefile` | 覆盖范围仅 `src/`；`E1`~`E3` 靠人工跑 |
 | T-07 | 提交必须命中本域白名单路径 | `tests/unit/` 或 pre-commit | 只有人工纪律；**新增**：A 类事后报告的区间核对（`git log A..B`）同为人工 |
 | T-08 | 子进程环境**不得**出现 `CNB_TOKEN` 等凭据（canary 断言） | `tests/security/` | **已落地**（行为 canary + 静态守卫 + 单测，`5fddcfa`+`8e047e6`）；**`run(isolation="root")` 继承路径仍缺机器检查**；**新增**：CLI 消费令牌这一形态**无用例**（`cnb` 当前不存在） |
-| T-09 | 权重 / 二进制摘要校验；工具描述被篡改时拒绝 | `tests/security/` | 机制未实现；**新增**：Skill / CLI 的版本·commit·摘要锁定（构建期 `V2`~`V4`）**亦无载体** |
+| T-09 | 权重 / 二进制摘要校验；工具描述被篡改时拒绝 | `tests/security/` | **⚠️ 2026-09-20 更正：原写"机制未实现"——对"工具描述被篡改时拒绝"这半**不成立**。**已落地**：`description_digest` 实现（`tools/registry.py:137-171`，启动期 fail-secure）+ **4 条** fail-secure 单测（`tests/unit/test_tools_registry.py:174-197`）；**仍缺**：权重 / 二进制摘要校验（`model/assets.py` 未实现）、Skill / CLI 的版本·commit·摘要锁定（构建期 `V2`~`V4`）**亦无载体**；且 `description_digest` 当前**无防护对象**（`MCP` 未接入） |
 | T-10 | 未授权出站必须被拒绝并审计 | `tests/security/` | 执行机制未实现 |
 | T-11 | 未授权工具调用被拒**且**留下可回放审计 | `tests/security/`（**S1**） | **`S1` 已落地（2026-09-19）**：`test_harness_s1_authorization.py` **5 例**（真实 `Session.run`：deny 时 `Tool.invoke` 未调用、`TOOL_RESULT.result is None`、审计含 `TOOL_CALL/DENY` + `POLICY_DECISION`、`audit_id` 对应 DENY `event_id`；+ 对照组证明非恒过）+ `test_s1_replayable_audit_link.py`（真实 `JsonlAuditSink` + `ReadFileTool` 端到端 `query_by_id`，**2 条**变异探针）；**剩余缺口**：① harness 路径**未端到端跑真实 `PolicyEngine`**（`S1` 注入 `FakePolicyEngine`）② 「**工具滥用**」半**零行为层证据** ③ 能力层 deny 的**真实** sink 端到端**未断言**（`RecordingSink` 是假件）；另：平台特权工具的使用范围只有**人工核对**（A 类事后报告 + `git log A..B` 区间一致，`ADR-0016` §7 `V7`） |
 | T-12 | 领域包内 `.py` **永不**被导入 | `tests/security/`（**S3**） | **`S3` 已落地（2026-09-19）**：`test_harness_s3_domain_pack.py` **4 例** + 变异探针——包内 `.py` 带副作用 ⇒ 抛 `DomainPackError`、**副作用标志文件不存在**、模块**不入 `sys.modules`**；`.pyc` / `__pycache__` 同拒；摘掉 `_reject_python_content` 后原拒绝翻红；**剩余缺口**：`.pth` **导入期执行**、`.so` / ctypes 等**动态加载向量未显式断言**，且 `S3` **仅覆盖「领域包」这一载体**；另**静态守卫已落地**（`src/` 无动态执行原语，`5fddcfa`） |
