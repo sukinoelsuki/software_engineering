@@ -32,21 +32,33 @@
 | 安全 | `tests/security/` | 对抗性输入、攻击场景 | 秒级 | 拒绝行为与审计记录同时成立 |
 | 基准 | `bench/`（`tests/benchmark/` **不新增**，见下方状态说明） | 真实资源 | 分钟级 | 延迟、吞吐、内存 |
 
-> ⚠️ **当前状态（2026-09-20 复核更新；2026-09-18 的旧数字已被本轮实测取代）**：
-> 上述分层是**目标态**；实际现状如下（用例数为 `--collect-only` 实测，非估算）。
-> - **已建立**：`tests/unit/`（**42** 个测试模块；`-m unit` **844** 个用例）；
->   `tests/security/`（**21** 个测试模块 + `corpus/`；`-m security` **96** 个用例；
->   `corpus/` 目前**只有路径穿越语料** `traversal_payloads.txt`，**无注入语料**）；
->   `tests/integration/`（**1** 条真模型端到端 `test_end_to_end.py`，标 `slow`、默认不跑）。
+> ⚠️ **当前状态（2026-09-20 复核更新；2026-09-18 的旧数字已由本轮实测取代）**：
+> 上述分层是**目标态**；实际现状如下。
+> **每个数字都附可复算的命令**——这些数字会随用例增删**持续漂移**，
+> 「写死数字而不写口径」正是本项目反复复现的失效模式（数字一旦过期就无人能判断它错在哪）。
+>
+> - **已建立**：
+>   - `tests/unit/`：`test_*.py` **42** 个（**不含** `conftest.py` 等非 `test_*.py` 文件；
+>     目录下共 43 个 `.py`）。口径与命令：**模块数 = `ls tests/unit/test_*.py | wc -l` = `42`**；
+>     **用例数 = `uv run pytest -m unit --collect-only -q` 末行**（`854/960 tests collected (106 deselected)`）。
+>   - `tests/security/`：`test_*.py` **18** 个（另有 `__init__.py` / `conftest.py` /
+>     `_harness_fakes.py` / `corpus/`，**均不计入模块数**）。口径与命令同单元：
+>     **模块数 = `ls tests/security/test_*.py | wc -l` = `18`**；
+>     **用例数 = `uv run pytest -m security --collect-only -q` 末行**（`96/960 tests collected`）。
+>     ⚠️ `corpus/` 目前**只有路径穿越语料** `traversal_payloads.txt`，**无注入语料**。
+>   - `tests/integration/`：**1** 条真模型端到端 `test_end_to_end.py`（标 `slow`、默认不跑）。
+>     命令：`ls tests/integration/test_*.py | wc -l` = `1`。
 > - **不新增**：`tests/benchmark/` —— 性能基准由 **`bench/` 的轮次与 `bench/data` 分支**承担
 >   （[`ADR-0015`](../adr/0015-layering-and-reuse-boundary.md) §5.4.2；`architecture.md` §4.4）。
->   因此 `uv run pytest -m benchmark` **当前零用例**（2026-09-20 实测：`950 deselected`）。
+>   因此 `uv run pytest -m benchmark` **当前零用例**
+>   （2026-09-20 实测：`no tests collected (960 deselected)`；末行的 `deselected` 数即**总收集数**）。
 >   ⚠️ 这不是缺口、也不是"基准没做"：**基准不进 `pytest` 的默认/标记集**是分工（§6）。
-> - `make test-security` 现有 **96** 个用例匹配 ⇒ 正常运行并通过。
+> - `make test-security` 现有 **96** 个用例匹配 ⇒ 正常运行并通过（同上 `-m security` 命令）。
 >   **零用例时的行为已由"打印提示并返回 0"改为 fail-secure（`exit 1`）**——依据提交 `a39ad48`
 >   （理由：安全测试层是基线的一部分，**零用例 / 标记丢失必须显式暴露**，不得静默通过）。
-> 依据：2026-09-20 复核（`uv run pytest -m unit/-m security/-m benchmark --collect-only -q` 实测 +
-> 目录清点）；原 `doc-consistency-report.md` 的 A-9 记录见 [`doc-consistency-report.md`](doc-consistency-report.md)。
+> 依据：2026-09-20 复核——上述 `ls … | wc -l` 与 `uv run pytest -m … --collect-only -q`
+> **原样复跑**；原 `doc-consistency-report.md` 的 A-9 记录见
+> [`doc-consistency-report.md`](doc-consistency-report.md)。
 
 标记：`@pytest.mark.unit` / `integration` / `security` / `benchmark` / `slow`。
 
