@@ -210,6 +210,66 @@
        （钩子失败可能由他人文件造成）、第 6 条管**提交时机**（别在别人的编辑窗口里动手），
        本条管**提交的互斥性**（信息文件是单例 ⇒ 不能并行提交）。四条**互不替代**。
 
+**门禁的"红"可能来自共享工作树——"别人的写入会让我的钩子假红"（2026-09-20 实测）**
+
+- **现象**：一名成员在**另一名成员正在写文件的时间窗内**跑 `make check`，`security-secrets` 这一 stage 报红：
+  `detect-private-key … files were modified by this hook`。当时 `src/agent_sec_perf/__init__.py` 正处于
+  另一名成员的**写入窗口**——该成员随后提交了 `16e4a88`（2026-09-20 19:44:33 +0800，`+2/-1`，
+  `git show --stat 16e4a88` 可核）。
+  （**转述说明**：本仓库 `make security-secrets` 实测打印的钩子名是 `detect private key`
+  ——`pre-commit-hooks` manifest 的 `name`；回报里写的是 `detect-private-key`，即 hook 的 `id`。
+  ⇒ 该原文系**转述**，与"本轮未独立留存其原始输出"一致，故**判定不能建立在"引用原文"上**，
+  只能建立在下一条的**行结构**上。）
+- **判据（源码级，已核对本机 `pre-commit 4.6.2`）**——本条给的不是"重试看看"，而是**可执行的归属判别式**：
+  - `make security-secrets` 就是 `pre-commit run detect-private-key --all-files`（`Makefile:116~117`）；
+  - pre-commit 在钩子**前后各采一次工作树 diff**（`pre_commit/commands/run.py:294` 的
+    `prior_diff = _get_diff()`、`:203` 的 `diff_after = _get_diff()`），并令
+    **`files_modified = diff_before != diff_after`**（同文件 `:206`）；`_get_diff()` 即 `git diff`（`:274~279`）。
+    ⇒ **窗口内任何人改了工作树里已跟踪的文件**，都会让该钩子印出 `Failed` +
+    `- files were modified by this hook`（`:227~228`）；而 `- exit code: …` 那一行
+    **只在钩子自身非 0 退出时才打印**（`:223~224`）。
+  - `pre-commit-hooks`（`rev: v4.6.0`）的 `pre_commit_hooks/detect_private_key.py` **从不写文件**
+    （只读 → `return 0/1`，实读源码确认）⇒ 对本钩子而言，**"有 `- files were modified…` 而行内没有
+    `- exit code:`"** ⇒ 钩子自身判定为**通过**，红**只能**来自工作树被外部改动（**假红**）；
+    **反之出现 `- exit code: 1`** ⇒ 真的扫到密钥特征串（**真红**）。
+  - **窗口宽度 = 该钩子自身的运行时长**（不是整个 `make check`）⇒ 咬中与否**带概率**；
+    又因 `git diff` **不含未跟踪文件**：**新建未跟踪文件不会触发，改已跟踪文件才会**。
+  - ⚠️ **`--all-files` ⇒ 不 stash**：`run.py:344` 的 `stash = not args.all_files and not args.files`
+    ⇒ 本条的机制**不是**第 6 条的 `git stash` / `restore`（故日志里**不会**出现 `Stashing unstaged files`），
+    而是"**工作树 diff 是钩子的隐式输入**"。**两条不得互相替代**；`devlog 0017` §3.5 第 5 条对同类假红标为
+    **未验证**的归因（"并发写 + stash 窗口"）在此**被拆成两条路径**：对 `--all-files` 路径，**与 stash 无关**。
+- **影响面（本仓库当前配置）**：`make check` 的聚合（`Makefile:147`）中**只有 `security-secrets` 走 pre-commit**，
+  其余（ruff / mypy / pytest / bandit / pip-audit）不读工作树 diff ⇒ 该失效模式**目前只命中这一处**；
+  但它恰好长得像"**密钥泄漏**"，是**最不能误判**的一类红。
+- **处置（按序，不得跳步）**：
+  1. **先判归属、再复跑**：读详细行——**无** `- exit code:` ⇒ 判**假红**，**先单独复跑该 stage**
+     （`make security-secrets`，或 `uv run pre-commit run detect-private-key --all-files`）确认转绿；
+     **有** `- exit code: 1` ⇒ 判**真红**，按安全事件处置（不得放过）。
+  2. **留证**：`git status --short`——沿用 `devlog 0017` §3.5 第 5 条已固化的**三步处置**
+     （`git status` 留证 → **重试一次** → 仍红则**停下上报**）。
+  3. **禁止**：`--no-verify`、`SKIP=detect-private-key`、删改该钩子或放宽其强度。
+     **把假红"做成绿"才是本条要防的最终危害**——红是假的，"放宽检查"造成的安全损失是真的。
+  4. **不引入全局串行化**（"提交 / 跑门禁期间禁写"不采纳，理由同 `devlog 0017` §3.5 第 5 条：会把并行度降到 1）。
+     增量只有一条：**读门禁的人也要避开他人的写窗口**——与第 6 条"**写的人避开他人的提交窗口**"**对偶**。
+     **"同一文件同一时刻只有一个写者"引用 §6 规则 6 / `CODEBUDDY.md` §10.2 规则 8，本条不重写。**
+  5. 需要**与共享工作树无关**的结论时，既有做法是导出**该笔的干净快照**再跑门禁
+     （`git archive <hash> | tar -x -C <临时目录>`，见 `devlog 0016` §3.13（b））。
+     ⚠️ 本环境**写工作区外需人工审批**：本轮实测该命令因审批不可见被取消
+     （`Permission request timed out with no user response … This was NOT an explicit user rejection.`，同 §8.12）
+     ⇒ **不得**把"导快照"当作默认处置。
+- **复现程度（照此引用，不得升格）**：**1 次现场观测**——报错原文来自**成员回报**，按 §4 属
+  **未净化的成员产出**，只能作**证据线索**，本轮**未独立留存其原始输出**；
+  **+ 1 次对照复跑**（写者提交后**单独复跑该钩子 ⇒ `Passed`**；整体 `make check` 复跑 ⇒ 全绿 **955 passed**）。
+  ⇒ 足以支持"**与并发写窗口相关**"，**不足以**写成"稳定复现"或"机制性结论"。
+  **机制部分以源码核对为准**（可逐条复算：`Makefile:116~117`、`pre_commit/commands/run.py`
+  的 `203 / 206 / 223~228 / 274~279 / 294 / 344`，本机 `pre-commit 4.6.2`）；**独立隔离复现未做**
+  （原因见处置第 5 条）。
+- **边界（与既有条目分工，防两处并存相反口径）**：本条靶子是**门禁读数本身的可信度**（"红"未必是"你的改动红"）；
+  第 5 条管**钩子看到的文件清单**、第 6 条管**提交窗口内他人未暂存改动被 stash**、第 7 条管**提交信息文件是单例**
+  ⇒ 五条**同源**（都因工作树 / 索引 / 信息文件由全队共享）但**各靶不同，互不替代**。
+- **状态：部分缓解——不得表述为机制。** 它**不可由 CI 强制**（CI 单 runner、无并发写 ⇒ 该模式在 CI 中不出现），
+  也无脚本可完全消除；唯一护栏是**上面那条可执行判据 + 人工不越界**。
+
 **变异探针不得留在共享工作区（2026-09-18 实证）**
 
 - **现象**：有人为做变异验证，把 `src/agent_sec_perf/foundation/proc.py` 的
@@ -857,3 +917,4 @@ force-terminated. You can proceed with team_delete or continue with the remainin
 | 2026-09-18 | **新增 §8.12「会话级 `auto run` 会失效 ⇒ 组队前必须预检」**：现象（所有者需反复手动切回 auto run）+ 已验证事实（**仓库侧五份定义未漂移**；**会话侧至少 2 次**工具调用被 `Permission request timed out` 拦下；逐处已查 `sessions` / `local_storage` / `agent-home` / `projects` **均无该字段**）+ 未验证项（触发条件、归属）+ 三条机制（**组队前预检** / 运行中中止判据 / 跨会话落盘） | 所有者 2026-09-18 观察并要求"**先解决再组队**"；领导实测：**不是配置漂移**，而是**会话级状态失效且不在可写范围内** ⇒ 只能给出**可执行**的预检与中止判据 |
 | 2026-09-18 | **§6「两道防线可能同时为空」的根因已处置（该条状态由"待裁决"转为"已修复"）**：`Makefile` 的钩子安装改**显式开关** `LOCAL_HOOKS`（不再从 `$CI` 推断）；新增 `make hooks-check`（`scripts/check-local-hooks.sh`）并为 `make check` 的**第一条**断言；CI 增具名 `secret-scan` stage；CI 流水线显式写 `LOCAL_HOOKS=0`；本地钩子层与 CI 阶段各有机器断言（`tests/unit/test_local_gates.py`、`tests/unit/test_cnb_config.py`）。**本节 §6/§8 相关段落中"根因处置待所有者裁决、尚未决"的表述属当时快照，不再更新**；口径以 `SECURITY.md` §3 `S-8` 与 `security-scan-gate-config.md` §7 为准 | 所有者 2026-09-18 裁决"按推荐两条都做"后已落地并实测（`make check` 128 passed；三条变异探针均报红）；本行按"规则变更联动更新"补记，避免读者据旧表述以为该缺口仍开放 |
 | 2026-09-20 | **§6「共享暂存区」纪律新增第 7 条**：`.git/COMMIT_EDITMSG` 同样是全局共享资源（**单例**、`-o/--only` 管不到）⇒ **领导不与成员并发提交**；给出与第 1~6 条的分工（提交**互斥性**，与"范围 / 钩子清单 / 时机"互不替代），并把"门禁本身是好的、覆盖只是归因假设"分开写。**新增 §8.14「成员"正常完成"即从名册消失」**：与 §8.9 **划清靶子**（§8.9 = 登记表重置 ⇒ 通道**不可达**；§8.14 = 成员**正常完成**被移出名册 ⇒ **追加指令投不出去** / 重派报 `already exists`）；登记领导已下达的处置（"关闭"要到"从名册移除"、收尾走**前台子任务**）与**未验证**项（触发条件与时点）。同步 `CODEBUDDY.md` / `AGENTS.md` §10.2 规则 8 与 §10.3 规则 5 各一句 | `devlog 0019` §3.11 末段（`commitizen` 钩子被 `.git/COMMIT_EDITMSG` 并发覆盖 ⇒ 门禁误报）与 §3.13 第四段（`architect-wave13` 完成即 `Known members: none` ⇒ 收尾改前台子任务）；两条均属"**已实测 + 已裁决**"，按 §7 的待办登记入库（只登记、不新立规则） |
+| 2026-09-20 | **§6 新增「门禁的"红"可能来自共享工作树」**：现象（`make check` 的 `security-secrets` 在他人写窗口内报 `detect-private-key … files were modified by this hook`）+ **源码级判据**（`pre_commit/commands/run.py`：`:206` 的 `files_modified = diff_before != diff_after`、`:223~228` 的两种明细行 ⇒ **有 `files were modified` 行而无 `- exit code:` ⇒ 假红**、`:344` 的 `--all-files ⇒ 不 stash` 划清与第 6 条的界限、`:274~279` 的 `git diff` 不含未跟踪文件）+ 处置（先判归属再复跑 / `git status --short` 留证 / 禁 `--no-verify`·`SKIP=` / 不引入全局串行化 / 快照法需审批）+ **复现程度（1 次观测 + 1 次对照，不得升格）** + **状态：部分缓解** | 2026-09-20 一轮协作实测：成员在他人写 `src/agent_sec_perf/__init__.py`（随后 `16e4a88`）的窗口内跑 `make check` 被该 stage 拦住，对照复跑全绿（955 passed）。`devlog 0017` §3.5 第 5 条把同类假红的归因（"并发写 + stash 窗口"）标为**未验证**——本条按源码把它**拆成两条路径**（`--all-files` 与 stash 无关）并给出**可执行的归属判别式**；只追加事实与处置，**未改任何既有条目、未改协作机制本身** |
