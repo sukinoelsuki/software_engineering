@@ -303,6 +303,20 @@
 
 **状态**：**`未缓解`** ｜ **主导类别**：STRIDE-I（信息泄漏）｜ **智能体特有**：工具滥用
 
+> **防误引登记（2026-09-20）——显式排除 `S-new-2` 作为本条证据**：
+> `tests/security/test_harness_snew.py:190-207` 的 `test_snew2_network_context_always_denied`
+> （`@pytest.mark.security`）**不构成**"本条默认拒绝已验证"的证据。**措辞必须写准**：
+> 它经**真实执行路径**断言的是"**工具实际收到的 `ExecutionContext.network_allowed is False`**"
+> （`calls[0][1].network_allowed is False`），**不是**"出站请求被实际拦截并审计"——
+> 后者才是本条威胁本体。`network_allowed=False` 由 `src/agent_sec_perf/harness/loop.py`
+> （`:604-614`）**硬编码**，且该处注释明写"本轮**恒为** False：**出站白名单与云端客户端均未实现**"。
+> ⇒ 它证明的是"**上下文标志位恒为 False**"（fail-secure 的*标志位*），**不是**"**出站流量被挡住**"
+> （*实际*攻击面）；真正的判据（**请求未发出**）**至今无载体、无用例**（见「验证方式」）。
+> ⚠️ 该用例另有**变异探针**（`test_snew2_guard_depends_on_hardcoded_false`，`:210-252`），
+> 证明的是"该False断言**依赖硬编码保护、非恒过**"——**同样不等于"出站被拦"**。
+> 提前登记此陷阱，防"看起来像证据、实际断言的是另一攻击面"（类比 `T-02` 对
+> `test_audit_landing_whitelist.py` 的既有防误引写法）。
+
 - **资产**：A-3（宿主）、A-5（凭据——出站即可外传）、A-4（数据完整性）
 - **攻击者与前提**：攻击者能影响一次出站请求的目标或内容：模型输出里的 URL、
   被读入文件/网页中的 URL、工具参数里的端点、或**环境变量里的代理**。
