@@ -17,21 +17,34 @@
    ``harness/loop.py``、``security/policy.py``、``cli/approval.py``），断言**实际产出的组合**
    都落在声明集合内，且**恰好**是预期的那几个。⇒ 表与声明一致**不等于**实现照着做，
    这一层是"实现真的没违反"的证据。
-3. **变异探针**（三条）：① 表外组合被判违规、表内组合不误报；② 收窄声明 ⇒ (a) 与 (b) 都翻红；
-   ③ 内存里改文档 ⇒ 解析结果随之变化（证明解析器读的是文档，不是硬编码副本）。
+4. **结构覆盖面**（扫描 ``src/`` 的全部 ``.emit(...)`` 调用点）：断言扫描结果 **==** 登记表
+   （producer 必须配一条 (b) 的具名触发用例；透传必须写明依据）⇒ **新增一个未登记的调用点即
+   翻红**，把"(b) 只覆盖被触发的路径"这条残余风险从"靠纪律"收窄为"靠机器"。
 
-⚠️ **探针的强度上限（如实标注，不得当更强结论用）**：三条探针证明的都是"比较函数真的挂在
-**文档文本 / 声明 / 实际调用点**上"，**不是**"该检查真的挂在生产 ``emit`` 上"——本轮**没有**
-运行期校验，故**未经触发的调用路径仍可能产出表外组合而不被拦下**（(b) 只覆盖被触发的路径）。
-运行期取舍见本笔提交正文的"需领导裁决"。
+**扫描的覆盖边界（如实写明，避免这条检查被当成"看起来全"）**：只识别**调用表达式**
+``X.emit(...)``。以下形态**不在覆盖内**：``getattr(sink, "emit")(e)``、先把 ``sink.emit``
+取成别名再调用、以及跨包的动态派发（当前 ``src/`` 无此类写法，但边界就在这）。
+只做序列化的落点实现（``observability/audit.py::JsonlAuditSink.emit``、``contracts/audit.py``
+的 ``Protocol`` 定义）**本来就不是调用点**，故不出现——它们不产生新的 (kind, outcome) 组合；
+装配链是 producer → ``_AuditRecorder.emit``（透传）→ ``JsonlAuditSink.emit``（落盘）。
+它也只保证"调用点**被登记**"，不保证被登记为 producer 的那些只产出允许集内的组合
+（后者归 (b)，且只覆盖被触发的路径）。
+
+⚠️ **探针的强度上限（如实标注，不得当更强结论用）**：五条探针证明的都是"比较函数真的挂在
+**文档文本 / 声明 / 实际调用点 / 调用点登记表**上"，**不是**"该检查真的挂在生产 ``emit`` 上"——
+本轮**没有**运行期校验（候选 B 已由团队领导 2026-09-20 裁决否决：拒绝写入 = 主动丢掉那条证据，
+与 ``REQ-SEC-06`` 的"可回放 / 不丢证据"冲突），故**未经触发的调用路径仍可能产出表外组合
+而不被拦下**；本文件的残余风险是"新增调用点"，由第 4 层收窄。
 """
 
 from __future__ import annotations
 
+import ast
 import io
 import pathlib
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Final
 
 import pytest
@@ -592,4 +605,286 @@ def test_the_parser_reads_the_document_text_it_is_given() -> None:
     assert AuditOutcome.DENY not in mutated_table[AuditEventKind.TOOL_CALL]
     assert declaration_problems(mutated_table, DECLARED_ALLOWED_OUTCOMES) == [
         "tool_call+deny：声明里有、表里缺"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# (d) 结构性检查：``src/`` 的 ``.emit(...)`` 调用点必须**全部已登记**
+#
+# 想解决什么：(b) 只覆盖"被触发的路径"，未来多一个 producer 而没人补用例时会**静默通过**。
+# 本层把"多一个调用点"变成翻红：要么补 (b) 的触发用例，要么在登记表里写明它为何是透传。
+# ---------------------------------------------------------------------------
+
+#: 扫描根：``src/``（整棵，不限定包名——换包名或加子包都不会漏扫）。
+SRC_ROOT: Final = pathlib.Path(__file__).resolve().parents[2] / "src"
+
+#: (b) 覆盖的 **producer**：键 = ``相对 src/ 的 posix 路径::限定名``（方法写作 ``类.方法``），
+#: 值 = 该处产出什么。**每条都必须能由 (b) 的具名用例触发**（见 ``PRODUCER_TRIGGERED_BY``）。
+PRODUCERS: Final[Mapping[str, str]] = {
+    "agent_sec_perf/tools/registry.py::audit_tool_call": (
+        "构造 AuditEvent(TOOL_CALL) 并 emit；只产 OK / ERROR（§2.2 的 D3）"
+    ),
+    "agent_sec_perf/harness/loop.py::TaskLoop._emit_tool_call_audit": (
+        "构造 AuditEvent(TOOL_CALL)；调用方传 DENY（未执行路径）/ ERROR（工具抛错，§2.2 的 D1/D3）"
+    ),
+    "agent_sec_perf/security/policy.py::PolicyEngine.decide": (
+        "构造 AuditEvent(POLICY_DECISION)；outcome 由 _outcome_of 给出 ALLOW / CONFIRM / DENY"
+    ),
+    "agent_sec_perf/cli/approval.py::InteractiveApprovalGate._record": (
+        "构造 AuditEvent(APPROVAL)；outcome 由 _audit_outcome 给出 ALLOW / DENY"
+    ),
+}
+
+#: 每个 producer 由 (b) 的哪些**具名**用例触发（用例名必须在本文件里真实存在，否则翻红）。
+PRODUCER_TRIGGERED_BY: Final[Mapping[str, tuple[str, ...]]] = {
+    "agent_sec_perf/tools/registry.py::audit_tool_call": (
+        "test_tools_layer_audit_call_only_produces_ok_and_error",
+    ),
+    "agent_sec_perf/harness/loop.py::TaskLoop._emit_tool_call_audit": (
+        "test_harness_loop_deny_path_produces_the_deny_outcome",
+        "test_harness_loop_tool_exception_path_produces_the_error_outcome",
+    ),
+    "agent_sec_perf/security/policy.py::PolicyEngine.decide": (
+        "test_policy_layer_produces_allow_confirm_and_deny",
+    ),
+    "agent_sec_perf/cli/approval.py::InteractiveApprovalGate._record": (
+        "test_approval_layer_produces_only_allow_and_deny",
+    ),
+}
+
+#: 已登记的**透传**（不构造 ``AuditEvent``、只转发或包裹）：值 = **依据**，必须非空。
+#: 依据要写"为什么它不产生新的 (kind, outcome) 组合"，而不是"它看起来是包装"。
+PASS_THROUGHS: Final[Mapping[str, str]] = {
+    "agent_sec_perf/cli/app.py::_AuditRecorder.emit": (
+        "透传：只置 failed 标志后**裸 raise 重抛**，对传入事件不做任何改写 ⇒ 不产生新的 "
+        "(kind, outcome) 组合，故不属 (b) 的触发对象。其性质由 "
+        "test_the_registered_pass_through_only_relays_and_reraises 结构与行为双重钉住。"
+    ),
+}
+
+#: 登记表的并集（两个集合刻意分开写：producer 要触发用例，透传只要依据）。
+REGISTERED_CALL_SITES: Final[Mapping[str, str]] = {**PRODUCERS, **PASS_THROUGHS}
+
+
+@dataclass(frozen=True)
+class _Scan:
+    """一次源码扫描的结果（键统一为 ``相对 src/ 的路径::限定名``）。"""
+
+    emit_sites: frozenset[str]
+    event_builders: frozenset[str]
+    functions: Mapping[str, ast.FunctionDef]
+
+
+class _Scanner(ast.NodeVisitor):
+    """收集 ``X.emit(...)`` 调用点、构造 ``AuditEvent`` 的函数，以及函数节点本身。
+
+    **只看调用表达式**（``ast.Call`` 且 ``func`` 是 ``attr == "emit"`` 的 ``ast.Attribute``）：
+    ``def emit(...)`` 定义是 ``FunctionDef``、注释与文档字符串是字符串常量，**天然进不来**——
+    这正是本条检查要的精度，由 :func:`test_the_scanner_ignores_definitions_docstrings_and_comments` 钉住。
+    """
+
+    def __init__(self, path: str) -> None:
+        self._path = path
+        self._stack: list[str] = []
+        self.emit_sites: set[str] = set()
+        self.event_builders: set[str] = set()
+        self.functions: dict[str, ast.FunctionDef] = {}
+
+    def _key(self) -> str:
+        qualname = ".".join(self._stack) or "<module>"
+        return f"{self._path}::{qualname}"
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._stack.append(node.name)
+        self.generic_visit(node)
+        self._stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._stack.append(node.name)
+        self.functions[self._key()] = node
+        self.generic_visit(node)
+        self._stack.pop()
+
+    def visit_Call(self, node: ast.Call) -> None:
+        func = node.func
+        key = self._key()
+        if isinstance(func, ast.Attribute) and func.attr == "emit":
+            self.emit_sites.add(key)
+        if isinstance(func, ast.Name) and func.id == "AuditEvent":
+            self.event_builders.add(key)
+        self.generic_visit(node)
+
+
+def scan_sources(sources: Mapping[str, str]) -> _Scan:
+    """扫描一组源码文本（``{相对路径: 文本}``）。
+
+    刻意接受"源码文本"而不是直接读仓库：变异探针要能喂进**合成模块**，从而**不必改 ``src/``**
+    就能证明"新增一个未登记的调用点会被判红"。
+    """
+    emit_sites: set[str] = set()
+    event_builders: set[str] = set()
+    functions: dict[str, ast.FunctionDef] = {}
+    for path, text in sorted(sources.items()):
+        scanner = _Scanner(path)
+        scanner.visit(ast.parse(text, filename=path))
+        emit_sites |= scanner.emit_sites
+        event_builders |= scanner.event_builders
+        functions.update(scanner.functions)
+    return _Scan(
+        emit_sites=frozenset(emit_sites),
+        event_builders=frozenset(event_builders),
+        functions=functions,
+    )
+
+
+def repo_sources() -> dict[str, str]:
+    """``src/`` 下全部 Python 源文件（相对 ``src/`` 的 posix 路径 → 文本）。"""
+    return {
+        path.relative_to(SRC_ROOT).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(SRC_ROOT.rglob("*.py"))
+    }
+
+
+def registry_problems(observed: frozenset[str], registered: Mapping[str, str]) -> list[str]:
+    """双向比对"扫描到的调用点"与"登记表"（空列表 = 一致）。
+
+    两个方向都报：**扫到但没登记** ⇒ 新调用点静默通过；**登记了但扫不到** ⇒ 登记表已漂移
+    （函数被删/改名/挪走），此时它承诺的"已覆盖"不再成立。
+    """
+    problems = [f"未登记的 emit 调用点：{site}" for site in sorted(observed - set(registered))]
+    problems += [
+        f"登记表里的调用点已不存在（登记漂移）：{site}"
+        for site in sorted(set(registered) - observed)
+    ]
+    return problems
+
+
+def _reraises_bare(node: ast.FunctionDef) -> bool:
+    """函数体内是否有**裸 ``raise``**（重抛当前异常，而不是换成别的异常类型）。"""
+    return any(
+        isinstance(statement, ast.Raise) and statement.exc is None for statement in ast.walk(node)
+    )
+
+
+@pytest.mark.unit
+def test_every_emit_call_site_in_src_is_registered() -> None:
+    """``src/`` 的全部 ``.emit(...)`` 调用点必须都在登记表里（新增即翻红）。"""
+    scan = scan_sources(repo_sources())
+
+    assert registry_problems(scan.emit_sites, REGISTERED_CALL_SITES) == []
+
+
+@pytest.mark.unit
+def test_registered_producers_build_events_and_pass_throughs_do_not() -> None:
+    """登记为 producer 的必须真的构造 ``AuditEvent``；登记为透传的必须**没有**构造。
+
+    否则登记表退化成"作者自己说的"：把一个 producer 记成透传就能绕开 (b) 的触发要求。
+    """
+    scan = scan_sources(repo_sources())
+
+    not_building = sorted(site for site in PRODUCERS if site not in scan.event_builders)
+    building = sorted(site for site in PASS_THROUGHS if site in scan.event_builders)
+
+    assert not_building == [], (
+        f"登记为 producer 却查不到 AuditEvent 构造（登记不实）：{not_building}"
+    )
+    assert building == [], f"登记为透传却构造了 AuditEvent（登记不实）：{building}"
+
+
+@pytest.mark.unit
+def test_the_registered_pass_through_only_relays_and_reraises() -> None:
+    """``_AuditRecorder.emit`` 的"透传"性质必须**结构上**成立：不构造事件 + 裸 ``raise`` 重抛。
+
+    这比"注释里声明它是透传"强：一旦有人把它改成会构造/改写事件（即变成 producer），
+    本用例翻红，迫使登记表同步。
+    """
+    site = "agent_sec_perf/cli/app.py::_AuditRecorder.emit"
+    scan = scan_sources(repo_sources())
+
+    node = scan.functions.get(site)
+    assert node is not None, f"找不到 {site} 的函数节点（结构已变，登记表需同步）"
+    assert site not in scan.event_builders, "透传不得构造 AuditEvent"
+    assert _reraises_bare(node), f"{site} 不再裸 raise 重抛 ⇒ 透传的判据不成立"
+
+
+@pytest.mark.unit
+def test_each_registered_producer_has_a_named_triggering_test() -> None:
+    """每个 producer 都要有 (b) 的具名触发用例，且每条登记都要写明依据。"""
+    assert set(PRODUCER_TRIGGERED_BY) == set(PRODUCERS), "触发用例表与 producer 集合不一致"
+    assert all(reason.strip() for reason in PRODUCERS.values()), "producer 登记缺依据"
+    assert all(reason.strip() for reason in PASS_THROUGHS.values()), "透传登记缺依据"
+
+    unknown: list[str] = []
+    for site, names in sorted(PRODUCER_TRIGGERED_BY.items()):
+        assert names, f"{site} 没有登记触发用例（(b) 覆盖不到它）"
+        for name in names:
+            candidate = globals().get(name)
+            if not name.startswith("test_") or not callable(candidate):
+                unknown.append(f"{site} → {name}")
+
+    assert unknown == [], f"登记了不存在的触发用例（用例被删/改名即翻红）：{unknown}"
+
+
+# ---------------------------------------------------------------------------
+# (d) 的变异探针：扫描精度与登记表比对都必须非恒过
+# ---------------------------------------------------------------------------
+
+#: 合成模块：同时包含**定义**、**文档字符串**、**注释**里的 ``emit`` 提及与真实的调用点，
+#: 以及一个会构造 ``AuditEvent`` 的函数（验证两个收集器都在工作）。
+_SYNTHETIC_SOURCES: Final[Mapping[str, str]] = {
+    "synthetic.py": (
+        '"""模块 docstring：sink.emit(event) 与 def emit(self, event) 都只是文本。"""\n'
+        "\n"
+        "\n"
+        "class Relay:\n"
+        '    """类 docstring 也提 sink.emit(event)。"""\n'
+        "\n"
+        "    def emit(self, event: object) -> None:\n"
+        "        # 注释里同样写 sink.emit(event)——它不是调用点。\n"
+        "        del event\n"
+        "\n"
+        "    def relay(self, event: object) -> None:\n"
+        "        self._inner.emit(event)\n"
+        "\n"
+        "    def build(self) -> object:\n"
+        '        return AuditEvent(event_id="synthetic")\n'
+    ),
+}
+
+#: 合成模块：只有**一个未登记**的调用点（探针的输入）。
+_SYNTHETIC_UNREGISTERED: Final[Mapping[str, str]] = {
+    "synthetic.py": (
+        "class NewProducer:\n"
+        "    def publish(self, event: object) -> None:\n"
+        "        self._sink.emit(event)\n"
+    ),
+}
+
+
+@pytest.mark.unit
+def test_the_scanner_ignores_definitions_docstrings_and_comments() -> None:
+    """探针④：只有真调用点被收进来——定义 / 文档字符串 / 注释里的提及一律排除。"""
+    scan = scan_sources(_SYNTHETIC_SOURCES)
+
+    assert scan.emit_sites == {"synthetic.py::Relay.relay"}
+    assert scan.event_builders == frozenset({"synthetic.py::Relay.build"})
+
+
+@pytest.mark.unit
+def test_the_registry_check_flags_unregistered_and_drifted_sites() -> None:
+    """探针⑤：**未登记调用点**与**登记漂移**都必须被判红（证明登记表检查非恒过）。
+
+    同一份扫描结果下只换登记表：空表 ⇒ 判"未登记"；把它登记上 ⇒ 不再报（非恒过、也非恒红）。
+    """
+    site = "synthetic.py::NewProducer.publish"
+    scan = scan_sources(_SYNTHETIC_UNREGISTERED)
+
+    assert scan.emit_sites == {site}
+    assert registry_problems(scan.emit_sites, {}) == [f"未登记的 emit 调用点：{site}"]
+    assert registry_problems(scan.emit_sites, {site: "探针用：登记后不应再报"}) == []
+
+    # 反向：登记表里多出一条扫不到的项（函数被删/改名/挪走）同样判红。
+    drifted = {site: "探针用", "gone.py::x": "依据"}
+    assert registry_problems(scan.emit_sites, drifted) == [
+        "登记表里的调用点已不存在（登记漂移）：gone.py::x"
     ]
