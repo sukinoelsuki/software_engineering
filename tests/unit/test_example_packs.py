@@ -26,6 +26,11 @@
 安全断言的分工：本模块只做**实现侧的功能断言**（示例包不越界）。
 "示例包被加载后仍不能扩权 / 不能绕过 default-deny"一类对抗性断言属 ``tests/security/``，
 由验证角色独立完成。
+
+口径对齐：``docs/adr/0021-example-domain-packs-and-first-usable-release.md`` §7 第 1 条
+（``load_pack(..., roots=(<examples/packs>), known_tools=<4 个内置工具名>)`` ⇒ 成功，
+且 ``tool_allowlist ⊆ {read_file, list_dir}`` / ``capabilities_allowlist ⊆ {READ_FILE}``）
+与本模块的常量 ``READONLY_TOOL_ALLOWLIST`` / ``READONLY_CAPABILITIES`` 逐条对应。
 """
 
 from __future__ import annotations
@@ -106,8 +111,12 @@ ACTUAL_TOOL_NAMES = frozenset(tool.spec.name for tool in _builtin_tools())
 
 
 def _read_example_pack(name: str) -> DomainPack:
-    """用生产代码加载仓库内的一份示例包（``roots`` 收窄到仓库根）。"""
-    return load_pack(PACKS_ROOT / name, roots=(REPO_ROOT,), known_tools=ACTUAL_TOOL_NAMES)
+    """用生产代码加载仓库内的一份示例包（``roots`` 收窄到 ``examples/packs`` 本身）。
+
+    ``roots`` 取**最窄的那个能容纳包目录的根**（``ADR-0021`` §7 第 1 条的口径）：
+    取仓库根这类更宽的值会让"包确实落在示例目录内"这件事不再被判据覆盖。
+    """
+    return load_pack(PACKS_ROOT / name, roots=(PACKS_ROOT,), known_tools=ACTUAL_TOOL_NAMES)
 
 
 def _readonly_downgrade_offenders(pack: DomainPack) -> list[str]:
