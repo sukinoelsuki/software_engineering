@@ -19,16 +19,24 @@
 | 组织形式 | 单人独立开发（决策、实现、评审均由本人完成，AI 作为实现与决策辅助） |
 | 周期 | 2026-09 ~ 2026-12（约 2~3 个月，多迭代） |
 | 仓库 | <https://cnb.cool/Mybase_Le0n3rd/software_engineering> |
-| 当前阶段 | **`M0`（工程初始化）已达成**（2026-09-19，判据 `G1`~`G9` 全绿）⇒ 进入 **Phase 1**：需求规格、架构设计与威胁模型成稿（`M1`）。详见 [里程碑](docs/engineering/sdlc.md) §3.1 与 [`CODEBUDDY.md`](CODEBUDDY.md) §9 |
+| 当前阶段 | **`M0`（工程初始化）已达成**（2026-09-19，判据 `G1`~`G9` 全绿）；当前在 **Phase 1（需求与设计）** 上向 **`0.1.0`「首个可用版本」**推进。里程碑判据见 [里程碑与迭代流程](docs/engineering/sdlc.md) §3 |
+| 开发日志 | **最新一篇的 §7 就是当前唯一的任务清单** —— 见 [`docs/devlog/`](docs/devlog/) |
 
-> ## 🚧 下一步（开发环境构建后立即执行）
+> ## 现在能跑什么（如实说明，别把它读成"已完成"）
 >
-> 镜像构建完成后，请按 **[构建后待办清单](docs/engineering/post-build-checklist.md)** 顺序执行：
+> **已实现**：`contracts/`（6 模块）· `foundation/`（5 件）· `security/{capabilities,policy}` ·
+> `observability/audit` · `model/client`（**仅本地回环**）· `tools/{registry,files,shell}` ·
+> `harness/`（9 件）· `cli/`（3 件）· `examples/packs/`（示例领域包）。
 >
-> **① 确认自定义镜像生效 → ② 关键组件自检 → ③ 沙箱可用性 → ④ 工程门禁 `make check` → ⑤ W1 风险验证**
+> **未开工**：`security/sandbox/` · `security/refusal.py` · `model/{router,probe,assets}.py` ·
+> `tools/search.py` · `observability/tracing.py`。逐项依据见
+> [总体架构](docs/design/architecture.md) §4 的实现状态表。
 >
-> ⚠️ 其中 **③ 沙箱可用性** 与 **⑤ W1 风险验证** 的结论会**直接改变后续方案**
-> （沙箱可能需降级；4B 模型能力不足则会触发方向收敛），请务必记录结果。
+> ⚠️ **两条限定不得放大**：
+>
+> 1. **"已实现" ≠ "已跑通"**：端到端闭环的实跑结果以 [`docs/devlog/`](docs/devlog/) 的记录为准；
+> 2. **"能跑" ≠ "安全已到位"**：威胁模型（13 条）当前**只有 1 条**达到「已缓解并验证」，
+>    分布与判据以 [`threat-model/README.md`](docs/design/threat-model/README.md) §4.1 为**唯一真源**。
 
 ---
 
@@ -89,29 +97,33 @@
 .
 ├── .cnb/                    # CNB 平台协作配置（Issue / PR 模板等）
 ├── .cnb.yml                 # CNB 云原生构建流水线（CI 门禁）
-├── .codebuddy/rules/        # 项目级 Agent 准则（随代码库版本化共享）
+├── .codebuddy/              # Agent 准则（rules/）、角色定义（agents/）、流程型 Skill（skills/）
 ├── CODEBUDDY.md             # Agent 主准则（对话开始时自动加载）
 ├── AGENTS.md                # 面向其他 Agent 工具的等价准则
 ├── docs/
-│   ├── adr/                 # 架构决策记录（Architecture Decision Records）
-│   ├── design/              # 设计与架构文档（Phase 1 建立，当前只有 README）
+│   ├── adr/                 # 架构决策记录（Architecture Decision Records，**只增不改**）
+│   ├── design/              # 总体架构 · 接口契约（interfaces/）· 威胁模型（threat-model/）
 │   ├── devlog/              # 开发日志（按议题分篇；**活待办 = 最新篇 §7**）
 │   ├── engineering/         # 工程流程：Git 工作流、生命周期、DoD、测试策略
 │   ├── notes/               # 学习笔记（按主题累积，无证据不成条）
 │   ├── proposals/           # 立项与选型提案
-│   ├── requirements/        # 需求规格与用例
+│   ├── requirements/        # 需求规格（SRS）
 │   └── research/            # 研究结论与实验记录（含 reports/）
-├── src/agent_sec_perf/      # 项目源码（**当前只有 bench/ 基准子系统**，产品主体待落位）
-├── tests/                   # 测试（**当前只有 unit/ 层**；集成/安全/基准属 Phase 1）
+├── examples/                # 示例领域包（**声明式 TOML**，产品正规通路的一部分）
+├── src/agent_sec_perf/      # 产品源码：contracts/ foundation/ security/ observability/ model/
+│                            #            tools/ harness/ cli/（+ 独立评测子系统 bench/）
+├── tests/                   # unit/（单测）· security/（对抗性用例）· integration/（真模型端到端，默认不跑）
 ├── scripts/                 # 开发与运维脚本
 ├── CONTRIBUTING.md          # 贡献与协作规范
 ├── SECURITY.md              # 安全策略与漏洞披露流程
 └── CHANGELOG.md             # 变更日志（Keep a Changelog）
 ```
 
-> `src/` 的模块划分将在 base project 的**复用组件清单**确定后，通过新的 ADR 定义
-> （当前只有 `agent_sec_perf/bench/` 基准子系统）；`tests/` 目前只有 `unit/` 层，
-> 集成 / 安全 / 基准三层属 Phase 1 产出（见 [`docs/engineering/testing-strategy.md`](docs/engineering/testing-strategy.md) §2）。
+> `src/` 的分层、依赖方向（`R1`~`R5`）与逐模块实现状态以
+> [`ADR-0015`](docs/adr/0015-layering-and-reuse-boundary.md) 与
+> [`docs/design/architecture.md`](docs/design/architecture.md) 为准（**本文件不重复其结论**）。
+> `tests/` 的分层口径与"默认不跑哪些"见
+> [`docs/engineering/testing-strategy.md`](docs/engineering/testing-strategy.md)。
 
 ---
 
@@ -135,6 +147,55 @@ make test        # 运行测试
 make security    # 依赖与密钥安全检查
 make help        # 查看全部可用命令
 ```
+
+### 5.1 跑一次真实会话（产品用法）
+
+> **前置**：一个 `llama-server` 可执行文件与一个本地 GGUF 模型（本开发环境已预置
+> `/opt/llama.cpp/build/bin/llama-server` 与 `/opt/models/*.gguf`；其它机器请自备）。
+> **前置**：一条命令即可安装 —— `uv sync` 会把 `agent-sec-perf` 装进虚拟环境
+> （`[project.scripts]` 入口，`REQ-UX-03`）。
+
+```bash
+# ① 授予能力：default-deny 的默认授予是**空集**，所以"允许做什么"必须在配置里显式写出。
+#    工作目录下的 .lowspec.toml（项目级；用户级为 ~/.config/lowspec/config.toml）。
+cat > .lowspec.toml <<'EOF'
+[policy]
+granted_capabilities = ["read_file"]
+
+[logging]
+level = "INFO"
+EOF
+
+# ② 跑一次会话（本环境实测跑通的一整套参数，证据见
+#    docs/research/2026-09-20-v0.1.0-e2e-evidence.md：exit 0 / 6 条事件 / 审计可回放 / 197 s）
+uv run agent-sec-perf run \
+  "请读取工作目录下的 hello.txt，把内容原样一字不差地作为最终回答返回；必须先调用 read_file 工具，不能凭猜测编造" \
+  --pack examples/packs/coding-readonly \
+  --model-path /opt/models/Qwen3-4B-Q4_K_M.gguf \
+  --model-request-timeout-s 600 \
+  --max-completion-tokens 1536
+```
+
+**四个参数各自为什么不能省**（省了会以"看起来像模型不行"的方式失败）：
+
+| 参数 | 不省的后果 |
+| --- | --- |
+| `--pack <目录>` | 不配领域包时，**所有**工具取保守默认 `DEFAULT_TOOL_RISK = HIGH` ⇒ 每次调用都需人工确认；非交互模式没有确认通路 ⇒ 一律拒绝（fail-secure）⇒ **一个工具都执行不了** |
+| `[policy] granted_capabilities` | default-deny：默认**什么都不授予**；领域包只能在授予集合上做**收窄**（`∩`），不能替你授予 |
+| `--max-completion-tokens` | **给少了任务直接失败**：`Qwen3-4B` 是思考模型，预算不足时会把 token 全耗在推理上、**一个工具调用都不发** ⇒ `content` 与 `tool_calls` 皆空 ⇒ 客户端按契约抛 `ModelProtocolError` ⇒ 任务 `FAILED`。**实测**：本配方 `384` 失败、`1536` 通过（`docs/research/2026-09-20-v0.1.0-e2e-evidence.md` §1.1）。换模型要**重新实测**这个预算，不要照抄 |
+| `--model-request-timeout-s` | 弱硬件生成速度实测约 **3.4 tok/s**：预算放大后一次补全可达 **450 s 以上**，会超过协议默认的 `60 s` ⇒ 请求超时 ⇒ 重试耗尽 ⇒ 任务 `FAILED` |
+
+其它常用开关：`--interactive`（需要 TTY，启用人工确认通路）、`--output-format json`
+（stdout 只出 JSONL，可脚本化）、`--working-dir` / `--allowed-root`（会话可访问的根，省略即只允许工作目录）。
+
+**运行完看什么**：
+
+- **退出码**：`0` 完成 · `1` 任务失败 · `2` 达到步数上限 · `3` 装配/配置故障 · `4` 审计写入失败 · `5` 其它未预期异常；
+- **审计**：默认落 `[audit] directory`（用户状态目录下的 `audit/`，**唯一允许的根**，常量不接受配置指定），一行一个 JSON 事件、只追加，可回放（`REQ-SEC-06`）。
+
+> ⚠️ **示例领域包不是安全默认的替代品**，它只是"产品正规通路"的一个可读示例；
+> 领域包机制本身见 [`examples/README.md`](examples/README.md) 与
+> [`docs/design/interfaces/harness.md`](docs/design/interfaces/harness.md) §4。
 
 ---
 
