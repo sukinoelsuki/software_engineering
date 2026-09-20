@@ -207,9 +207,27 @@ cd /tmp/tmp.FAjF2cKy4i
    `PolicyEngine.decide` 在未授予所需 `Capability` 时返回 `allow=False`，见
    `policy.py:188,208,226,254,264`）。~~但这并不意味着存在一个 `DENIED` 退出码——
    源码中**没有** `DENIED` 这一状态或退出码（`grep` 零命中，见 A.3 更正）。~~
-   **更正（2026-09-20）**：被拒绝的工具调用落到 `tool_result.ok=false`，**会话继续**，
-   最终按会话状态以 `0/1/2` 之一结束（`EXIT_OK`/`EXIT_TASK_FAILED`/`EXIT_LIMIT_REACHED`，
-   见 A.3 更正后的退出码表）——**拒绝本身不是一个独立的进程退出码**。
+   **更正（2026-09-20）**：~~被拒绝的工具调用落到 `tool_result.ok=false`，**会话继续**~~
+   ——**该表述失实（2026-09-20 再订正）**，据 `harness/loop.py` 源码独立复核：
+   - **拒绝与执行失败刻意做成不同形**（模块 docstring 第 19 行："拒绝路径上**不构造**
+     ``ToolResult``"）。`_deny`（`loop.py:717-750`）产出的 `TOOL_RESULT` 事件**不**构造
+     `ToolResult`，而是 `result=None` 且 `text=` 我方生成的中文说明（如"策略拒绝，本次调用未执行"，
+     `_DENIED_TEXTS` 见 `loop.py:112-117`），回喂给模型的是该 `text` 字符串。只有**真正执行过却失败**
+     的路径（`loop.py:616-633,635-651`）才构造 `ToolResult(ok=False, content="", error="工具内部错误：<类型名>")`
+     并回喂 `result.error`——二者形状不同，正是要区分的（写混正是要防的）。
+   - **审计形态**：`_deny` 记 `kind=TOOL_CALL`、`outcome=AuditOutcome.DENY`、
+     `detail={"denied_reason": "policy_denied"}`（`loop.py:731-736`，`DENY` 枚举见
+     `contracts/audit.py:36`）；与已执行成功的 `OK`（`:38`）、执行失败的 `ERROR`
+     （`detail={"failed_reason":"tool_exception"}`，`loop.py:621-626`，`:39`）**三种 outcome 互异**。
+   - **会话不一定"继续"**：`_deny` 返回 `failed=True`（`loop.py:750`），`run()` 据此累加
+     `consecutive_failures`（`loop.py:398`）；当其 `>= config.max_consecutive_failures`（默认 3，
+     `cli/app.py:150` / `contracts/harness.py:167`）时，会话**终止**——产出 `ERROR(STALLED)` +
+     `TASK_FINISHED(status=FAILED)`（`loop.py:400-412`，文案 `_TEXT_STALLED`："连续失败次数达上限…
+     工具既未执行也未成功，任务终止"，见 `loop.py:132-134`）。故连续被拒到上限时终态是 `FAILED`、
+     退出码 `EXIT_TASK_FAILED=1`，**不是**无限继续。
+   - **但拒绝本身仍不是独立进程退出码**（A.3 更正后的结论不变）：无论最终以
+     `COMPLETED`/`FAILED`/`LIMIT_REACHED` 中哪一种结束，退出码都走 `_EXIT_BY_STATUS`（0/1/2），
+     **没有** `DENIED` 这一项。
    我通过工作目录内的 `.lowspec.toml` 授予 `granted_capabilities=["read_file"]`
    （这正是集成测试用 `PolicyConfig(granted_capabilities=("read_file",))` 注入的机制）。
 3. **示例省略了 token 预算与超时**：产品默认 `model_request_timeout_s=60.0`，
@@ -355,7 +373,7 @@ cd /tmp/tmp.FAjF2cKy4i
 | 原陈述 | 复核结果 | 出处 |
 | --- | --- | --- |
 | 退出码由 `_EXIT_STATUS` 映射 `EXHAUSTED/COMPLETED/MAX_STEPS→0, DENIED→1, MODEL_UNAVAILABLE→2, CONFIG_ERROR/ASSEMBLY_ERROR→3, INTERRUPTED→130` | **失实，已更正（A.3）** | `cli/app.py:100-105,116-120` |
-| 默认拒绝 ⇒ `DENIED` 退出码 1 | **失实，已更正（A.8）**：无 `DENIED` 退出码；拒绝是运行时 `allow=False`，最终按会话状态落 0/1/2 | `security/policy.py:188,208,226,254,264` + A.3 |
+| 默认拒绝 ⇒ 工具调用 `tool_result.ok=false` 且会话"继续" / `DENIED` 退出码 1 | **失实，已更正（A.8，2026-09-20 再订正）**：拒绝路径 `_deny` **不构造** `ToolResult`（`result=None` + `text=` 我方中文说明，`loop.py:717-750`、docstring 第 19 行）；审计 `outcome=DENY`（`loop.py:731-736`、`audit.py:36`）；`_deny` 返回 `failed=True`，连续达 `max_consecutive_failures`（默认 3，`app.py:150`）触发 `STALLED`→`FAILED` 终止（`loop.py:398,400-412`）；无 `DENIED` 退出码，终态经 `_EXIT_BY_STATUS` 落 0/1/2 | `harness/loop.py:19,112-117,398,400-412,717-750` + `contracts/audit.py:36` + `security/policy.py:188,208,226,254,264` + A.3 |
 | 漏写超时参数 ⇒ 超时退出码 2 | **失实，已更正（D.2）**：请求超时 → `ModelUnavailableError` → `FAILED` → `EXIT_TASK_FAILED=1`；`2` 仅对应 `LIMIT_REACHED` | `model/client.py:335-340`、`harness/loop.py:447-463`、`cli/app.py:101,118,300` |
 | `read_file`/`list_dir` 要求 `Capability.READ_FILE` | 成立 | `tools/files.py`（`requires_capability`） |
 | 审计落盘于 `/root/.local/state/lowspec/audit/audit.jsonl` | 成立 | `foundation/config.py` + platformdirs 默认 |
