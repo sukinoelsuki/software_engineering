@@ -267,6 +267,11 @@ Refs: #<issue>
    [`docs/engineering/agent-teams.md`](docs/engineering/agent-teams.md) §6）。
    ⚠️ **`.git/COMMIT_EDITMSG` 同样全局共享**（它是**单例**，`-o/--only` 管不到）⇒
    **领导不与成员并发提交**（等成员落完再提交；2026-09-20 实测，见 §6 第 7 条）。
+   ⚠️ **门禁的红可能来自共享工作树**：`make security-secrets` 报 `files were modified by this hook` 时，
+   **行内无** `- exit code:` ⇒ 判**假红**（钩子自身通过，红来自他人在改工作树）；
+   **有** `- exit code: 1` ⇒ 判**真红**，按安全事件处置、**不得放过**；**禁止** `--no-verify` /
+   `SKIP=` / 删改钩子绕过（机制、实测与处置见
+   [`docs/engineering/agent-teams.md`](docs/engineering/agent-teams.md) §6；2026-09-20 实测，所有者批准登记）。
 9. **完成判定只认仓库**：成员在**最后一笔提交的正文**末尾附固定块 `回报：`
    （状态 / 改动 / 验证 / 遗留 / 需领导裁决）——这是"已完成"的**唯一判据**；
    **终止声明必须与内容在同一笔提交内**（**禁止空提交**承载它）；对账时须确认该提交含本域改动。
