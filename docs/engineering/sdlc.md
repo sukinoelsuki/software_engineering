@@ -187,15 +187,21 @@ Phase 4  验证与交付
 > 本节自批准之日起作为 `M2` 的判定依据（与 §3.1/§3.2 的先例一致：先写可判定判据，经所有者批准后生效）。
 > ⚠️ **"端到端可跑" ≠ "安全已到位"**：`M2` 判据只回答"主流程能不能在非交互形态下跑通并留痕"，
 > 与威胁模型的状态分布**无关**（后者见 `docs/design/threat-model/README.md` §4.1）。
+>
+> **状态（2026-09-20 晚）**：四项判据 **`M2-1`~`M2-4` 全部满足** ⇒ **`M2` 出口已达成**
+> （判定结论与三条限定见本节末）。证据 = **验证角色**的独立实跑与复跑
+> （`docs/research/2026-09-20-m2-exit-criteria-evidence.md`）+ 机器检查载体
+> （`tests/integration/test_end_to_end.py` 的 `multi_step_session`，`df8d245`）；
+> 记录见 `docs/devlog/0019` §3.22。⚠️ 本节第 188 行那句限定**不因本次达成而解除**。
 
 **判据（下列四项全满足才算 `M2` 完成）：**
 
 | # | 判据 | 核对方式 | 现状（2026-09-20） |
 | --- | --- | --- | --- |
-| `M2-1` | **非交互 CLI 能完成一次「多步」工具调用会话**（同一会话内 `≥ 2` 次工具调用，且其中 `≥ 1` 次为读取类工具，如 `read_file` / `list_dir`） | 可复跑命令（示例）：`agent-sec-perf run "<task>" --pack examples/packs/coding-readonly --model-path <gguf> --output-format json`（省略 `--interactive` 即非交互；`--model-path` 必填）。判据：该会话的审计文件（`audit.jsonl`）中 `kind=TOOL_CALL` 且 `outcome=OK` 的事件 **≥ 2 条**，且覆盖 **> 1** 个不同工具或不同参数 | ❌ **未满足**：单步（一次工具调用）路径**已有可跑配方**（`ADR-0021` §7 第 2 条；载体 `tests/integration/test_end_to_end.py`，`fba8c4c`），但"**多步**（≥2 次工具调用）"的实跑证据**尚缺**（实跑证据归**验证角色**，落 `docs/research/`） |
-| `M2-2` | **真模型端到端用例可复跑**：`tests/integration/` 的真模型用例在**声明的环境**下通过，且口径与 [`testing-strategy.md`](testing-strategy.md) §8 一致 | 命令：`AGENT_SEC_PERF_E2E=1 uv run pytest -m integration` ⇒ 退出码 `0`；默认（不设该环境变量）**不跑**，且 `make check` 不受其拖慢（§8 的"两道锁"） | ⚠️ **部分满足**：用例已存在（`tests/integration/test_end_to_end.py`，`fba8c4c`，标 `slow`、默认不跑）；**在声明环境下的复跑输出**（passed 数 + 环境）尚缺，归验证角色 |
-| `M2-3` | **`make check` 全绿**（`hooks-check` / `format-check` / `lint` / `typecheck` / `test` / `security` 全过） | `make check` ⇒ 退出码 `0` 且末行 passed 数与实测一致（**禁止** `--no-verify` / 静默豁免） | ✅ **已满足**（2026-09-20 实测：`make check` 全绿，`954 passed / 1 skipped`；该 skip 随本次台账补 `0.2.0` 恢复执行为 `955 passed`） |
-| `M2-4` | **多步会话审计可回放**（`REQ-SEC-06`）：上述 `M2-1` 会话的**每一步** `TOOL_CALL` 均能由 `AuditSink.query_by_id` 从落盘文件还原 | 对 `M2-1` 的 `audit.jsonl` 逐个 `audit_id` 调 `query_by_id`，断言 `kind` / `call_id` / `outcome` 与事件流一致（不得只验单步） | ⚠️ **部分满足**：载体已实现（`src/agent_sec_perf/observability/audit.py` 的 `JsonlAuditSink.query_by_id`），**单步**端到端断言已落地（`tests/security/test_s1_replayable_audit_link.py`，`05cb0af`）；**多步**（≥2 次工具调用）链路的端到端断言**待落地** |
+| `M2-1` | **非交互 CLI 能完成一次「多步」工具调用会话**（同一会话内 `≥ 2` 次工具调用，且其中 `≥ 1` 次为读取类工具，如 `read_file` / `list_dir`） | 可复跑命令（示例）：`agent-sec-perf run "<task>" --pack examples/packs/coding-readonly --model-path <gguf> --output-format json`（省略 `--interactive` 即非交互；`--model-path` 必填）。判据：该会话的审计文件（`audit.jsonl`）中 `kind=TOOL_CALL` 且 `outcome=OK` 的事件 **≥ 2 条**，且覆盖 **> 1** 个不同工具或不同参数 | ✅ **已满足**（2026-09-20）：**独立实跑**（产品 CLI、非交互、`--output-format json`）退出码 `0`、墙钟 `184 s`；事件流 `seq` `0..9` 连续、恰一条 `TASK_FINISHED(completed)` 在末尾；**同一会话真实执行 2 次工具调用**（`list_dir` + `read_file`，均成功、均读取类），审计含 **2 条 `TOOL_CALL` 且 `outcome=OK`**、`tool_name` 互异 ⇒ 判据达标（证据：`docs/research/2026-09-20-m2-exit-criteria-evidence.md` §A）；机器检查载体 = `tests/integration/test_end_to_end.py` 的 `multi_step_session`（`df8d245`）。⚠️ **单次采样**且取值**属模型相关**（前提见本节末补注） |
+| `M2-2` | **真模型端到端用例可复跑**：`tests/integration/` 的真模型用例在**声明的环境**下通过，且口径与 [`testing-strategy.md`](testing-strategy.md) §8 一致 | 命令：`AGENT_SEC_PERF_E2E=1 uv run pytest -m integration` ⇒ 退出码 `0`；默认（不设该环境变量）**不跑**，且 `make check` 不受其拖慢（§8 的"两道锁"） | ✅ **已满足**（2026-09-20）：声明环境下复跑 ⇒ 退出码 `0`、**`10 passed` / `0 skipped`**、`466.55 s`（报告 §B；实现侧自报 `472.06 s`，属单次采样方差内）；默认（不设 `AGENT_SEC_PERF_E2E`）**不跑**、`make check` 不受其拖慢（§8 的两道锁）。⚠️ **一处口径偏差点如实登记**：复跑用 `.venv/bin/python -m pytest` 直调（报告 §B 声明理由是规避 `uv run` 的联网授权提示），与判据写的 `uv run pytest` 属**同一锁定环境、同一用例集**，**不是**放宽判据；⚠️ **单次采样不作性能判据**（报告 §D.2） |
+| `M2-3` | **`make check` 全绿**（`hooks-check` / `format-check` / `lint` / `typecheck` / `test` / `security` 全过） | `make check` ⇒ 退出码 `0` 且末行 passed 数与实测一致（**禁止** `--no-verify` / 静默豁免） | ✅ **已满足**（2026-09-20 晚实测：`make check` 全绿、**`955 passed`、skip 归零** —— 台账补 `0.2.0` 后那个 skip 按预期自愈，见 `docs/devlog/0019` §3.16 与本篇 §3.22） |
+| `M2-4` | **多步会话审计可回放**（`REQ-SEC-06`）：上述 `M2-1` 会话的**每一步** `TOOL_CALL` 均能由 `AuditSink.query_by_id` 从落盘文件还原 | 对 `M2-1` 的 `audit.jsonl` 逐个 `audit_id` 调 `query_by_id`，断言 `kind` / `call_id` / `outcome` 与事件流一致（不得只验单步） | ✅ **已满足**（2026-09-20）：两条互不替代的载体 —— ① **独立实跑**：对 `M2-1` 会话审计的**每一条** `TOOL_CALL` 用 `query_by_id` 从**落盘文件**还原，并与事件流按 `call_id` / `audit_id` **逐条**对齐（报告 §A.7）；② **机器检查**：`tests/integration/test_end_to_end.py::test_multi_step_session_every_tool_call_is_replayable_by_query_by_id`（`df8d245`，回放读侧**另起** `JsonlAuditSink` 从落盘文件读，不复用会话期写侧对象）。⚠️ 该用例中"`event_id` 唯一 ⇒ 事件流恰好一条对应"这类**结构性子断言接近恒过**，边界如实见报告 §C.3 |
 
 **明确「不属于」`M2` 出口（随主线迭代，不得用来阻塞 `M2`）：**
 
@@ -213,6 +219,26 @@ Phase 4  验证与交付
 > **`M2` 完成时须回填**：本节"现状"列改为完成态，并在 `docs/devlog/` 当前篇记录判定结论与证据；
 > `M2-1`/`M2-2`/`M2-4` 的**实跑证据归验证角色**（`docs/research/` / `docs/devlog/`），
 > **不得**由实现者自证（`SECURITY.md` §4 同源口径）；`M2-3` 的 passed/skipped 数须按当次实测填写。
+>
+> **`M2-1` 示例命令的「前提」补注（2026-09-20；判据文字一字未改）**：上表 `M2-1` 的示例命令
+> **按字面不足以直接复跑**，独立实跑（报告 §A.8）确认还差三项前提：
+> ① **领域包必须落在受信根内**（`load_pack` 经 `resolve_within(pack_directory, roots)` 校验，
+> `roots` 省略时取工作目录）⇒ 指向仓库内 `examples/packs/...` 须显式给
+> `--allowed-root <仓库>/examples`，否则 `PathNotAllowedError` ⇒ 退出码 `3`；
+> ② **能力必须显式授予**（产品默认 `granted_capabilities=()` = 默认拒绝）⇒ 工作目录内放
+> `.lowspec.toml` 的 `[policy] granted_capabilities = ["read_file"]`（或等价注入）；
+> ③ **`--max-completion-tokens` / `--model-request-timeout-s` 属模型相关**：本环境
+> （Qwen3-4B @ 8 核 / 16GiB）实测须显式给定才跑得通；**换模型 / 换硬件必须重测**，不得沿用。
+> ⚠️ **退出码语义以 `cli/app.py` 与契约（`interfaces/harness.md` §5.2）为准**：**`2` 只对应步数用尽**
+> （`LIMIT_REACHED`）；**请求超时 / 模型失败是 `1`**、装配期失败是 `3`。报告 §A.3 / §A.8 / §D.2
+> 起初把这三者写错（写成源码里**不存在**的常量与状态），已按"更正而非抹掉"订正并保留痕迹。
+>
+> **当前判定（2026-09-20）**：`M2-1`~`M2-4` **全部满足** ⇒ **`M2` 出口已达成**。
+> ⚠️ **三点不得放大（必须连读）**：① `M2` 是**功能性 / 可观测性**判据，**不构成**"安全已到位"
+> （威胁分布与 §5 / §6 计数**一个都没动**）；② **未测性能**——`M2-2` 是**单次采样**，不得当阈值判据；
+> ③ **版本落定（`0.2.0`）是另一件事**：其台账判据虽已指向本节，但落定须按 `ADR-0019` 的流程
+> **由所有者决定**，**不因本节达成而自动发生**。另：`M1-1`（SRS 成稿）仍未满足，
+> **不因 `M2` 通过而自动满足**。
 
 ---
 
