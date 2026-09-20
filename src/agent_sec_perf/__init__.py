@@ -11,4 +11,4 @@ __all__ = ["__version__"]
 #: 版本号**不由提交历史推导**，只能取 pyproject.toml 的 ``[tool.lowspec.releases]``
 #: 台账里列出的里程碑值；本值是该台账的 4 处副本之一，一致性由
 #: ``tests/unit/test_release_policy.py`` 机器检查。当前 ``0.0.0`` = 尚未到达第一个里程碑。
-__version__ = "0.0.1"
+__version__ = "0.1.0"
