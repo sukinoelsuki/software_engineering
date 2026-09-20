@@ -69,9 +69,14 @@ if ! git commit -o -m "chore(release): ${VERSION}" -- "${TRACKED_PATHS[@]}"; the
 fi
 
 cat <<EOF
->> 本地发布提交已完成。**后续均为所有者动作**（远端授权 B 类，代理不得代办）：
+>> 本地发布提交已完成。**后续动作的授权边界（现行口径：docs/engineering/git-workflow.md §5.3）**：
+>>   · **合并到 main 恒为所有者动作**（main 写入属 §4 的 B 类）——代理不得代办；
+>>   · **开 PR、打标签、把 main 回合 develop 可由代理代执行**（ADR-0019 §5.7）；
+>>     放开的只是"谁执行已获准的发布动作"，**不是**"代理可自行决定发布"。
+>> 建议顺序：
      1) 开 PR：develop → main（Merge commit，保留发布节点）
-     2) CI 全绿后合并到 main
+     2) CI 全绿后由所有者合并到 main
      3) 在 main 上打带注释标签：git tag -a v${VERSION} -m "Release v${VERSION}"
      4) 将 main 回合 develop：git switch develop && git merge --ff-only origin/main
+>> ⚠️ 本脚本只做本地提交：**不推送、不打标签**。
 EOF

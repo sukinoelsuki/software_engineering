@@ -59,12 +59,61 @@ class AuditOutcome(StrEnum):
 | --- | --- |
 | `POLICY_DECISION` | `ALLOW` / `DENY` / `CONFIRM` |
 | `APPROVAL` | `ALLOW` / `DENY` |
-| `TOOL_CALL` | `OK` / `ERROR` |
+| `TOOL_CALL` | `OK` / `ERROR` / **`DENY`**（2026-09-19 放宽，见下） |
 | `EXECUTION_DEGRADATION` | `DEGRADED` |
 | `REFUSAL` | `DENY` |
 
 > 用枚举报 `outcome` 而不是裸 `str`：`REQ-OBS-01` 要"按结果检索"，裸字符串会因拼写差异
 > （`"deny"` / `"denied"` / `"rejected"`）让查询静默漏项。
+
+**`TOOL_CALL` 放宽为允许 `DENY`（2026-09-19；**放宽的是本表的允许集**，不是 `AuditOutcome` 的成员）**：
+
+`AuditOutcome` 的 **6 个成员**（`ALLOW` / `DENY` / `CONFIRM` / `OK` / `ERROR` / `DEGRADED`，见 §2.2 上文）
+**本来就已存在**，本次**不新增任何成员**；被改的只是**上表 `TOOL_CALL` 这一格的允许集**
+（`{OK, ERROR}` → `{OK, ERROR, DENY}`）。
+
+理由（两处契约合起来曾不可满足）：
+
+- [`tools.md`](tools.md) §2.6 规定：工具未在注册表中 ⇒ 调用方**默认拒绝 + 审计**；
+- 而本表原只允许 `TOOL_CALL` 取 `{OK, ERROR}` ⇒ "**被拒绝、根本没有执行**"**无法被忠实表达**。
+  若改用 `ERROR`，则"**执行失败**"与"**从未执行**"在 `REQ-OBS-01` 的"按结果检索"下**同形**，
+  直接破坏 `REQ-SEC-06` 的可回放性——而 `architecture.md` §5.3 的硬规定 2 正是"**拒绝不等于失败**"。
+
+规定（与 [`harness.md`](harness.md) §2.7 一致）：
+
+| # | 规定 |
+| --- | --- |
+| D1 | `DENY` 专指"**未执行**"；**不得**用 `ERROR` 代替它 |
+| D2 | `DENY` 时 `detail["denied_reason"]` **必填**，取值限于 `{"unknown_tool", "not_exposed", "invalid_arguments", "policy_denied", "approval_denied"}`（均为**我方生成的定长短码**，不含不可信内容） |
+| D3 | 已执行路径的 `TOOL_CALL` 事件仍由工具层发出（`tools/registry.py::audit_tool_call`，只产出 `OK` / `ERROR`，**行为不变**）；"未执行"路径由 `harness/loop.py` 发一条 |
+| D4 | 同一 `call_id` 可能出现**多条** `TOOL_CALL` 事件（§2.3 已允许"调用前后各一条"）⇒ 判据是"**存在且可回放**"，**不是**"恰好一条" |
+
+⚠️ **边界（不得外推）**：本次**只放宽这一格**。`ALLOW` / `DENY` / `ERROR` / `OK` / `CONFIRM` /
+`DEGRADED` 的**既有语义不变**，其余 4 个 `kind` 行的约束**不动**；`AuditEventKind` 的成员集合
+**不变**（新增 kind 需 ADR）。
+
+**§2.2 约束表的覆盖边界（2026-09-20 登记）**：本节表格的 **5 行并不都有实现侧证据**——
+`EXECUTION_DEGRADATION` 与 `REFUSAL` 两行**当前没有任何 `emit` 调用点**：其生产者
+（`security/sandbox/`、`model/router.py`、`security/refusal.py`，见 §2.3 的生产者归属表）**均未实现**；
+`src/` 下实际存在的 `.emit(...)` 调用点只有 `tools/registry.py`、`harness/loop.py`、
+`security/policy.py`、`cli/approval.py` **四处**（＋ `cli/app.py` 一处**透传**）。
+现有机器检查 `tests/unit/test_audit_kind_outcome_contract.py` 覆盖四层：
+(a) **表 ↔ 声明**双向比对；(b) **四个已实现 producer** 的具名触发用例；
+(c) 变异探针；(d) `src/` **全部** `.emit(...)` 调用点的登记比对（未登记即翻红）。
+⇒ 这两行**只有 (a) 一层证据**（表里写了、声明里也写了、二者一致），
+**没有"实现真的照着做"的证据**（无 producer、无触发用例）。
+
+⇒ **覆盖边界（不得读成"这两行已验证"）**：**producer 落地时必须补触发用例**——
+按 §2.3 的生产者归属表：`EXECUTION_DEGRADATION` → `security/sandbox/` 或 `model/router.py`；
+`REFUSAL` → `security/refusal.py`。在此之前，§2.2 的该**两行仍无可执行证据**。
+⚠️ 这一边界**有机器兜底**：一旦新增 producer，(d) 层的"调用点必须已登记"会**翻红**
+（`test_every_emit_call_site_in_src_is_registered`），而登记为 producer 又**必须**配具名触发用例
+（`test_each_registered_producer_has_a_named_triggering_test`）⇒ **迫使补用例**，而非"静默通过"；
+但该兜底**只保证"将来有了会被要求补"**，**不补现在的两行证据**。
+
+> **与 §2.6 的分工（勿混）**：§2.6 规定的是**审计覆盖范围**（哪些拒绝**必须**留痕：会话内 vs
+> 配置期 / 装配期）；本注规定的是 **§2.2 两行的证据状态**（哪几行**已有实现侧证据**）。
+> 两者都涉及 `EXECUTION_DEGRADATION` / `REFUSAL` 的"尚未落地"，但**问的是两件事**。
 
 ### 2.3 `AuditEvent`（Q1）
 
@@ -245,6 +294,37 @@ class AuditSink(Protocol):
 
 ---
 
+### 2.6 审计覆盖范围（**新增**，2026-09-20）
+
+**本节回答什么**：审计**覆盖到哪一层**。具体地——`resolve_within` 的**非工具层**调用点
+（配置期 `foundation/config.py`、装配期 `observability/audit.py`）在拒绝时**由谁 `emit`**
+（原问题 `Q-1`，框定与代价见 [`../threat-model/README.md`](../threat-model/README.md) §8.2）。
+此前**没有**任何契约规定"哪些拒绝必须留痕"，属**契约缺口**（口径只存在于讨论中 ⇒ 实现者无从据以写代码）。
+
+**裁决（所有者，2026-09-20）：不纳入。** 规范原文（本节代号 **`COV1`~`COV5`**——
+与 §2.5 的 `P1`~`P7` / `W1`~`W8`、`ADR-0015 §7.2` 的 `S1`~`S3` **均不同名**，避免与既有代号混淆）：
+
+| # | 规定 |
+| --- | --- |
+| **`COV1`** | **审计覆盖范围 = 会话内**：以"存在 `session_id` 且已装配出 `AuditSink` 实例"为界。落在此界的**必须**留痕的事件至少包括：**工具层**的 `TOOL_CALL`（`tools/registry.py::audit_tool_call`；含"已进入 `invoke()` 之后因路径校验失败而返回"的情形，见 §2.2 `D1`/`D3`）与**能力层**的 `POLICY_DECISION`（`security/policy.py`）及"未执行"路径的 `DENY`（`harness/loop.py`）。 |
+| **`COV2`** | **配置期 / 装配期的路径拒绝：不进审计。** 涉 `foundation/config.py`（`audit.directory` 越界 ⇒ `ConfigError`）与 `observability/audit.py`（`JsonlAuditSink.__init__` 越界 ⇒ `PathNotAllowedError`）。处置恒为 **fail-closed**：异常**冒泡**、**拒绝启动**，**不得**回退默认落点、**不得**静默关闭审计（§2.5 的 `P5`）。 |
+| **`COV3`** | **理由必须随口径写明**（只写"范围外"不写理由 ⇒ 该口径会被后人当成遗漏而"顺手补上"）：① 该阶段**会话与 sink 都不存在**——`session_id` 与 sink 实例都在**装配期之后**才建立，"往哪写审计"此刻**没有承载物**；② 该阶段**审计落点白名单尚未校验**（§2.5 的校验**正是**这一阶段在做的事）⇒ 若在此刻决定"往哪写审计"，等于**用不可信配置决定审计写到哪**，与 §2.5 要堵的**攻击面（配置面落点白名单）形成循环**。 |
+| **`COV4`** | **不得据此新增架构面**：`foundation/ → observability/` 仍然**非法**（`ADR-0015 §5.1.1` 的 `R1`，机器检查在 `tests/unit/test_architecture_layers.py`）；**不新增** `security/path_guard.py` 一类"路径守卫 + 审计"层；**不改** `R1`。理由：本裁决把"由谁 emit"变成"**不需要 emit**"，故原候选 `(i)`/`(ii)`/`(iii)`（见威胁模型 §8.2 的 `Q-1`）**均无需落地**。 |
+| **`COV5`** | **不得外推**：被排除的**只有** `COV2` 所列的两个调用点；**会话内工具层 / 能力层**的拒绝**必须**留痕——那是 `T-02`"且留审计"半与 `T-11` 的验收对象（证据见各自的威胁模型条目）。反向也**不得**外推：本节的"范围外"**不是**"路径校验可以不审计"的通用许可。 |
+
+> **它改了什么 / 没改什么**：**没改** §2.4 的 `emit` / `flush` 冒泡规则、§2.5 的 `P1`~`P7` 与
+> `W1`~`W8` 判据、§2.2 的 kind→outcome 约束、`contracts/audit.py` 的**任何**字段与类型
+> （`AuditSink` 的构造签名不属契约形状，见 §2.5 的"落地动作"表）；
+> **唯一的改动**是把"哪些拒绝必须留痕"这一**此前无落点**的口径**写死在本契约里**，
+> 使实现者与验证者不必再去讨论里推断（`COV1` 的"必须留痕"面 ↔ `COV2` 的"范围外"面，
+> 两侧都可据本节判定）。
+>
+> **不新增判据编号（为什么）**：本节是**范围声明**而非新的校验点——它不引入任何新的运行时检查，
+> 故**不产生** `W9` 之类的用例要求；`COV2` 的行为**已被** §2.5 的 `W1`~`W8` 覆盖
+> （越界 ⇒ `ConfigError` / `PathNotAllowedError`，且**不创建目录**、**不回退默认**）。
+
+---
+
 ## 3. 对 `contracts/audit.py` 的改动清单
 
 1. 新增 `AuditEventKind` / `AuditOutcome` 两个 `(StrEnum)`；
@@ -265,6 +345,9 @@ class AuditSink(Protocol):
 | 2026-09-19 | §2.3 的不变式第 1 条改写为 I1~I3：`capability` 的"非 `None`"改为**以 `requested` 非空为前置**，并把**完整能力集合**规定为 `detail["requested"]`；同步 §2.3 字段表、生产者表与 §3 清单 | 实现侧报出的契约缺口（空集下"必须 `emit`"与"`capability` 非 `None`"互斥）；裁决、规则与验证判据见 [`policy.md`](policy.md) §2.5「补充规定」 |
 | 2026-09-19 | **新增 §2.5「落点来源与路径白名单」**：`audit.directory` 来自项目级 `.lowspec.toml`（不可信输入）⇒ 现只校验"绝对路径 + 无 NUL"**不满足** `SECURITY.md` 的路径白名单硬性要求。规定 P1~P7（根集合为常量 `ALLOWED_AUDIT_ROOTS`、配置期 `ConfigError` / 装配期 `PathNotAllowedError` 两层校验、先校验后 `mkdir`、禁止静默降级回退、校验时点在构造期、冒泡规则不变），并给出 W1~W8 判据 | 实现侧报出的接口决策缺口（`resolve_within` 的 `roots` 需调用方提供，"允许哪些根"属接口决策）；复核成立：不加约束时构成**任意路径追加写**原语；威胁模型侧同步见 `T-02`（**不升降状态、不改计数**） |
 | 2026-09-19 | I2 的 `[]` 来源由两种更正为**三种**（新增"含非 `Capability` 成员"，判别键 `invalid`）；**新增 I4**——`capability` 必须是 `Capability` 实例或 `None`（裸 `str` 即使取值合法也拒绝）；`capability` 字段表同步 | 同族缺口的第三轮报出（类型违规输入）与架构侧独立复现：裸 `str` 取值合法时会被**放行**，审计的 `capability` 类型与 I2/I3 同时被破；规定与规范见 [`policy.md`](policy.md) §2.5「非法成员的规定行为」 |
+| 2026-09-19 | **§2.2 的 kind→outcome 约束表：`TOOL_CALL` 的允许集由 `{OK, ERROR}` 放宽为 `{OK, ERROR, DENY}`**（**放宽允许集，不新增 `AuditOutcome` 成员**——`DENY` 成员本就存在）；表下补 D1~D4 与"不得外推"边界 | [`tools.md`](tools.md) §2.6 要求"未知工具 ⇒ 拒绝 **+ 审计**"，而原约束**无法表达"被拒绝、未执行"**；改用 `ERROR` 会让"执行失败"与"从未执行"同形，破坏 `REQ-SEC-06` 可回放性（`architecture.md` §5.3 硬规定 2"拒绝不等于失败"）。规范同 [`harness.md`](harness.md) §2.7。**其它 `kind` 行与既有成员语义不变**；`contracts/audit.py` 与 `observability/audit.py` **均无需改动**（成员已存在；读取侧只校验枚举取值，不校验 kind×outcome 组合） |
+| 2026-09-20 | **新增 §2.6「审计覆盖范围」**（代号 `COV1`~`COV5`）：审计覆盖 = **会话内**（工具层 `TOOL_CALL` + 能力层 `POLICY_DECISION` / 未执行路径的 `DENY`）；**配置期 / 装配期**（`foundation/config.py`、`observability/audit.py`）的路径拒绝**不进审计**——处置为 **fail-closed**（`ConfigError` / `PathNotAllowedError` 冒泡、拒绝启动），理由两条（该阶段**会话与 sink 都不存在**；**落点白名单尚未校验** ⇒ 让不可信配置决定审计写到哪会与 §2.5 的**攻击面形成循环**）；并规定**不新增模块 / 不改 `R1` / 不得不外推**。**不改** §2.2、§2.4、§2.5 与 `contracts/audit.py` 的任何字段与类型 | 所有者裁决（2026-09-20）关闭 `Q-1`（**不纳入**）：见 [`../threat-model/README.md`](../threat-model/README.md) §8.2 的 `Q-1`【裁决后状态】；该裁决使 `P-2` 的缺口 (b) 不阻塞 ⇒ `T-02` 升「已缓解并验证」（同处 `P-2`）。裁决背景与后果表见 `docs/devlog/0019-2026-09-19-M1交付物与安全断言推进.md` §7 |
+| 2026-09-20 | **§2.2 补「覆盖边界」注**：`EXECUTION_DEGRADATION` / `REFUSAL` 两行**当前无任何 `emit` 调用点**（其生产者 `security/sandbox/`、`model/router.py`、`security/refusal.py` 均未实现）⇒ 只有 (a) 层（表 ↔ 声明）证据，**无实现侧证据**；**producer 落地时必须补触发用例**（否则该两行仍无可执行证据），并说明 (d) 层机器检查在新增调用点时会**翻红**、迫使补用例。**不改** §2.2 的表与 `D1`~`D4`、**不改** §2.3/§2.4/§2.5/§2.6、**不改** `contracts/audit.py` 的任何字段与类型 | 实现工程师遗留（`EXECUTION_DEGRADATION` / `REFUSAL` 两类事件当前无 `emit` 调用点）+ 架构侧复核：`tests/unit/test_audit_kind_outcome_contract.py` 的 (d) 层（`src/` 实际 `.emit(...)` 调用点 5 处，另 4 个 producer 各有具名触发用例）；与 §2.6 的分工见本注末 |
 
 ---
 
@@ -272,6 +355,11 @@ class AuditSink(Protocol):
 
 > 这两项都属**策略**而非**机制**：机制（P1~P7）已定死，下面两项只影响"允许的根集合有多宽"与
 > "配置面有多大"。在拍板之前，实现按**当前最保守的取值**进行（单一根 + 保留 `directory` 键）。
+
+> **裁决（2026-09-20，所有者）**：`A1` 与 `A2` 均**维持下表 ① 号最保守取值** —— `A1` = 单一根
+> （`ALLOWED_AUDIT_ROOTS` **不含**额外根，也不新增"编译期固定第二根"）；`A2` = **保留** `audit.directory` 键
+> （校验已收窄为"根内路径"）。⇒ 两项**自此不再是"待确认项"**；`P1`~`P7` 与 `W1`~`W8` **不随之变化**，
+> `foundation/config.py` 的实现与单测**零改动**。登记处：`architecture.md` §11 的 `G-5`。
 
 | # | 待确认项 | 候选 | 架构侧倾向与理由 | 不拍板的后果 |
 | --- | --- | --- | --- | --- |

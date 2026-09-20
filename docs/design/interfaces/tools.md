@@ -159,7 +159,7 @@ class ToolRegistry(Protocol):
 
 | 项 | 规定 |
 | --- | --- |
-| `specs()` | 返回当前**裁剪后**、可暴露给模型的工具描述（`REQ-HARNESS-03`）。返回值是 `ToolSpec` 而不是 `Tool`，因为上层只应看到"描述"，不应拿到可执行的句柄 |
+| `specs()` | 返回**全部已注册**的工具描述（**未裁剪**；`REQ-HARNESS-03` 的裁剪不在这里）。返回值是 `ToolSpec` 而不是 `Tool`，因为上层只应看到"描述"，不应拿到可执行的句柄 |
 | `resolve(name)` | ADR 原文写作 `-> Tool`；本契约细化为 **`-> Tool \| None`**：**未知工具返回 `None`**，由调用方**默认拒绝 + 审计**，**不抛异常** |
 | 并发 | 只读视图；注册发生在启动阶段，会话期间不变（无锁假设） |
 | 资源 | 无生命周期（无 `close`） |
@@ -168,6 +168,24 @@ class ToolRegistry(Protocol):
 > 拦截率 100%"。模型**幻觉出一个不存在的工具**是常态（弱模型尤甚），这属于**预期的不可信输入**，
 > 用返回值表达可让"未知工具 ⇒ 拒绝 + 审计"成为一条**显式、可测试**的路径；
 > 用异常表达则会被 `except` 笼统吞掉，且与"工具级失败用返回值"（`ToolResult.ok`）不一致。
+
+#### `specs()` 为什么是"全量、未裁剪"（`T6` 裁决，2026-09-19）
+
+| 依据 | 内容 |
+| --- | --- |
+| **裁剪的判据不在 L2** | `ToolRegistry` 的构造签名只有 `tools`（`cli/` 装配时传入），它**不知道** `capability_tier`、也**不知道**领域包白名单。要让 `specs()` 返回裁剪集，就得把这两个判据**搬进 L2**；而 `harness.md` §3.1 已把"档位预算 + `allowlist`"定在 `harness/trimming.py::select_tools`，并要求 `exposed_tool_names` **派生自**它（不得另写一份判定）⇒ 两份判定必然漂移，而漂移的后果正是"暴露面"与"解析域"不一致 |
+| **裁剪的归属已定** | 裁剪 = `trimming.select_tools(specs, *, tier, allowlist)`；`session` 在构造期调用**一次**，把结果作为 `exposed` 传给 `loop`（会话内固定，`REQ-PERF-06`） |
+| **可分辨性直接依赖它** | `harness.md` §3.3 步 1 的两个短码就是"名字是否在 `specs()` 里"的两个方向：在 `specs()` 里但不在 `exposed` 里 ⇒ `not_exposed`（**我们把它裁掉了**）；两边都没有 ⇒ `unknown_tool`（**模型幻觉**）。若 `specs()` 已裁剪，则 `not_exposed` **永远不可达**，`S1-b` 第②问会退化成**空断言**——这与 `R-4` 的已裁决要求（两者必须可分）直接冲突 |
+
+**被否决的替代（记录理由，防止重复讨论）**：`specs()` 返回裁剪集，另加
+`all_names()` 一类方法给出全名集。否决理由：① "注册表里有什么"由此有**两处表示**，
+而两处必然漂移（`README.md` 的 `C10` 教训）；② 裁剪所需的输入仍在 L2 之外，
+`specs()` 依然**无法**完成裁剪。
+
+**联动（实现侧动作）**：`contracts/tools.py` 的 `ToolRegistry` docstring 与
+`tools/registry.py::ToolRegistry.specs` 的 docstring 原写"返回**裁剪后**、
+可暴露给模型的工具描述"，**需改为"全量注册集"**以与本节一致。两者都在 `src/`（不是架构师
+的文件域）⇒ 由实现者在下一笔同步；登记处见 [`harness.md`](harness.md) §7 与 §8 的 `T6`。
 
 ---
 
@@ -179,3 +197,14 @@ class ToolRegistry(Protocol):
 4. import 补 `Path`（`pathlib`，标准库）、`Capability`（`contracts/policy.py`）；**不得** import `AuditSink`（未使用 ⇒ `ruff F401`）；
 5. `ToolCallRequest` / `ToolResult` / `Tool` **保持不变**；
 6. 模块 docstring 删除"形状待澄清"表述，改为指向本文件。
+7. `ToolRegistry` 的 docstring：`specs()` 的口径由"裁剪后"更正为"**全量注册集**"
+   （`T6` 裁决，2026-09-19；见 §2.6 与 §4）。`tools/registry.py::ToolRegistry.specs`
+   的 docstring 同步（属 `src/` 的实现侧动作）。
+
+---
+
+## 4. 修订记录
+
+| 日期 | 修订 | 依据 |
+| --- | --- | --- |
+| 2026-09-19 | **`specs()` 的口径更正（`T6` 裁决）**：§2.6 的 `specs()` 行由"返回当前**裁剪后**、可暴露给模型的工具描述"改为 **"返回全部已注册的工具描述（未裁剪）"**，并补 §2.6 的裁决依据（三条）与被否决的替代；§3 补第 7 条改动项。**其余字段 / 成员 / 语义一律不变**（`ToolRegistry` 的成员集合、`resolve` 的 `Optional` 语义、并发与资源假设均不动）。**不涉及决策**（分层、依赖方向、选型均不变）⇒ 不另开 ADR | `harness.md` §3.3 步 1 与 §3.1 第 2 条**把 `specs()` 当全量注册集用**、`R-4` 的已裁决要求（`not_exposed` 与 `unknown_tool` 必须可分）、`tools/registry.py::specs` 的实现（`return self._specs`，即全部已注册描述）——裁决前三处互相矛盾，登记见 `harness.md` §8 的 `T6` |

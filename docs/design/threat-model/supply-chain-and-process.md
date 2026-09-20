@@ -122,6 +122,13 @@
 
 **状态**：`部分缓解` ｜ **主导类别**：流程完整性（提交历史与域归属）
 
+> **防误引登记（2026-09-20）**：`tests/unit/test_remote_write_authorization_consistency.py`
+> （**注意：在 `tests/unit/`，非 `tests/security/`**）**不构成**本条的证据——它只断言 **A~F 远端写入
+> 授权分级在 5 处文档载体间口径一致**（解析 `{类别:(范围,规则)}` 后两两相等，含变异探针），
+> **验证的是"文档文字一致"**；而本条的核心判据是"**本次提交的路径集合 ⊆ 该成员声明的白名单**"，
+> 该检查**至今不存在**（见「验证方式」a）。二者**同源但不同落点**；用例名里的
+> `remote_write_authorization` 极易让人误以为它是本条的提交域检查 ⇒ 提前登记，防复发。
+
 - **资产**：A-4（提交历史的**域归属与可追溯性**）、A-7（"这笔改动归谁、改了什么"这一结论）
 - **攻击者与前提**：**无外部攻击者**。触发条件 = **两个成员/角色在同一仓库内并发工作**。
   前提：**工作树与 git 索引在同一仓库内全局共享**，而"文件域独占"只保护**文件**、
@@ -338,9 +345,23 @@
   2. **权重 / 二进制的"来源 + 摘要记录"未落地到产品**：`model/assets.py`
      （GGUF 发现 / sha256 校验 / 预算推荐，`REQ-MODEL-01/02`）**未实现**；
      当前只有**基准侧**的构建期校验脚本 —— 产品侧**无载体**；
-  3. **`description_digest` 是"初始口径"**（`../interfaces/README.md` U2 未定稿）：
+  3. ~~**`description_digest` 是"初始口径"**（`../interfaces/README.md` U2 未定稿）：
      覆盖范围与规范化尚未定；`builtin` 工具允许 `None`；**MCP 未接入**
-     ⇒ 防 rug-pull 的**能力当前为零**（既无实现、也无被测对象）；
+     ⇒ 防 rug-pull 的**能力当前为零**（既无实现、也无被测对象）；~~
+     ⇒ **2026-09-20 更正（声明失真·方向为"低估"）**：**"既无实现、也无被测对象"对
+     `description_digest` 不成立**——**实现已存在**（`src/agent_sec_perf/tools/registry.py`：
+     `description_digest`（`:137-154`，`name + description + parameters_schema` 规范化取 sha256）＋
+     `_verify_digest`（`:157-171`），并在 `ToolRegistry.__init__`（`:107`）**启动期**调用——外部来源
+     **缺摘要**或**摘要不一致** ⇒ `ToolRegistrationError`，**fail-secure 拒绝**），
+     **且已有 4 条含 fail-secure 断言的单测**（`tests/unit/test_tools_registry.py`：
+     `:174` 外部来源无摘要 ⇒ 拒、`:180` 摘要不一致 ⇒ 拒、`:186` 匹配 ⇒ 接受、
+     `:192` **fail-secure：拒绝启动、不静默剔除被篡改的工具**）。
+     ⇒ **措辞必须改对**：真正为零的**不是"实现"，而是"防护对象"**——`builtin` 允许 `None`、
+     **MCP 未接入** ⇒ **此刻没有任何外部来源工具**，摘要在运行期**从未被真实外部来源触发**；
+     另**口径未定稿**（`U2`）、权重/二进制与 Skill/CLI **四类载体仍无**。
+     ⇒ **本条状态维持「部分缓解」**，但**理由从"机制未实现"换成"没有防护对象 + 口径未定 + 其余载体无"**
+     （**这两句意思完全不同**）。另：现有摘要用例是 `@pytest.mark.unit` **功能断言**，
+     **缺 `@pytest.mark.security` 的对抗性端到端用例**（见「验证方式」的 a 项）。
   4. **`pip-audit` 的能力边界必须写清**：它只能匹配**已知漏洞签名**，
      对**尚未披露的投毒无效**；把 `make security` 绿当作"供应链安全"是**探针覆盖不足**的老毛病；
   5. **本条的验证本质上是"登记 + 复核"**：供应链风险的验证依赖外部服务
@@ -358,7 +379,11 @@
   - **已有（部分）**：`make security`（`bandit` + `pip-audit`）；`make bench-verify-assets`（资产摘要）。
   - **应有（缺验证）**：
     a. `test_tool_description_change_is_rejected`：注册期摘要不一致 ⇒ **拒绝使用**（fail-secure）
-    ——**依赖 `ToolRegistry` 实现**；
+    ——**依赖 `ToolRegistry` 实现**。
+    **【2026-09-20 更正】**该措辞已过期：`ToolRegistry` 的摘要校验**已实现**、且**已有 4 条
+    `@pytest.mark.unit` fail-secure 单测**（`tests/unit/test_tools_registry.py`，见残余风险 3 的更正）。
+    **仍缺的是** `@pytest.mark.security` 的**对抗性端到端**用例（真实外部来源），
+    其**前提（`MCP` 接入）不存在** ⇒ 属"**无被测对象**"，不是"无实现"；
     b. `test_weight_digest_mismatch_is_rejected`：GGUF 摘要不匹配 ⇒ **拒绝加载**
     ——**依赖 `model/assets.py`**；
     c. 每次新增依赖时记录**来源 / 版本 / 许可证 / 体积 / 安全影响**（`D-7`）

@@ -93,7 +93,12 @@ class Tool(Protocol):
 class ToolRegistry(Protocol):
     """工具注册表（被 ``harness/`` 消费；实现见 ``tools/registry.py``）。
 
-    ``specs()`` 返回当前**裁剪后**、可暴露给模型的工具描述（``REQ-HARNESS-03``）；
+    ``specs()`` 返回**全量注册集（未裁剪）**：裁剪只由 ``harness/trimming.py::select_tools``
+    按能力档位与本会话白名单承担（``REQ-HARNESS-03``），注册表**不**承担裁剪
+    （``ToolRegistry`` 的构造只有工具序列，不知道 ``capability_tier`` 与 pack 白名单）。
+    ``harness/loop.py`` 的 ``not_exposed``（**被裁掉**）与 ``unknown_tool``（**模型幻觉**）
+    两短码正依赖这一口径区分。⚠️ ``T6`` 已于 2026-09-19 裁决为**全量**，依据与联动清单见
+    ``docs/design/interfaces/harness.md`` §8 的 ``T6`` 行与 ``docs/design/interfaces/tools.md`` §2.6。
     ``resolve()`` 对**未知工具返回 ``None``**——模型幻觉出不存在的工具是预期的不可信
     输入，由调用方**默认拒绝 + 审计**，**不抛异常**（``REQ-SEC-01``）。
     并发：只读视图，注册发生在启动阶段，会话期间不变。

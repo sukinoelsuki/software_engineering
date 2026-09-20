@@ -12,6 +12,23 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-20
+
+> 本版不构成任何安全缓解；威胁模型状态不变（`docs/design/threat-model/README.md` §4.1 为唯一真源，本文不列具体计数）。
+
+### Added
+
+- 仓库内置两个**只读**示例领域包 `examples/packs/{coding-readonly,tech-manual-qna}`，示范领域包机制的正规通路（不配包时所有工具取 `DEFAULT_TOOL_RISK = HIGH`，非交互会话一个工具都执行不了）；并新增 `tests/unit/test_example_packs.py`（真实加载 + 只读边界反向断言）。
+
+### Changed
+
+- `README.md` 补齐「跑一次真实会话」：配置、`--pack`、退出码表、审计落点、四个不能省的参数，并刷新仓库结构说明。
+
+### Fixed
+
+- `make release` 无法落到台账最高一级：`tests/unit/test_release_policy.py` 对空序列取 `min()`；本次实测拦下 `0.1.0` 发布并按设计回滚，随后修复。
+- 更正 `scripts/release.sh` 末段提示，使其与现行发布授权口径一致（合并到 `main` 恒为所有者动作；开 PR / 打标签 / 回合 `develop` 可由代理代执行）。
+
 ## [0.0.1] - 2026-09-19
 
 ### Added
@@ -216,4 +233,4 @@
 - `Fixed` 缺陷修复
 - `Security` 安全相关修复与加固
 
-[Unreleased]: https://cnb.cool/Mybase_Le0n3rd/software_engineering/-/compare/main...develop
+[Unreleased]: https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems/-/compare/main...develop

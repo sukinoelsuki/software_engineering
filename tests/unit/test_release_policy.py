@@ -24,6 +24,7 @@ import pathlib
 import re
 import sys
 import tomllib
+from collections.abc import Iterable
 from typing import Any
 
 import pytest
@@ -65,6 +66,28 @@ def _declared_versions() -> set[str]:
 def _version_key(version: str) -> tuple[int, ...]:
     """把 `x.y.z` 拆成可比较的整数元组（用于"严格递增"与"取下一个里程碑"）。"""
     return tuple(int(part) for part in version.split("."))
+
+
+def _next_target(current: str, declared: Iterable[str]) -> str | None:
+    """台账里**高于** ``current`` 的最小里程碑；不存在时返回 ``None``。
+
+    **为什么单独抽成函数**："当前即台账最高一级"是一个**合法状态**（台账只到 `0.1.0` 时
+    就该能发布 `0.1.0`），而原先内联的 ``min(...)`` 会把这一合法状态表现为
+    ``ValueError: min() iterable argument is empty``——2026-09-20 的
+    `make release VERSION=0.1.0` 正是被它挡下并回滚。把两个分支显式化，
+    才能对"有更高一级"与"没有更高一级"**各自**写断言，而不是只覆盖其中一条路。
+
+    参数标成 :class:`~collections.abc.Iterable` 而非 ``Sequence``：调用点传的是
+    :func:`_declared_versions` 返回的 ``set``（`set` 不是 `Sequence`）。
+
+    Returns:
+        下一个里程碑版本号；``current`` 已是最高一级时返回 ``None``
+        ——**不抛异常、也不返回** ``current``（那会构成"目标不大于当前版本"的非法目标）。
+    """
+    higher = [version for version in declared if _version_key(version) > _version_key(current)]
+    if not higher:
+        return None
+    return min(higher, key=_version_key)
 
 
 def _locked_version() -> str:
@@ -296,6 +319,26 @@ def test_release_editor_refuses_invalid_targets(target: str, reason: str) -> Non
 
 
 @pytest.mark.unit
+def test_next_target_picks_the_lowest_higher_milestone() -> None:
+    """分支①：存在更高一级 ⇒ 返回其中**最小**者（不是最大、不是任意一个）。"""
+    declared = ["0.0.0", "0.0.1", "0.1.0", "0.2.0"]
+    assert _next_target("0.0.1", declared) == "0.1.0"
+    # 乱序输入也必须取最小者：台账顺序不参与判定，大小才是判据。
+    assert _next_target("0.0.1", ["0.2.0", "0.1.0"]) == "0.1.0"
+
+
+@pytest.mark.unit
+def test_next_target_returns_none_when_current_is_the_highest_milestone() -> None:
+    """分支②：当前即最高一级 ⇒ 返回 `None`，**不抛异常、不返回当前版本**。
+
+    这条正是 2026-09-20 的漏检点：`min()` 对空序列抛 `ValueError`，
+    使"落到最高一级"这一**合法状态**被判为失败（`make release VERSION=0.1.0` 因此回滚）。
+    """
+    declared = ["0.0.0", "0.0.1", "0.1.0"]
+    assert _next_target("0.1.0", declared) is None
+
+
+@pytest.mark.unit
 def test_release_plan_is_consistent_and_does_not_touch_the_ladder() -> None:
     """对真实仓库算一次计划：三份文件都被改写，且改后的版本号仍自洽。
 
@@ -303,17 +346,34 @@ def test_release_plan_is_consistent_and_does_not_touch_the_ladder() -> None:
     随版本推进自行失效——2026-09-19 实测过一次：首个 `make release VERSION=0.0.1`
     正是被写死 `0.0.1` 的本用例挡下（编辑完成后门禁红，脚本按设计**回滚**、版本号未变）。
     那次失败同时证明了两件事：**门禁真的拦得住**、**回滚真的生效**。
+
+    2026-09-20 追加记录：`make release VERSION=0.1.0` 被**另一条**路径挡下并回滚——
+    本用例当时直接对"高于当前版本"的集合取 ``min``，而 `release_edit.py` 已把
+    `[project].version` 改写成 `0.1.0`（= 台账**最高一级**）⇒ 该集合为空 ⇒
+    ``ValueError: min() iterable argument is empty``。
+
+    **本条口径（不得再改回去）**：**"落到最高一级"是合法状态**——台账只列到 `0.1.0` 时，
+    发布 `0.1.0` 完全正当，本用例**不得因此变红**。故目标改由 :func:`_next_target` 取，
+    返回 `None` 即"当前已是最新里程碑"，此时 **`pytest.skip`**（而不是失败），
+    也**不得**用"假造一个目标"或"删掉断言"的方式让它变绿。
+
+    注意 skip 的**范围只有下半段**：上面"当前版本必须在台账里"这条不变式在任何版本状态下
+    都先被断言——不存在"当前版本不在台账里"还能混过去的状态。
     """
     editor = _load_release_editor()
     current = str(_pyproject()["project"]["version"])
-    target = min(
-        (
-            version
-            for version in _declared_versions()
-            if _version_key(version) > _version_key(current)
-        ),
-        key=_version_key,
-    )
+    declared = _declared_versions()
+
+    # 先断言一条**任何**版本状态下都成立的真实不变式（不是放宽，是新增的检查）：
+    # 当前版本不在台账里时，"取下一级"这件事本身就没有定义，必须在这里就失败。
+    assert current in declared, f"当前版本 {current!r} 不在里程碑台账中：{sorted(declared)}"
+
+    target = _next_target(current, declared)
+    if target is None:
+        pytest.skip(
+            "台账里没有高于当前版本的里程碑作目标：当前即最高一级，"
+            "这是合法状态，本用例无可检验的目标"
+        )
 
     plan = editor.build_plan(version=target, release_date="2026-09-19")
 

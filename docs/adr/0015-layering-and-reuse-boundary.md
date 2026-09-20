@@ -771,3 +771,130 @@ src/agent_sec_perf/
   `REQ-UX-03` 与 `REQ-OPS-04` 的阻塞解除。
   **本节不改任何其它结论**；§8.1 的 `D7` 单元格已就地标注最终决定（唯一被改的决策格，
   属"该 ADR 自身待决项的收口"，**不构成新决策、故不另开 ADR**）。
+- **2026-09-19**：**事实补充——`docs/design/architecture.md` 已编写（成稿）**，即 §9 的
+  "编写 `docs/design/architecture.md` 与 `docs/design/interfaces/*.md`"一项**已完成**
+  （§9 该行原文不改）。该文件把本文 §5.1 的分层、§5.1.2 的边界接口、§5.1.3 的需求映射、
+  §5.2/§5.3/§5.3.1 的组件与自研边界、§7.1 的 `R1`~`R5`（与 `tests/unit/test_architecture_layers.py`
+  的九条断言逐条对应）、§7.4 的选型验证结论、§7.5 的复核时间点展开为可实现的设计，
+  并新增一张 **「模块 × 当前状态（已实现 / 未开工）× 依据」** 表（逐行以仓库文件与提交为依据，
+  如实区分 `harness/`、`cli/` 等**未开工**模块），以及三处**登记**：
+  ① 硬件探测（`REQ-PERF-05/06`）在 `foundation/` **无落点**（§5.4.1 目录树未列）；
+  ② **`D2` 的两处用途当前无载体**——`src/` 尚无 `pydantic` 的 import，
+  内置工具的 `parameters_schema` 为**手写 dict**，而 §5.2.2 的落法是"由模型类生成"；
+  ③ 本地回环客户端用标准库 `http.client`（`urllib3` 的指定用途是**云端**，判读为不冲突）。
+  **分层模型、依赖方向 `R1`~`R5`、组件选型、目录结构与全部决策一律不变**；
+  上述三处登记**只记录事实**，处置见 `architecture.md` §11。
+- **2026-09-19**：**契约级细化 + 一处表述更正（登记，不改任何决策）**——新增
+  [`design/interfaces/harness.md`](../design/interfaces/harness.md)，即 §9 的
+  "编写 `docs/design/interfaces/*.md`"的延续（§9 该行原文不改）。三项内容：
+
+  1. **定义 §5.1.2 引用但未定义的 `SessionEvent`**（7 个 `kind` + 14 字段 + 不变式 `I1`~`I10`）
+     与 `Session` Protocol，并新增其落地清单 `contracts/harness.py`（零行为契约层，
+     仍是类型 + `Protocol`）。**这个类型在本文 §5.1.2 的 `UX ↔ HARNESS` 行与
+     `architecture.md` §2.4 / §5.2 被引用，却没有任何定义** ⇒ 实现者无法开工
+     （"未落盘 = 不存在"）。同批定义的还有 `SessionConfig`、`ArgumentValidator`
+     与审批门四类型（`ApprovalGate` 是"`harness` 不得依赖 `cli`"这一 `R1` 约束下
+     唯一的接缝形态）。
+  2. **表述更正：`Session.run` 的返回形态由 `AsyncIterator[SessionEvent]` 细化为同步
+     `Iterator[SessionEvent]`。** 依据：§5.1.2 同一格已规定"**单会话单线程**；事件流
+     **串行**产出"，`AsyncIterator` 与之自相矛盾；且 `src/` 下**现有全部实现均为同步阻塞式**
+     （`model/client.py` / `tools/*` / `security/policy.py` / `observability/audit.py` /
+     `foundation/proc.py`，**无任何 `async def`**），并发亦无收益面（`llama-server` 默认
+     `-np 1`，`ModelClient` 契约写明非线程安全）。**该行的「并发假设」「错误语义」
+     「资源生命周期」三列一字不改**；被改的只是返回值的迭代器形态。
+     ⚠️ `architecture.md` §2.4 / §5.2 的两处 `AsyncIterator` **尚未同步**（该文件不在
+     当轮产出白名单内）⇒ **同步前，以本修订记录与 `harness.md` §2.9 为准**。
+  3. 登记两项**契约间缺口**（本文不改，规范落在 `harness.md`）：
+     - `TOOL_CALL` 的 `outcome` 需增加 `DENY`（"未执行"）：§5.1.2 未涉及，但
+       `interfaces/tools.md` §2.6 的"未知工具 ⇒ 拒绝 **+ 审计**"与 `interfaces/audit.md`
+       §2.2 的 `{OK, ERROR}` 合起来**不可满足**，且会让"拒绝"与"执行失败"同形
+       —— 与 `architecture.md` §5.3 硬规定 2"拒绝不等于失败"直接冲突；
+     - `D2`（pydantic 的两处用途）的**校验器选型**仍未定，`harness.md` 只给契约语义并要求
+       实现者**停下上报**（`architecture.md` §11 的 `G-2` 的收敛路径）。
+
+  **§5.1 的分层模型、§5.1.1 的依赖方向 `R1`~`R5`、§5.2 的组件选型、§5.4 的目录结构、
+  §8.1 的全部决策（`D1`~`D10`）一律不变。** 若所有者认为"同步 / 异步"属**决策级变更**
+  （而非上述形态细化），则正确处置是**另开一篇 ADR 声明取代 §5.1.2 的该行**，
+  本登记随之失效——这条路径必须留痕，不得由实现者自行取舍。
+- **2026-09-19（续）**：**上一条修订的两项后续动作已完成 + 一处契约放宽的登记**（同样是登记事实，
+  **不改本文任何结论**）：
+
+  1. **§5.1.2 `AsyncIterator` 的"尚未同步"状态已消除**：`docs/design/architecture.md`
+     的 §2.4 表首行（本 ADR §5.1.2 的复述处）已改为**同步 `Iterator[SessionEvent]`**，
+     §5.2 补"事件流的形态"说明，§12 登记修订。⇒ 自此**三处口径一致**：
+     本 ADR 修订记录、[`design/interfaces/harness.md`](../design/interfaces/harness.md) §2.9、
+     `architecture.md` §2.4/§5.2。**本文 §5.1.2 的正文仍不改**（ADR 只增不改）。
+     同一处还补全了复述中的**错误语义**（逃逸的三类含"审计写入失败必须冒泡"——
+     这与本文 §5.1.2 的原意一致，原文复述漏了）。
+  2. **审批接缝已定形**：`harness.md` §2.5 定义 `ApprovalGate` / `ApprovalRequest` /
+     `ApprovalResult` / `ApprovalOutcome`（回传通路），并以 §5 给出 `cli/` 的装配清单与
+     每种事件的渲染/序列化口径。**这是本文 §5.1.2 所要求接口的补全**：
+     "需人工确认"的处置原先在边界表中没有承载类型，`harness` 与 `cli` 无法据此并行。
+  3. **契约放宽一处（登记）**：`design/interfaces/audit.md` §2.2 的 kind→outcome 约束表中，
+     `TOOL_CALL` 的允许集由 `{OK, ERROR}` **放宽**为 `{OK, ERROR, DENY}`——**放宽允许集，
+     未新增 `AuditOutcome` 成员**（`DENY` 成员本就存在）。原因是
+     `interfaces/tools.md` §2.6 的"未知工具 ⇒ 拒绝 + 审计"与原约束**不可同时满足**，
+     且用 `ERROR` 会让"执行失败"与"从未执行"同形。**不触及本文的任何决策**（分层、依赖方向、
+     选型、目录结构均不变），故不另开 ADR；登记在此仅为可追溯。
+  4. **待裁决项（须由所有者/领导拍板，本文不代拍）**：实现侧已先于契约提交的三个叶子模块
+     （`fe82cce` / `83835af` / `68ce680`）与契约有四处不一致（**裁剪与提示分级的档位轴用了
+     `HardwareTier` 而非 `CapabilityTier`**、`build_system_message` 拒收外部内容、
+     `ErrorDisposition` 命名、未暴露与未知工具未区分）——逐条证据与架构侧倾向见
+     [`harness.md`](../design/interfaces/harness.md) §8 的 `R-1`~`R-4`。
+     ⚠️ **其中 `R-1` 若判为保留实现，等于把本文 §5.1.2/§5.3 与 `ADR-0010` §5.2/§5.3
+     所区分的两条轴（硬件档位 / 模型能力档位）合并使用 ⇒ 属决策级变更，须另开 ADR**；
+     不得只改契约了事。
+     - **2026-09-19（续二）**：**上一条第 4 项的四处不一致已全部裁决，本文结论一律不变**——
+     逐项登记（细则与落地清单见 [`harness.md`](../design/interfaces/harness.md) §7.1 / §8）：
+
+     1. **`R-1`（档位轴）⇒ 以契约为准、改实现，且不需要新增 ADR。** 依据：
+      `contracts/model.py` 的 `CapabilityTier` **已给出占位成员且 docstring 明文许可先用**
+      （`interfaces/README.md` 的 `U1` 指的是"名字 / 档数可能变"，**不是"没有成员可用"**
+      ——与 `G-2`（pydantic 无载体）性质不同）；而 `HardwareTier` 一侧有**硬禁令**（两条轴正交、
+      不得相互转换）。用错轴的效果等价于"同一模型换更强硬件就多给工具"，与 `ADR-0010` §5.2/§5.3、
+      `SRS §14` 及 `REQ-HARNESS-03/04` 直接冲突 ⇒ 属**实现修正**，不是决策变更。
+      **⇒ 本文 §5.1.2 / §5.3 的两轴区分与 §5.4.1 的模块划分不变**；落地动作在 `harness/`（档位轴
+      必须先于 `loop.py`）。
+     2. **`R-2`（SYSTEM 位置拒收外部内容）⇒ 采纳实现、契约收紧**：`prompts.build_system_*`
+      **不得**接收外部内容参数（"指令-数据分离"的结构性保证），领域包片段改经
+      `pack_context_message` 装配成 `role=USER` 数据消息，并由 `context.assemble` 校验角色。
+     3. **`R-3`（`ErrorDisposition`）⇒ 采纳实现**：`{RETRY, FEEDBACK, ABORT}` + `classify_error` /
+      `resolve_disposition`，**留在 `harness/errors.py`**。**登记一条归属判据**（供后来者复用）：
+      **一个类型是否进 `contracts/`，判据是"是否有跨信任边界的消费者"，不是"它是不是枚举"**——
+      `ErrorDisposition` 没有任何 `contracts/` 类型引用它 ⇒ 属 `loop` 的内部策略。
+      `harness.md` 另新增 `error_kind(error, *, disposition)`（`ERROR` 事件需要而实现未覆盖的
+      那一小段）。
+     4. **`R-4`（未暴露 vs 未知工具）⇒ 保留契约**：两者在审计里同形会使 `REQ-SEC-06` 的可回放性受损
+      （与 `False/True`、`ERROR` 两次"同形"教训同族），代价仅一个短码。
+     5. **威胁模型登记本轮不做**（领导裁定）：只登记"契约 ↔ 威胁"的映射**不改变任何状态或计数**，
+      而威胁模型的价值在**可执行证据**；待 `S1`/`S3` 落地后一次性更新（否则会把"打算怎么防"
+      记成"已经防住了"的邻域）。
+      - **2026-09-19（续三）**：**新增 [`ADR-0020`](0020-argument-validator-implementation.md) 的指针**
+      （同样只是登记事实，**不改本文任何结论**）。背景：本文 §5.2.2 的行 `B1` 与 §8.1 的 `D2`
+      把 pydantic 限定为**两处用途**（信任边界校验 + 工具参数 JSON Schema 生成），
+      而该 ADR 决定 **两处用途均不落地**——① 信任边界校验改用**手写 JSON-Schema 子集校验器**
+      （`harness/arguments.py`）；② `parameters_schema` 保留**手写 dict**（`tools/*.py` 零改动）。
+      候选对比（4 个）、权衡矩阵与被否决理由见该 ADR §3~§5。
+      **本次处置的直接依据就是本文 §5.2.2 自带的回退路径条款**：
+      "若届时不可安装，回退路径是**手写校验**（`bench/store.py` 已验证该模式可行），
+      **并新增 ADR 记录降级**"——该 ADR 即这条款要求的记录。
+      **本文 §5.1 的分层模型、§5.1.1 的 `R1`~`R5`、§5.2 的组件选型、§5.3 的自研边界、
+      §5.4 的目录结构、§8.1 的 `D1`~`D10` 一律不变。**
+      ⚠️ **`ADR-0020` 尚为「提议中」**：批准前 `harness/arguments.py` 不得开工，
+      `interfaces/README.md` §6 的 `U9` ① 与 `design/architecture.md` §11 的 `G-2`
+      也**不得**按已收敛表述。另：`pyproject.toml` 的 `pydantic` 去留（两处用途都不落地 ⇒
+      该依赖无调用方）属 **`F` 类**（依赖变更需事先确认），该 ADR 未代拍。
+      - **2026-09-19（续四）**：**`ADR-0020` 已获批准并落地 ⇒ 上面「续三」末段的
+      「提议中 / 批准前 `harness/arguments.py` 不得开工」表述已过期**（ADR 只增不改 ⇒
+      在此追加更正，**不回头改写「续三」原文**）。事实：所有者 2026-09-19 **批准**该 ADR
+      （其状态行改为「已接受」、`docs/adr/README.md` 索引同步）；手写 JSON-Schema 子集校验器
+      随后**已实现并入库**（`harness/arguments.py`，`43a177c`；单测
+      `tests/unit/test_harness_arguments.py`）⇒ `interfaces/README.md` §6 的 `U9` ① 与
+      `design/architecture.md` §11 的 `G-2` **可按已收敛表述**，`harness.md` §5.1 第 8 行的
+      **装配阻塞已解除**。
+      **模块清单依据（领导 2026-09-19 裁决）**：`harness/` 的模块清单 = **本文 §5.4.1
+      ＋ `ADR-0020`**——第 9 件 `harness/arguments.py` 由 `ADR-0020` 引入，
+      **不并入 §5.4.1 的清单条目**（§5.4.1 原文不改）。
+      **本文 §5.1 的分层模型、§5.1.1 的 `R1`~`R5`、§5.2 的组件选型、§5.3 的自研边界、
+      §5.4 的目录结构、§8.1 的 `D1`~`D10` 一律不变**；`pyproject.toml` 的 `pydantic` 去留
+      仍属 **`F` 类**（该 ADR 未代拍，状态不变）。

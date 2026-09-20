@@ -30,18 +30,35 @@
 | 单元 | `tests/unit/` | 无外部依赖，使用 fake/stub | 毫秒级 | 逻辑正确性、边界与异常路径 |
 | 集成 | `tests/integration/` | 真实组件或高保真替身 | 秒级 | 模块间契约、时序、错误传播 |
 | 安全 | `tests/security/` | 对抗性输入、攻击场景 | 秒级 | 拒绝行为与审计记录同时成立 |
-| 基准 | `tests/benchmark/` | 真实资源 | 分钟级 | 延迟、吞吐、内存 |
+| 基准 | `bench/`（`tests/benchmark/` **不新增**，见下方状态说明） | 真实资源 | 分钟级 | 延迟、吞吐、内存 |
 
-> ⚠️ **当前状态（2026-09-18 核查，同日更正）**：上述分层是**目标态**；实际现状如下。
-> - **已建立**：`tests/unit/`（**13** 个测试模块，全部标记 `unit`）；
->   `tests/security/`（`test_path_traversal_rejected.py` + `test_path_validation_seam.py`，
->   共 **13 个 `@pytest.mark.security` 用例**——即 `ADR-0015 §7.2` 的 `S2` **拒绝**半），
->   其中 `tests/security/corpus/traversal_payloads.txt`（**572 B**，路径穿越语料）。
-> - **仍缺**（属 Phase 1 产出）：`tests/integration/`、`tests/benchmark/`。
-> - `make test-security` 现有 13 个用例匹配 ⇒ 正常运行并通过。
+> ⚠️ **当前状态（2026-09-20 复核更新；2026-09-18 的旧数字已由本轮实测取代）**：
+> 上述分层是**目标态**；实际现状如下。
+> **每个数字都附可复算的命令**——这些数字会随用例增删**持续漂移**，
+> 「写死数字而不写口径」正是本项目反复复现的失效模式（数字一旦过期就无人能判断它错在哪）。
+>
+> - **已建立**：
+>   - `tests/unit/`：`test_*.py` **42** 个（**不含** `conftest.py` 等非 `test_*.py` 文件；
+>     目录下共 43 个 `.py`）。口径与命令：**模块数 = `ls tests/unit/test_*.py | wc -l` = `42`**；
+>     **用例数 = `uv run pytest -m unit --collect-only -q` 末行**（`854/960 tests collected (106 deselected)`）。
+>   - `tests/security/`：`test_*.py` **18** 个（另有 `__init__.py` / `conftest.py` /
+>     `_harness_fakes.py` / `corpus/`，**均不计入模块数**）。口径与命令同单元：
+>     **模块数 = `ls tests/security/test_*.py | wc -l` = `18`**；
+>     **用例数 = `uv run pytest -m security --collect-only -q` 末行**（`96/960 tests collected`）。
+>     ⚠️ `corpus/` 目前**只有路径穿越语料** `traversal_payloads.txt`，**无注入语料**。
+>   - `tests/integration/`：**1** 条真模型端到端 `test_end_to_end.py`（标 `slow`、默认不跑）。
+>     命令：`ls tests/integration/test_*.py | wc -l` = `1`。
+> - **不新增**：`tests/benchmark/` —— 性能基准由 **`bench/` 的轮次与 `bench/data` 分支**承担
+>   （[`ADR-0015`](../adr/0015-layering-and-reuse-boundary.md) §5.4.2；`architecture.md` §4.4）。
+>   因此 `uv run pytest -m benchmark` **当前零用例**
+>   （2026-09-20 实测：`no tests collected (960 deselected)`；末行的 `deselected` 数即**总收集数**）。
+>   ⚠️ 这不是缺口、也不是"基准没做"：**基准不进 `pytest` 的默认/标记集**是分工（§6）。
+> - `make test-security` 现有 **96** 个用例匹配 ⇒ 正常运行并通过（同上 `-m security` 命令）。
 >   **零用例时的行为已由"打印提示并返回 0"改为 fail-secure（`exit 1`）**——依据提交 `a39ad48`
 >   （理由：安全测试层是基线的一部分，**零用例 / 标记丢失必须显式暴露**，不得静默通过）。
-> 依据：[`doc-consistency-report.md`](doc-consistency-report.md) 的 A-9（`a39ad48` 已注明该报告待同步）。
+> 依据：2026-09-20 复核——上述 `ls … | wc -l` 与 `uv run pytest -m … --collect-only -q`
+> **原样复跑**；原 `doc-consistency-report.md` 的 A-9 记录见
+> [`doc-consistency-report.md`](doc-consistency-report.md)。
 
 标记：`@pytest.mark.unit` / `integration` / `security` / `benchmark` / `slow`。
 
@@ -124,12 +141,20 @@
 ## 8. 运行方式
 
 ```bash
-make test              # 快速回归（排除 benchmark）
-make test-cov          # 含覆盖率
-make test-security     # 仅安全测试（现有 13 个用例；零用例会 fail-secure，见 §2 的状态说明）
+make test              # 快速回归（排除 benchmark 与 slow）
+make test-cov          # 含覆盖率（同一排除集）
+make test-security     # 仅安全测试（现有 96 个用例；零用例会 fail-secure，见 §2 的状态说明）
 make check             # 完整自检（提交 PR 前必须执行）
-uv run pytest -m benchmark    # 性能基准
+uv run pytest -m benchmark    # 当前零用例（见 §2）：基准由 bench/ 轮次承担，不走 pytest 标记集
+AGENT_SEC_PERF_E2E=1 uv run pytest -m integration   # 真模型端到端（默认不跑，见下）
 ```
+
+> **`slow` 的排除口径（2026-09-19 起）**：`make test` / `make test-cov` 用
+> `-m "not benchmark and not slow"`；CI（`.cnb.yml`）经 `make check` **继承同一口径**，
+> 不需要另写一份（"同一事实两处表述必然漂移"）。
+> **为什么必须排除**：`slow` 类用例会起**真实 `llama-server` + 真实 GGUF**（实测一轮 ≈ 6 分钟），
+> 放进默认回归会让门禁变慢且不稳定；它们靠 `make test` 与**用例自带的环境变量门槛**
+> **两道锁**保证默认不跑（后者防"显式 `-m integration` 时误跑"，见 `tests/integration/` 的 docstring）。
 
 ---
 

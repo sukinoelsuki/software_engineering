@@ -342,9 +342,17 @@ criteria = "M0 出口准则全部达成（docs/engineering/sdlc.md §3.1 的 G1~
 | `0.0.0` | 工程基线（未发布） | 工程骨架与流程规范就位；**不产生标签** |
 | `0.0.1` | 框架搭完 | `M0` 出口准则 `G1`~`G9` 全部达成 |
 | `0.1.0` | 首个可用版本 | 端到端可跑：能完成一次完整 agent 会话（CLI 交互 + 调用工具 + 审计可回放） |
+| `0.2.0` | 端到端主流程可运行（Alpha） | `M2` 出口准则全部达成（`docs/engineering/sdlc.md` §3.3，2026-09-20 由所有者批准） |
 
-> 上表是**引用**（便于阅读）；两处不一致时**以台账为准**，并由
-> `tests/unit/test_release_policy.py` 的断言拦下。
+> 上表是**人工转写**的引用（便于阅读），**不是**台账的副本真源；两处不一致时**以台账为准**。
+> ⚠️ **当前没有任何机器检查比较本表与台账**：`tests/unit/test_release_policy.py` 只读
+> `pyproject.toml` / `src/agent_sec_perf/__init__.py` / `uv.lock` / `CHANGELOG.md`
+> （并加载 `scripts/release_edit.py`），**不解析本文**——全仓也没有任何断言比对本节表格与
+> `[tool.lowspec.releases]` 台账。
+> ⇒ **改台账（`pyproject.toml` 的 `[tool.lowspec.releases]`）时必须人工同步本表**；
+> 本表漏改、写错**都不会报错**。
+> 若日后要把这处"同步"落成机器检查，属**改门禁强度**（`CODEBUDDY.md` §2 的 **`F` 类**，
+> 判据见 §4）⇒ **须事先确认**，不得顺手新增。
 
 规则：
 

@@ -15,6 +15,7 @@ from agent_sec_perf.security.capabilities import (
     DENY_ALL,
     CapabilitySet,
     UnknownCapabilityError,
+    narrow_granted,
     parse_capabilities,
 )
 
@@ -108,6 +109,61 @@ def test_capability_set_is_immutable() -> None:
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         granted.__setattr__("granted", frozenset({Capability.WRITE_FILE}))
+
+
+@pytest.mark.unit
+def test_narrow_granted_intersects_with_the_allowlist() -> None:
+    """收窄 = 交集：只保留"已授予且在 allowlist 内"的能力。"""
+    granted = CapabilitySet(granted=frozenset({Capability.READ_FILE, Capability.WRITE_FILE}))
+    narrowed = narrow_granted(
+        granted, frozenset({Capability.READ_FILE, Capability.EXECUTE_COMMAND})
+    )
+
+    assert narrowed == CapabilitySet(granted=frozenset({Capability.READ_FILE}))
+
+
+@pytest.mark.unit
+def test_narrow_granted_never_widens_beyond_the_granted_set() -> None:
+    """**对抗性取向**：``allowlist`` 超出 ``granted`` 时结果**仍 ⊆ granted**（防 fail-open）。
+
+    领域包是外部输入（随仓库走）⇒ 它的声明只能收窄。若实现写成"按 allowlist 重建集合"，
+    本用例会失败：结果里会出现用户从未授予的 ``EXECUTE_COMMAND`` / ``NETWORK_OUTBOUND``。
+    """
+    granted = CapabilitySet(granted=frozenset({Capability.READ_FILE}))
+
+    narrowed = narrow_granted(granted, frozenset(Capability))
+
+    assert narrowed.granted <= granted.granted
+    assert narrowed.allows(Capability.EXECUTE_COMMAND) is False
+    assert narrowed.allows(Capability.NETWORK_OUTBOUND) is False
+
+
+@pytest.mark.unit
+def test_narrow_granted_with_empty_allowlist_denies_everything() -> None:
+    """空 allowlist = 什么都不给，**不是**"不限制"（与 pack 的"必填可为空数组"同口径）。"""
+    granted = CapabilitySet(granted=frozenset(Capability))
+
+    assert narrow_granted(granted, frozenset()) == DENY_ALL
+
+
+@pytest.mark.unit
+def test_narrow_granted_cannot_resurrect_an_unconfigured_grant() -> None:
+    """``granted`` 为空时任何 allowlist 都无济于事（default-deny 不得被 allowlist 绕过）。"""
+    assert narrow_granted(DENY_ALL, frozenset(Capability)) == DENY_ALL
+
+
+@pytest.mark.unit
+def test_narrow_granted_is_commutative_and_idempotent() -> None:
+    """交集给出的两条性质：交换律、幂等（重复收窄既不继续减小，也不放大）。"""
+    granted = CapabilitySet(granted=frozenset({Capability.READ_FILE, Capability.WRITE_FILE}))
+    allowlist = frozenset({Capability.WRITE_FILE, Capability.EXECUTE_COMMAND})
+
+    narrowed = narrow_granted(granted, allowlist)
+
+    assert narrow_granted(granted, allowlist) == narrow_granted(
+        CapabilitySet(granted=allowlist), granted.granted
+    )
+    assert narrow_granted(narrowed, allowlist) == narrowed
 
 
 @pytest.mark.unit

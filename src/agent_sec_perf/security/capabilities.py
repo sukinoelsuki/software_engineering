@@ -29,6 +29,7 @@ __all__ = [
     "DENY_ALL",
     "CapabilitySet",
     "UnknownCapabilityError",
+    "narrow_granted",
     "parse_capabilities",
 ]
 
@@ -98,3 +99,24 @@ def parse_capabilities(names: Iterable[str]) -> CapabilitySet:
             )
             raise UnknownCapabilityError(msg) from exc
     return CapabilitySet(granted=frozenset(granted))
+
+
+def narrow_granted(granted: CapabilitySet, allowlist: frozenset[Capability]) -> CapabilitySet:
+    """把授予集合**收窄**到 ``allowlist`` 之内（只能减小，绝不放大）。
+
+    生效授予 = ``granted ∩ allowlist``。用于领域包（``REQ-HARNESS-08``）：pack 的
+    ``security.capabilities`` **只能收窄**用户配置的授予，**不得**取并集，
+    **不得**把"pack 未声明"当成"全授予"（``docs/design/interfaces/harness.md`` §4.4 第 1 条）。
+
+    实现选**交集**而不是"按 ``allowlist`` 重建集合"，理由是可结算的：重建的形式下，
+    ``allowlist`` 一旦含 ``granted`` 之外的能力就会**扩权**（fail-open）；交集在构造上
+    保证 ``结果 ⊆ granted``，无论调用方传什么。
+
+    Args:
+        granted: 用户配置的授予集合。
+        allowlist: 允许保留的能力（来自领域包等**声明式**配置）。
+
+    Returns:
+        ``granted ∩ allowlist``。交换律与幂等由交集直接给出，无需额外保持。
+    """
+    return CapabilitySet(granted=granted.granted & allowlist)

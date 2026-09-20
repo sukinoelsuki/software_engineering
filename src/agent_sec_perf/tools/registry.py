@@ -115,7 +115,14 @@ class ToolRegistry(ToolRegistryContract):
         self._specs: tuple[ToolSpec, ...] = tuple(specs)
 
     def specs(self) -> Sequence[ToolSpec]:
-        """返回可暴露给模型的工具描述（``ToolSpec``，不是可执行句柄）。"""
+        """返回**全量注册集（未裁剪）**的工具描述（``ToolSpec``，不是可执行句柄）。
+
+        裁剪**不**在本层发生：它由 ``harness/trimming.py::select_tools`` 按
+        ``capability_tier`` 与本会话白名单承担（``REQ-HARNESS-03``）；注册表知道的是
+        "启动了哪些工具"，不知道"本会话暴露哪些"——两件事分别属于两个模块，避免形成
+        两份必然漂移的判定。``T6`` 已于 2026-09-19 裁决为**全量**（依据与联动清单见
+        ``docs/design/interfaces/tools.md`` §2.6、``docs/design/interfaces/harness.md`` §8）。
+        """
         return self._specs
 
     def resolve(self, name: str) -> Tool | None:

@@ -1,0 +1,36 @@
+# 示例领域包：技术手册问答（只读）。
+#
+# 领域包是**声明式配置**：只声明"暴露哪些工具、需要哪些能力、风险如何"，
+# 不含任何代码 —— 包目录内一旦出现 .py / .pyc / __pycache__ 即拒绝加载（R5）。
+# 合法键与形状见 docs/design/interfaces/harness.md §4.2；加载与校验的唯一实现见
+# src/agent_sec_perf/harness/domain_pack.py；面向用户的说明见 examples/README.md。
+#
+# ⚠️ 本包只声明**只读**工具与**只读**能力，且只把这两个工具声明为 low。
+#    把 run_command / write_file 也声明成 low = 让"需人工确认"变成"自动放行"，
+#    属降级安全默认，必须先走 ADR 并获得批准。
+
+[pack]
+name = "tech-manual-qna"
+version = "0.1.0"
+description = "技术手册问答（只读）：针对手册/规范类文档做检索式问答，只暴露读取与列目录。"
+
+[prompt]
+# 片段是**数据**：经 prompts.pack_context_message 装配成一条 role=USER 的消息，
+# 永不进入 SYSTEM 位置（harness.md §4.4 第 2 条）。
+fragments = [
+    "本领域包只授予只读能力：可以读取文件与列出目录，不能写入文件，也不能执行命令。",
+    "回答一律以手册原文为依据并给出文件路径；手册中找不到依据时明确说明未找到，不得编造条目、参数或版本号。",
+]
+
+[tools]
+allowlist = ["read_file", "list_dir"]
+
+[security]
+capabilities = ["read_file"]
+
+[security.risk_overrides]
+read_file = "low"
+list_dir = "low"
+
+[output]
+format = "text"

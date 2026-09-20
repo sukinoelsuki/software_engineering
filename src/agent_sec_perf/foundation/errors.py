@@ -53,3 +53,23 @@ class ModelProtocolError(BenchError):
 
 class ConfigError(BenchError):
     """配置非法（fail-secure：不得捕获后继续用默认值）；实现见 ``foundation/config.py``。"""
+
+
+class ToolArgumentsInvalidError(BenchError):
+    """工具参数的**信任边界校验**失败（模型给出的 ``arguments_json`` 不合法）。
+
+    与 ``tools/registry.py`` 的 ``ToolArgumentError`` **刻意不合并**，分工见
+    ``docs/design/interfaces/harness.md`` §3.4：
+
+    * **本异常** = "不可信输入被拒"——由 HARNESS 侧的 ``ArgumentValidator`` 抛出，
+      处置是 ``denied_reason="invalid_arguments"`` ⇒ **回喂模型**；
+    * ``ToolArgumentError`` = "已校验参数的调用语义缺陷"——工具实现内部抛出，
+      处置是 ``ToolResult(ok=False)``。
+
+    两者都要保留：删掉入口会让非法值以更晚、更隐蔽的形态出现；删掉兜底则让工具
+    依赖"上游一定校验过"。
+
+    刻意**不**继承 :class:`ProtocolError`：后者的处置是**中止**，本异常的处置是
+    **回喂**（把失败当数据交回模型继续，``REQ-HARNESS-06``）——合并会让同一个
+    ``except`` 误捕两种相反处置。
+    """
