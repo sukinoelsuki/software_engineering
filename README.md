@@ -18,7 +18,7 @@
 | 归属 | 华中科技大学 · 计算机科学与技术学院（工程实践项目） |
 | 组织形式 | 单人独立开发（决策、实现、评审均由本人完成，AI 作为实现与决策辅助） |
 | 周期 | 2026-09 ~ 2026-12（约 2~3 个月，多迭代） |
-| 仓库 | <https://cnb.cool/Mybase_Le0n3rd/software_engineering> |
+| 仓库 | <https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems> |
 | 当前阶段 | **`M0`（工程初始化）已达成**（2026-09-19，判据 `G1`~`G9` 全绿）；当前在 **Phase 1（需求与设计）** 上向 **`0.1.0`「首个可用版本」**推进。里程碑判据见 [里程碑与迭代流程](docs/engineering/sdlc.md) §3 |
 | 开发日志 | **最新一篇的 §7 就是当前唯一的任务清单** —— 见 [`docs/devlog/`](docs/devlog/) |
 
@@ -134,8 +134,8 @@
 
 ```bash
 # 1. 获取代码
-git clone https://cnb.cool/Mybase_Le0n3rd/software_engineering.git
-cd software_engineering
+git clone https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems.git
+cd Native-Intelligent-Systems
 
 # 2. 安装开发环境（含提交规范、代码检查、测试依赖）
 make setup

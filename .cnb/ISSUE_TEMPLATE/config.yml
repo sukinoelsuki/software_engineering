@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: 安全漏洞（请勿公开提交）
-    url: https://cnb.cool/Mybase_Le0n3rd/software_engineering/blob/main/SECURITY.md
+    url: https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems/blob/main/SECURITY.md
     about: 安全漏洞请按 SECURITY.md 中的私密渠道报告，不要创建公开 Issue。
   - name: 贡献与协作规范
-    url: https://cnb.cool/Mybase_Le0n3rd/software_engineering/blob/main/CONTRIBUTING.md
+    url: https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems/blob/main/CONTRIBUTING.md
     about: 提交前请先阅读分支模型、提交规范与完成定义（DoD）。
