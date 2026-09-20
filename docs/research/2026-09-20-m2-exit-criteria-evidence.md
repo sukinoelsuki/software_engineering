@@ -79,11 +79,33 @@ cd /tmp/tmp.FAjF2cKy4i
 
 ### A.3 退出码与退出码表的对应
 
-`src/agent_sec_perf/cli/app.py` 中 `_EXIT_STATUS` 把运行态 `status` 映射到进程退出码：
+~~`src/agent_sec_perf/cli/app.py` 中 `_EXIT_STATUS` 把运行态 `status` 映射到进程退出码：
 `EXHAUSTED/COMPLETED/MAX_STEPS → 0`，`DENIED → 1`，`MODEL_UNAVAILABLE → 2`，
 `CONFIG_ERROR/ASSEMBLY_ERROR → 3`，`INTERRUPTED → 130`。本运行 `status=completed`
 （见 A.4 事件流末态），故退出码 `0` 对应"**正常完成**"，落在 `M2-1` 退出码表的
-"completed/exhausted/max_steps" 成功区间，**不在** DENIED(1)/MODEL_UNAVAILABLE(2)/错误(3) 之列。
+"completed/exhausted/max_steps" 成功区间，**不在** DENIED(1)/MODEL_UNAVAILABLE(2)/错误(3) 之列。~~
+
+**该表述失实（2026-09-20 更正）**：上述常量名、状态名与取值**均不存在于源码**。经独立读源码
+（在 `src/` 全量 `grep -rn "_EXIT_STATUS\|EXHAUSTED\|INTERRUPTED\|MODEL_UNAVAILABLE\|130"`
+**零命中**），真实机制如下：
+
+- 退出码常量定义在 `src/agent_sec_perf/cli/app.py:100-105`，均为**我方固定取值**：
+  `EXIT_OK = 0`、`EXIT_TASK_FAILED = 1`、`EXIT_LIMIT_REACHED = 2`、`EXIT_ASSEMBLY = 3`、
+  `EXIT_AUDIT = 4`、`EXIT_UNEXPECTED = 5`。
+- 运行态 `TaskStatus`（`src/agent_sec_perf/contracts/harness.py:64-73`，`StrEnum`）取值为
+  `COMPLETED="completed"` / `FAILED="failed"` / `LIMIT_REACHED="limit_reached"`，
+  **没有** `EXHAUSTED` / `MAX_STEPS` 这些状态。
+- 唯一"状态→退出码"映射表是 `_EXIT_BY_STATUS`
+  （`src/agent_sec_perf/cli/app.py:116-120`）：`COMPLETED→EXIT_OK(0)`、
+  `FAILED→EXIT_TASK_FAILED(1)`、`LIMIT_REACHED→EXIT_LIMIT_REACHED(2)`。
+- 其余退出码**不经状态表**，由 `execute()` 直接返回（`app.py:262/271/274/286/288/295/299`）：
+  装配期 `BenchError`（含 `ConfigError`/`PathNotAllowedError`/`DomainPackError`/
+  `ModelUnavailableError`/`ToolRegistrationError`/`UnknownCapabilityError`）→ `EXIT_ASSEMBLY(3)`；
+  审计写入失败 → `EXIT_AUDIT(4)`；其它未预期异常 / 事件流缺 `TASK_FINISHED` → `EXIT_UNEXPECTED(5)`。
+  （退出码语义表原文见 `app.py:18-26` 模块 docstring。）
+- 本运行 `status=completed`（A.4 末态）→ 经 `_EXIT_BY_STATUS` 落到 `EXIT_OK=0`
+  （`app.py:117,300`）。故退出码 `0` 对应"**正常完成（COMPLETED）**"，落在成功区间；
+  **不存在** `DENIED(1)` / `MODEL_UNAVAILABLE(2)` / 错误(3) 这些被虚构的退出码分支。
 
 ### A.4 事件流（`--output-format json` 的 stdout，逐行 `json.loads` 成功，共 10 行）
 
@@ -181,7 +203,13 @@ cd /tmp/tmp.FAjF2cKy4i
    我改为把 pack 放进工作目录内。
 2. **默认拒绝，必须显式授予能力**：产品默认 `granted_capabilities=()`（默认拒绝），
    `read_file`/`list_dir` 均要求 `Capability.READ_FILE`（见 `tools/files.py`）。
-   示例命令未授予该能力 ⇒ 每次工具调用都会被策略拒绝（`DENIED`→退出码 1）。
+   示例命令未授予该能力 ⇒ 每次工具调用都会被策略**拒绝**（`security/policy.py` 的
+   `PolicyEngine.decide` 在未授予所需 `Capability` 时返回 `allow=False`，见
+   `policy.py:188,208,226,254,264`）。~~但这并不意味着存在一个 `DENIED` 退出码——
+   源码中**没有** `DENIED` 这一状态或退出码（`grep` 零命中，见 A.3 更正）。~~
+   **更正（2026-09-20）**：被拒绝的工具调用落到 `tool_result.ok=false`，**会话继续**，
+   最终按会话状态以 `0/1/2` 之一结束（`EXIT_OK`/`EXIT_TASK_FAILED`/`EXIT_LIMIT_REACHED`，
+   见 A.3 更正后的退出码表）——**拒绝本身不是一个独立的进程退出码**。
    我通过工作目录内的 `.lowspec.toml` 授予 `granted_capabilities=["read_file"]`
    （这正是集成测试用 `PolicyConfig(granted_capabilities=("read_file",))` 注入的机制）。
 3. **示例省略了 token 预算与超时**：产品默认 `model_request_timeout_s=60.0`，
@@ -241,8 +269,10 @@ cd /tmp/tmp.FAjF2cKy4i
 - **"覆盖 > 1 个不同工具**或**不同参数"在本实测由哪个条件满足**：
   由**"不同工具"**分支满足——审计两条 `TOOL_CALL` 的 `tool_name` 分别为
   `list_dir` 与 `read_file`（不同工具，直接在审计中可见）。
-  "不同参数"分支在我本次运行中由"不同读取内容"间接满足，但**本实现并不记录调用参数**
-  （审计 `TOOL_CALL.detail` 仅 `{truncated:false}`，事件流 `tool_call` 也不带参数），
+  "不同参数"分支在我本次运行中由"不同读取内容"间接满足，但**本实现并不记录原始调用参数**
+  （审计 `TOOL_CALL.detail` 仅 `{truncated:false}`；事件流 `tool_call` 也**不携带原始
+  `arguments_json`**——`contracts/harness.py:48,107` 规定原始参数不得进事件，仅含展示用
+  `arguments_summary`），
   故"不同参数"是**以"不同读取内容"为代理**实现的，并非对原始参数的直接观察。
   **表述不实处**：判据/测试措辞写"覆盖 > 1 个不同工具**或不同参数**"，而实现侧对
   "不同参数"只能间接（代理）成立，需在文档/注释中写明这一近似，否则读者会误以为参数被校验。
@@ -296,7 +326,15 @@ cd /tmp/tmp.FAjF2cKy4i
   性能结论（吞吐/延迟/内存）需另走 `tests/benchmark/` 且至少 3 次重复 + 极差。
 - **模型相关取值非通用**：`--max-completion-tokens 384`、`--model-request-timeout-s 240`
   仅对 **Qwen3-4B-Q4_K_M.gguf @ 本机 8 核/16GiB** 实测有效；**换模型或换硬件必须重测**，
-  不得沿用。这也是 `sdlc.md` 示例命令漏写该参数会超时（退出码 2）的根因。
+  不得沿用。~~这也是 `sdlc.md` 示例命令漏写该参数会超时（退出码 2）的根因。~~
+  **更正（2026-09-20）**：漏写 `--model-request-timeout-s` 时默认 `model_request_timeout_s=60.0`
+  （`app.py:161`）；在本硬件上单次补全超出该值时，模型请求超时抛 `ModelUnavailableError`
+  （`model/client.py:335-340`），在会话循环中被 `except Exception` 捕获并令任务以
+  `TaskStatus.FAILED` 终止（`harness/loop.py:447-463`），再经 `_EXIT_BY_STATUS` 落到
+  `EXIT_TASK_FAILED=1`（`app.py:101,118,300`）。**因此超时对应的退出码是 `1`，不是 `2`**；
+  `EXIT_LIMIT_REACHED=2` 仅对应 `max_steps` 用尽（`LIMIT_REACHED`），与超时无关。
+  （注意：若 `llama-server` 在装配期始终未就绪，则 `ModelUnavailableError` 发生在装配阶段，
+  走 `EXIT_ASSEMBLY=3`，属另一失败类型——见 A.3 更正后的退出码表。）
 - **不证明"安全已到位"**：`M2-1/2/4` 是**功能性 + 可观测性**判据，不是安全断言。
   本次仅以 `coding-readonly` pack + 默认拒绝策略验证了 `read_file` 能力的**授权放行**路径；
   未测试越权/注入/穿越/拒绝路径（那些属 `S1`/`S3` 对抗性用例，不在本次范围）。
@@ -306,6 +344,28 @@ cd /tmp/tmp.FAjF2cKy4i
   **间接印证**，未被自动化断言强制。
 - **不证明跨运行稳定性**：模型非确定性；本次观测到 2 次 OK 调用，换 prompt/换 run 可能
   数量或顺序不同。`≥ 2` 由断言设为下限，但"恰好 2 / 恰好此顺序"不保证。
+
+---
+
+### 附：二次复核清单（2026-09-20，应团队领导要求）
+
+对报告里所有"声称某函数/常量/字段/行为存在或取某值"的陈述，逐条回 `src/` 指出处；
+凡指不到出处的，按"**更正而非抹掉**"处理（见 A.3 / A.8 / D.2 三处删除线 + 更正）。
+
+| 原陈述 | 复核结果 | 出处 |
+| --- | --- | --- |
+| 退出码由 `_EXIT_STATUS` 映射 `EXHAUSTED/COMPLETED/MAX_STEPS→0, DENIED→1, MODEL_UNAVAILABLE→2, CONFIG_ERROR/ASSEMBLY_ERROR→3, INTERRUPTED→130` | **失实，已更正（A.3）** | `cli/app.py:100-105,116-120` |
+| 默认拒绝 ⇒ `DENIED` 退出码 1 | **失实，已更正（A.8）**：无 `DENIED` 退出码；拒绝是运行时 `allow=False`，最终按会话状态落 0/1/2 | `security/policy.py:188,208,226,254,264` + A.3 |
+| 漏写超时参数 ⇒ 超时退出码 2 | **失实，已更正（D.2）**：请求超时 → `ModelUnavailableError` → `FAILED` → `EXIT_TASK_FAILED=1`；`2` 仅对应 `LIMIT_REACHED` | `model/client.py:335-340`、`harness/loop.py:447-463`、`cli/app.py:101,118,300` |
+| `read_file`/`list_dir` 要求 `Capability.READ_FILE` | 成立 | `tools/files.py`（`requires_capability`） |
+| 审计落盘于 `/root/.local/state/lowspec/audit/audit.jsonl` | 成立 | `foundation/config.py` + platformdirs 默认 |
+| `TOOL_CALL.detail` 不记录参数、事件流 `tool_call` 不携带原始参数 | 成立（已补出处） | `contracts/harness.py:48,107` |
+| `AuditOutcome.OK` 枚举存在 | 成立 | `contracts/audit.py:29,38` |
+| `JsonlAuditSink(..., roots=(working_dir,))` 自落盘文件 `query_by_id` 复核 | 成立（与 `tests/integration` 的 `_audit_reader` 一致） | `tests/integration/test_end_to_end.py:749-756` |
+| 默认 `model_request_timeout_s=60.0` | 成立 | `cli/app.py:161` |
+| `pack` 须在受信根内，否则 `PathNotAllowedError`→退出码 3 | 成立（已实测复现） | `cli/app.py:23-24`（EXIT_ASSEMBLY=3） |
+
+除以上三处失实已更正外，未再发现其它无出处的"事实性"陈述。
 
 ---
 
