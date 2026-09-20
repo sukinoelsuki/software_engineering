@@ -92,6 +92,29 @@ class AuditOutcome(StrEnum):
 `DEGRADED` 的**既有语义不变**，其余 4 个 `kind` 行的约束**不动**；`AuditEventKind` 的成员集合
 **不变**（新增 kind 需 ADR）。
 
+**§2.2 约束表的覆盖边界（2026-09-20 登记）**：本节表格的 **5 行并不都有实现侧证据**——
+`EXECUTION_DEGRADATION` 与 `REFUSAL` 两行**当前没有任何 `emit` 调用点**：其生产者
+（`security/sandbox/`、`model/router.py`、`security/refusal.py`，见 §2.3 的生产者归属表）**均未实现**；
+`src/` 下实际存在的 `.emit(...)` 调用点只有 `tools/registry.py`、`harness/loop.py`、
+`security/policy.py`、`cli/approval.py` **四处**（＋ `cli/app.py` 一处**透传**）。
+现有机器检查 `tests/unit/test_audit_kind_outcome_contract.py` 覆盖四层：
+(a) **表 ↔ 声明**双向比对；(b) **四个已实现 producer** 的具名触发用例；
+(c) 变异探针；(d) `src/` **全部** `.emit(...)` 调用点的登记比对（未登记即翻红）。
+⇒ 这两行**只有 (a) 一层证据**（表里写了、声明里也写了、二者一致），
+**没有"实现真的照着做"的证据**（无 producer、无触发用例）。
+
+⇒ **覆盖边界（不得读成"这两行已验证"）**：**producer 落地时必须补触发用例**——
+按 §2.3 的生产者归属表：`EXECUTION_DEGRADATION` → `security/sandbox/` 或 `model/router.py`；
+`REFUSAL` → `security/refusal.py`。在此之前，§2.2 的该**两行仍无可执行证据**。
+⚠️ 这一边界**有机器兜底**：一旦新增 producer，(d) 层的"调用点必须已登记"会**翻红**
+（`test_every_emit_call_site_in_src_is_registered`），而登记为 producer 又**必须**配具名触发用例
+（`test_each_registered_producer_has_a_named_triggering_test`）⇒ **迫使补用例**，而非"静默通过"；
+但该兜底**只保证"将来有了会被要求补"**，**不补现在的两行证据**。
+
+> **与 §2.6 的分工（勿混）**：§2.6 规定的是**审计覆盖范围**（哪些拒绝**必须**留痕：会话内 vs
+> 配置期 / 装配期）；本注规定的是 **§2.2 两行的证据状态**（哪几行**已有实现侧证据**）。
+> 两者都涉及 `EXECUTION_DEGRADATION` / `REFUSAL` 的"尚未落地"，但**问的是两件事**。
+
 ### 2.3 `AuditEvent`（Q1）
 
 | 字段 | 类型 | 语义 |
@@ -324,6 +347,7 @@ class AuditSink(Protocol):
 | 2026-09-19 | I2 的 `[]` 来源由两种更正为**三种**（新增"含非 `Capability` 成员"，判别键 `invalid`）；**新增 I4**——`capability` 必须是 `Capability` 实例或 `None`（裸 `str` 即使取值合法也拒绝）；`capability` 字段表同步 | 同族缺口的第三轮报出（类型违规输入）与架构侧独立复现：裸 `str` 取值合法时会被**放行**，审计的 `capability` 类型与 I2/I3 同时被破；规定与规范见 [`policy.md`](policy.md) §2.5「非法成员的规定行为」 |
 | 2026-09-19 | **§2.2 的 kind→outcome 约束表：`TOOL_CALL` 的允许集由 `{OK, ERROR}` 放宽为 `{OK, ERROR, DENY}`**（**放宽允许集，不新增 `AuditOutcome` 成员**——`DENY` 成员本就存在）；表下补 D1~D4 与"不得外推"边界 | [`tools.md`](tools.md) §2.6 要求"未知工具 ⇒ 拒绝 **+ 审计**"，而原约束**无法表达"被拒绝、未执行"**；改用 `ERROR` 会让"执行失败"与"从未执行"同形，破坏 `REQ-SEC-06` 可回放性（`architecture.md` §5.3 硬规定 2"拒绝不等于失败"）。规范同 [`harness.md`](harness.md) §2.7。**其它 `kind` 行与既有成员语义不变**；`contracts/audit.py` 与 `observability/audit.py` **均无需改动**（成员已存在；读取侧只校验枚举取值，不校验 kind×outcome 组合） |
 | 2026-09-20 | **新增 §2.6「审计覆盖范围」**（代号 `COV1`~`COV5`）：审计覆盖 = **会话内**（工具层 `TOOL_CALL` + 能力层 `POLICY_DECISION` / 未执行路径的 `DENY`）；**配置期 / 装配期**（`foundation/config.py`、`observability/audit.py`）的路径拒绝**不进审计**——处置为 **fail-closed**（`ConfigError` / `PathNotAllowedError` 冒泡、拒绝启动），理由两条（该阶段**会话与 sink 都不存在**；**落点白名单尚未校验** ⇒ 让不可信配置决定审计写到哪会与 §2.5 的**攻击面形成循环**）；并规定**不新增模块 / 不改 `R1` / 不得不外推**。**不改** §2.2、§2.4、§2.5 与 `contracts/audit.py` 的任何字段与类型 | 所有者裁决（2026-09-20）关闭 `Q-1`（**不纳入**）：见 [`../threat-model/README.md`](../threat-model/README.md) §8.2 的 `Q-1`【裁决后状态】；该裁决使 `P-2` 的缺口 (b) 不阻塞 ⇒ `T-02` 升「已缓解并验证」（同处 `P-2`）。裁决背景与后果表见 `docs/devlog/0019-2026-09-19-M1交付物与安全断言推进.md` §7 |
+| 2026-09-20 | **§2.2 补「覆盖边界」注**：`EXECUTION_DEGRADATION` / `REFUSAL` 两行**当前无任何 `emit` 调用点**（其生产者 `security/sandbox/`、`model/router.py`、`security/refusal.py` 均未实现）⇒ 只有 (a) 层（表 ↔ 声明）证据，**无实现侧证据**；**producer 落地时必须补触发用例**（否则该两行仍无可执行证据），并说明 (d) 层机器检查在新增调用点时会**翻红**、迫使补用例。**不改** §2.2 的表与 `D1`~`D4`、**不改** §2.3/§2.4/§2.5/§2.6、**不改** `contracts/audit.py` 的任何字段与类型 | 实现工程师遗留（`EXECUTION_DEGRADATION` / `REFUSAL` 两类事件当前无 `emit` 调用点）+ 架构侧复核：`tests/unit/test_audit_kind_outcome_contract.py` 的 (d) 层（`src/` 实际 `.emit(...)` 调用点 5 处，另 4 个 producer 各有具名触发用例）；与 §2.6 的分工见本注末 |
 
 ---
 
