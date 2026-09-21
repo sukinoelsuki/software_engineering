@@ -19,9 +19,12 @@
 #   - **幂等**：已存在且校验通过的文件直接跳过，便于重复执行与本地复用；
 #   - 下载先写 `<file>.part` 再原子改名，避免半成品被当成完整文件；
 #   - 参考仓库固定到**具体提交 SHA**（不是分支、不是标签），保证可复现；
+#   - **一切网络访问都必须有界**（超时 + 重试）：平台会在"Job 连续 10 分钟无输出"
+#     时杀掉整个构建，无界等待等于自杀。理由与实测见下面
+#     【为什么 fetch 必须有界】，以及 `cmd_references` 上方的说明。
 #   - 脚本不读取任何凭据，不写入密钥，不修改系统状态（符合 SECURITY.md）。
 #
-# 【依赖】curl / sha256sum / git —— 均由基础镜像提供，不引入新依赖。
+# 【依赖】curl / sha256sum / git / timeout（coreutils）—— 均由基础镜像提供，不引入新依赖。
 # ============================================================================
 
 set -euo pipefail
@@ -30,6 +33,14 @@ readonly ASSETS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/assets"
 readonly MODELS_MANIFEST="${ASSETS_DIR}/models.txt"
 readonly BENCHMARKS_MANIFEST="${ASSETS_DIR}/benchmarks.txt"
 readonly REFERENCES_MANIFEST="${ASSETS_DIR}/references.txt"
+
+# 浅克隆的**有界**参数（可用环境变量覆盖，便于本地调参/验证）。
+# 取值依据见下面【为什么 fetch 必须有界】：单次上限必须**显著小于**平台的
+# 10 分钟"无输出超时"，且要给正常的慢速克隆留余量（正常情况下 9 个仓库
+# 合计 447 MB 全部克隆只需 40.5 s）。
+readonly GIT_FETCH_TIMEOUT_S="${GIT_FETCH_TIMEOUT_S:-300}"
+readonly GIT_FETCH_ATTEMPTS="${GIT_FETCH_ATTEMPTS:-3}"
+readonly GIT_FETCH_BACKOFF_S="${GIT_FETCH_BACKOFF_S:-5}"
 
 log() { printf '[assets] %s\n' "$*"; }
 # 用 %b 解释转义，使多行错误信息（期望/实际校验值）在构建日志中分行可读
@@ -195,7 +206,60 @@ cmd_benchmarks() {
 
 # ---------------------------------------------------------------------------
 # references：按固定提交浅克隆参考资料
+#
+# 【为什么 fetch 必须有界（2026-09-21 一次真实构建失败换来的）】
+#   平台规则：**Job 连续 10 分钟无任何输出即触发超时**，超时后整个镜像构建被
+#   SIGKILL。日志表现是 `#24 CANCELED` + `failed to solve: Canceled: context canceled`
+#   + `exit code: -1, signal: 9` —— 看上去像"Dockerfile 写错了"，实际是**被平台杀掉**。
+#   （出处：https://docs.cnb.cool/zh/build/timeout.md 「无输出超时」）
+#
+#   故障：`git fetch` **自身没有任何超时**。GitHub 侧连接 stall 时 git 会一直等
+#   （内核 TCP 重传可拖十几分钟），而这期间脚本一行都不打印 ⇒ 正好把 10 分钟填满。
+#   实测（`cnb-rjo-1k3263rlg`，2026-09-21）：最后一次输出是 00:09:16 的
+#   "克隆 openharness"，随后**静默 10m01s** 被杀；而正常情况下这 9 个仓库
+#   （合计 447 MB）**全部克隆只花 40.5 s**、openharness（23 MB）只需 1.7 s
+#   （对照 `cnb-j4r-1k2qgnopp`，2026-09-18）。
+#
+#   处置（四条缺一不可）：
+#     ① `timeout` 兜底单次上限 ⇒ 最长静默有界；
+#     ② `http.lowSpeedLimit/lowSpeedTime`：速率掉到 1 KB/s 持续 30 s 即中止
+#        ——针对"连接还在、字节不动"的 stall（比整体超时更早失败）；
+#     ③ 重试 + 每次尝试前后都打日志 ⇒ 最长静默 ≈ 300 s + 退避 5 s，远低于 10 分钟；
+#     ④ 最终失败走 `die`：**明确失败**并指出是哪个仓库，而不是被平台悄悄杀掉。
+#
+#   为什么不加 `--progress` 让进度条充当 keep-alive：447 MB 会产生大量噪声行，
+#   而本项目对构建日志噪音有明确取舍（见文件头 curl 的 `--silent --show-error`）
+#   ⇒ 用**有界超时**解决静默，不用日志噪音解决。
 # ---------------------------------------------------------------------------
+fetch_commit_shallow() {
+    local name="$1" url="$2" commit="$3" target="$4"
+    local attempt=1
+
+    git init -q "${target}"
+    git -C "${target}" remote add origin "${url}"
+
+    while [[ "${attempt}" -le "${GIT_FETCH_ATTEMPTS}" ]]; do
+        log "  拉取 ${name} @ ${commit:0:12}（第 ${attempt}/${GIT_FETCH_ATTEMPTS} 次，单次上限 ${GIT_FETCH_TIMEOUT_S}s）"
+        # GIT_TERMINAL_PROMPT=0：凭据缺失时立即失败，而不是等一个永远不会有人回答的输入
+        if GIT_TERMINAL_PROMPT=0 timeout "${GIT_FETCH_TIMEOUT_S}" \
+            git -C "${target}" \
+                -c http.lowSpeedLimit=1000 \
+                -c http.lowSpeedTime=30 \
+                fetch --depth 1 --no-tags origin "${commit}"; then
+            git -C "${target}" checkout -q FETCH_HEAD \
+                || die "检出失败：${name} @ ${commit}"
+            return 0
+        fi
+        log "  第 ${attempt} 次拉取失败（超时或被中断）"
+        attempt=$((attempt + 1))
+        if [[ "${attempt}" -le "${GIT_FETCH_ATTEMPTS}" ]]; then
+            sleep "${GIT_FETCH_BACKOFF_S}"
+        fi
+    done
+
+    die "拉取失败：${name} @ ${commit}（已重试 ${GIT_FETCH_ATTEMPTS} 次，单次上限 ${GIT_FETCH_TIMEOUT_S}s）"
+}
+
 cmd_references() {
     local dest_dir="${1:-/opt/references/harness}"
     require_file "${REFERENCES_MANIFEST}"
@@ -221,11 +285,7 @@ cmd_references() {
         log "克隆 ${name}（${license}，${tier}）→ ${commit:0:12}"
         mkdir -p "${target}"
         # 按 SHA 浅克隆：GitHub 支持按对象名 fetch，因此无需拉取完整历史
-        git init -q "${target}"
-        git -C "${target}" remote add origin "${url}"
-        git -C "${target}" fetch -q --depth 1 origin "${commit}" \
-            || die "拉取失败：${name} @ ${commit}"
-        git -C "${target}" checkout -q FETCH_HEAD
+        fetch_commit_shallow "${name}" "${url}" "${commit}" "${target}"
     done < "${REFERENCES_MANIFEST}"
 }
 

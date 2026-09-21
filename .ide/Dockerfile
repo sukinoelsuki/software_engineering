@@ -12,9 +12,20 @@
 #   该镜像基于 buildpack-deps，自带 gcc/make 等构建工具，便于编译需要本地构建的
 #   Python 包（tree-sitter、向量库扩展等）。
 #
-# 【构建耗时】
-#   首次构建约 5~15 分钟（主要是 llama.cpp 源码编译）。镜像会被推送到制品库，
-#   之后启动开发环境直接复用，无需重建。
+# 【构建耗时与缓存（2026-09-21 实测更正）】
+#   **完整构建约 20 分钟**（对照 `cnb-j4r-1k2qgnopp`，2026-09-18：全 26 步 11m12s，
+#   其中 11.8 GB 模型下载约 5 分钟、llama.cpp 源码编译约 2 分钟）。
+#   ⚠️ **构建期没有层缓存**：平台实际下发的是 `docker build --no-cache …`
+#   （两次日志逐字核对：`cnb-j4r-1k2qgnopp` 与 `cnb-rjo-1k3263rlg` 均带 `--no-cache`）
+#   ⇒ 下文各阶段"靠层缓存复用 GB 级资产"的排序理由**只剩可读性价值**，
+#   **不是省时保证**：改本文件任何一行，都要重下 11.8 GB、重编一次 llama.cpp。
+#   真正省时的只有一条：**上一次构建成功**后，镜像会被推到制品库的
+#   `…/dockerfile-caches:<build.by 输入哈希>`；输入哈希不变时平台直接复用、整段跳过
+#   （实测 `cnb-738-1k31psn59` 仅 41 s）。改本文件或改 `.cnb.yml` 的 `build.by`
+#   都会换掉这个哈希 ⇒ 又是一次完整重建。
+#   ⚠️ **构建期网络不可靠，所有网络访问都必须有界**：平台规则是"Job 连续 10 分钟
+#   无任何输出即超时并被 SIGKILL"（详见 `.ide/fetch-assets.sh` 的
+#   【为什么 fetch 必须有界】）——一次连接 stall 就足以让 20 分钟的构建白跑。
 #   修改本文件后需：先销毁当前开发环境 → 再重新启动。
 # ============================================================================
 
@@ -160,9 +171,25 @@ RUN set -eux; \
 #      验证：卸载 + reload 后，新扩展主机里**连该扩展的日志文件都不再产生**，
 #      且无任何新增 pet 报错（详见 docs/devlog/0020 §3.12）。
 #      回滚：`code-server --install-extension ms-python.vscode-python-envs`。
+#
+#    ⚠️ **不要写成 `curl -fsSL … | sh`（2026-09-21 又一次真实构建失败换来的）**：
+#      管道既不传播 curl 的退出码、这里也没有 `pipefail` ⇒ **curl 失败时 `sh` 收到空输入、
+#      以 0 退出、整步被判为成功**。实测后果（构建 `cnb-rjo-1k3263rlg`）：
+#      `curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to
+#      code-server.dev:443`（第 59.92 s）⇒ **code-server 根本没装上**，
+#      紧接着第 12 步 16 个扩展全部 `code-server: not found`，又各自被
+#      `|| echo "[warn] …"` 吞掉 ⇒ 一路"绿"到第 14 阶段自检才炸，
+#      而那时已经白付了约 9 分钟（含 11.8 GB 模型下载）。
+#      现改为**先落盘 → 再执行 → 显式断言 `code-server --version`**：
+#      装不上就**当场中断构建**（fail-secure）。与第 14 阶段自检**不重复**——
+#      这里挡的是"花 20 分钟才发现"，那里挡的是"静默漏装"。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
-    curl -fsSL https://code-server.dev/install.sh | sh
+    curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 \
+        --output /tmp/install-code-server.sh https://code-server.dev/install.sh; \
+    sh /tmp/install-code-server.sh; \
+    rm -f /tmp/install-code-server.sh; \
+    code-server --version
 
 RUN set -eu; \
     for ext in \
