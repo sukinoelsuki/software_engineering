@@ -1,7 +1,12 @@
-# `_tools/` — 图表工具
+# diagram-authoring — 工具与检查边界
 
-本目录放**图表相关的可复用工具**。它服务于"图表即代码（Diagrams as Code）"这一做法：
-图随文档一起进版本库，能被 diff、能被评审、也能被**机器自检**。
+本目录是**项目级 Skill**（`SKILL.md` 是流程，本文件是配套工具的说明）。
+它服务于"图表即代码（Diagrams as Code）"：图随文档进版本库，能被 diff、能被评审、也能被**机器自检**。
+
+> **单一权威**：本目录的 `scripts/` 是这两个脚本**唯一**的存放处。
+> **不得**在别处（含交付包、`tools/`、"临时目录"）再放一份副本——
+> 本项目已经因为"同一功能被装了两份"吃过两次亏（2026-09-21：内建与第三方 mermaid 渲染器冲突；同日：`mermaid_check.py` 在交付包里留了一份快照）。
+> 两份副本不会"更保险"，只会**分叉**。
 
 ---
 
@@ -9,19 +14,8 @@
 
 | 文件 | 作用 | 依赖 |
 | --- | --- | --- |
-| `mermaid_check.py` | **Mermaid 图块结构自检**：图类型白名单、括号与引号配对、`subgraph`/`end` 配对、分组关键字配对、占位符残留、制表符、象限图坐标范围等 | **仅 Python 标准库**（Python ≥ 3.12） |
-| `mermaid_view.py` | **看图兜底**：把 markdown 里的 Mermaid 块抽成一个单体 HTML（用浏览器打开即可看图），用于编辑器预览不渲染的场景 | 仅标准库；**页面运行期需浏览器可访问外网**（从 CDN 取 mermaid 库） |
-| `SKILL-DRAFT-diagram-authoring.md` | **历史记录**：本项目级 Skill 的草稿归档（**已于 2026-09-21 批准并安装**，见其头部） | 无 |
-
-> ⚠️ **两份 `mermaid_check.py` 的权威关系（不得含糊）**：
-> **权威副本在** [`.codebuddy/skills/diagram-authoring/scripts/mermaid_check.py`](../../.codebuddy/skills/diagram-authoring/scripts/mermaid_check.py)；
-> 本目录下的是**交付包自包含用的快照**（交付包可能被单独拷贝出去，需要能独立运行）。
-> 两者不一致时**以权威副本为准**；核对方式：
->
-> ```bash
-> cmp 需求分析文档/_tools/mermaid_check.py \
->     .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py
-> ```
+| `scripts/mermaid_check.py` | **Mermaid 图块结构自检**：图类型白名单、括号与引号配对、`subgraph`/`end` 配对、分组关键字配对、占位符残留、制表符、象限图坐标范围等 | **仅 Python 标准库**（Python ≥ 3.12） |
+| `scripts/mermaid_view.py` | **看图兜底**：把 markdown 里的 Mermaid 块抽成一个单体 HTML（用浏览器打开即可看图），用于编辑器预览不渲染的场景 | 仅标准库；**页面运行期需浏览器可访问外网**（从 CDN 取 mermaid 库） |
 
 **为什么不引入制图/渲染工具链**：渲染 Mermaid 需要 Node 生态的 CLI，
 而本项目对新增依赖有明确约束（说明用途、替代方案、体积/许可/安全影响后才可引入）。
@@ -32,18 +26,23 @@
 
 ## 2. 用法
 
+以下命令一律用**完整路径**（本 Skill 的脚本不在 `PATH` 里）：
+
 ```bash
-# 检查本交付包的所有 markdown
-python3 _tools/mermaid_check.py .
+# 检查改动所在的某个目录
+python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py docs
 
 # 只列出图清单（编号 / 类型 / 行号），不检查
-python3 _tools/mermaid_check.py --list .
+python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py --list .
 
 # 把"警告"也算失败（用于提交前严格把关）
-python3 _tools/mermaid_check.py --strict .
+python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py --strict .
 
 # 检查整个仓库（会自动跳过 .git / .venv / node_modules 等目录）
-python3 _tools/mermaid_check.py /path/to/repo
+python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py /path/to/repo
+
+# 编辑器预览不渲染时的看图兜底（生成单体 HTML）
+python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_view.py docs --out /tmp/figs.html
 ```
 
 **退出码**：`0` = 通过；`1` = 存在错误（或 `--strict` 下有警告）；`2` = 路径不存在。
@@ -62,7 +61,7 @@ python3 _tools/mermaid_check.py /path/to/repo
 | ❌ 图形布局（**不会**） | 节点是否重叠、箭头是否绕远——属渲染器职责 |
 
 > ⚠️ **一条纪律**：本工具通过 **≠ 图是对的**。它只排除"结构性低级错误"，
-> 图与事实是否一致必须由评审者核对（这正是 `04` §0 的 G-2/G-3 要求写"用途/读者/维护时点"的原因）。
+> 图与事实是否一致必须由评审者核对（这正是图集文件 §0 要求写"用途/读者/维护时点"的原因）。
 
 ---
 
@@ -80,10 +79,10 @@ python3 _tools/mermaid_check.py /path/to/repo
 ## 5. 怎么在别处复用（本项目的持续推进需求）
 
 ```text
-① 写文档时      直接在 markdown 里写 ```mermaid 代码块（项目既有约定）
-② 提交前        跑一次 mermaid_check.py <改动所在目录>
-③ 要加很多图时  先在本类"图集"文件里定编号与用途，再落到权威源（避免一张图两处维护）
-④ 想让代理自动做 见 SKILL-DRAFT-diagram-authoring.md（需项目侧确认后安装）
+① 写文档时       直接在 markdown 里写 ```mermaid 代码块（项目既有约定）
+② 提交前         跑一次 scripts/mermaid_check.py <改动所在目录>
+③ 要加很多图时   先在"图集"文件里定编号与用途，再落到权威源（避免一张图两处维护）
+④ 想让代理自动做 用本 Skill（SKILL.md）——它只写顺序与停下条件，规范内容见「权威源」
 ```
 
 **维护本工具的两条约定**

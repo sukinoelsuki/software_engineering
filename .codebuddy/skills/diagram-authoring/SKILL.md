@@ -46,7 +46,10 @@ description: 要往文档里加 Mermaid 图、要改既有图、要判断"这张
 
 - **图表规范（为什么用 Mermaid、硬性要求、编号、放哪、复用方式）**：
   [`docs/engineering/diagram-conventions.md`](../../../docs/engineering/diagram-conventions.md)
-- **工具用法与检查边界**：同目录的 `scripts/mermaid_check.py` 的 `--help` 与文档字符串。
+- **工具用法与检查边界**：同目录的 [`README.md`](README.md)；脚本自带 `--help` 与文档字符串。
+  - 结构自检：`scripts/mermaid_check.py <目录>`（**提交前必跑**；`--list` 只列图、`--strict` 把警告当失败）；
+  - 看图兜底（编辑器预览不渲染时）：`scripts/mermaid_view.py <目录> --out <html>`；
+  - ⚠️ 这两个脚本**只此一份**，不得在别处再放副本（见 `README.md` 开头的"单一权威"）。
 
 > 若本 Skill 与权威源冲突，**以权威源为准**，并就地修本 Skill 的指针。
 
