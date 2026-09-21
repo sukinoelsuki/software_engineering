@@ -132,8 +132,12 @@ RUN set -eux; \
 #    扩展含：CodeBuddy、Python 开发、Docker、Git、YAML/TOML、Markdown、TS 备用。
 #
 #    ⚠️ **不要安装 bierner.markdown-mermaid（2026-09-21 实测移除）**：
-#      本镜像的 code-server 1.137.0 已**内置** markdown 的 Mermaid 支持
+#      本镜像的 code-server 已**内置** markdown 的 Mermaid 支持
 #      （内建扩展 mermaid-markdown-features，engines `^1.104.0`），
+#      ⚠️ **此处不写死 code-server 版本号**：下面用官方 install.sh 取的是**最新版**，
+#      版本号必然漂移（2026-09-21 注释里原写 1.137.0，同日重建后实测已是 1.138.0）。
+#      核验内建渲染器请用实测：`code-server --version` 与
+#      `ls /usr/lib/code-server/lib/vscode/extensions/ | grep -i mermaid`。
 #      第三方扩展与它声明**完全相同的 8 个配置键**（markdown-mermaid.lightModeTheme /
 #      darkModeTheme / languages / maxTextSize / mouseNavigation.enabled / controls.show /
 #      resizable / maxHeight），并同时注入 `markdown.previewScripts` 与

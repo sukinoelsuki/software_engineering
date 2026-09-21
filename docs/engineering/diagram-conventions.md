@@ -111,7 +111,7 @@ python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py --strict do
 
 | 方式 | 说明 |
 | --- | --- |
-| 编辑器内置预览（**只用内建渲染器**） | code-server 1.137.0 的 VS Code **自带** `mermaid-markdown-features`（`engines ^1.104.0`）⇒ **不得再安装第三方 mermaid 预览扩展**（原因见 §7 结案框的原因 B） |
+| 编辑器内置预览（**只用内建渲染器**） | code-server 的 VS Code **自带** `mermaid-markdown-features`（`engines ^1.104.0`）⇒ **不得再安装第三方 mermaid 预览扩展**（原因见 §7 结案框的原因 B）。⚠️ **不写死 code-server 版本号**：它由官方 `install.sh` 取最新版、必然漂移（2026-09-21 原写 1.137.0，同日重建后实测 1.138.0）；核验用 `code-server --version` + `ls /usr/lib/code-server/lib/vscode/extensions/ \| grep -i mermaid` |
 | 任意支持 Mermaid 的查看器 | 例如代码托管平台的 markdown 渲染、本地编辑器、在线编辑器 |
 | 本地生成单体 HTML | 可用仓库外的临时手段（不验收、不入库）；**不得**作为仓库的一部分提交 |
 
