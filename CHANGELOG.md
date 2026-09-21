@@ -5,12 +5,40 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)。
 
-> 本文件由 `make changelog`（基于 commitizen）从符合 Conventional Commits 的提交历史自动生成，
+> 本文件版本段由记录员依据提交历史**手纂**（用户视角、不抄流水账）；`make changelog`（commitizen）在本仓库**实际不可用**：
+> 无版本标签时无有效区间（`cz changelog <ver>` 报 “Could not find a valid revision range”）、
+> `--incremental` 会按标签重建并覆盖已发布的 0.1.0/0.0.1 段落、默认模板还会漏掉 `docs`/`test`/`chore` 提交。
 > **请勿手工调整已发布版本的条目**；`[Unreleased]` 段落可由人工补充说明。
 
 ---
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-09-21
+
+> 本版以文档、研究与流程收敛为主，不引入新的代码层安全缓解；威胁模型文档有更新
+> （T-08 陈旧陈述更正、新增提案 P-3/P-4），威胁状态以 `docs/design/threat-model/README.md` §4.1
+> 为唯一真源。
+
+### Added
+
+- 新增产品使用与演示手册（现状报告 + 上手 + 演示 + 调试），并经独立复核更正三处呈现口径。
+- 新增多步工具调用会话的端到端集成测试与审计回放断言（`tests/integration/test_end_to_end.py`）。
+- 威胁模型新增提案 P-3/P-4（见 Security）。
+
+### Changed
+
+- 仓库远端改名为 `Native-Intelligent-Systems`：README 与 Issue 模板路径同步，CHANGELOG 比较链接更新为现名。
+- 落地 ADR-0021 批准、M1 出口准则生效与 M2 准则，并建立 0.2.0 里程碑台账。
+
+### Fixed
+
+- 更正 M2 出口判据独立取证报告中的事实性失实：拒绝路径「落到 `ok=false`、会话继续」的误述，
+  以及虚构的退出码机制（实为 `EXIT_OK..EXIT_UNEXPECTED` 加 `_EXIT_BY_STATUS`）。
+
+### Security
+
+- 威胁模型文档更新：更正 T-08 陈旧陈述，并新增提案 P-3/P-4（均为文档性变更，未引入新的代码层缓解）。
 
 ## [0.1.0] - 2026-09-20
 
@@ -233,4 +261,5 @@
 - `Fixed` 缺陷修复
 - `Security` 安全相关修复与加固
 
-[Unreleased]: https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems/-/compare/main...develop
+[0.2.0]: https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems/-/compare/v0.1.0...v0.2.0
+[Unreleased]: https://cnb.cool/Mybase_Le0n3rd/Native-Intelligent-Systems/-/compare/v0.2.0...develop

@@ -150,6 +150,10 @@ make help        # 查看全部可用命令
 
 ### 5.1 跑一次真实会话（产品用法）
 
+> **完整路径见** [`docs/engineering/product-handbook.md`](docs/engineering/product-handbook.md)：
+> 现状报告（有什么 / 能做什么 / 不能做什么）· 五分钟上手 · **5 个可照做的演示舞台** ·
+> 退出码排障表。本节只是最短版本。
+
 > **前置**：一个 `llama-server` 可执行文件与一个本地 GGUF 模型（本开发环境已预置
 > `/opt/llama.cpp/build/bin/llama-server` 与 `/opt/models/*.gguf`；其它机器请自备）。
 > **前置**：一条命令即可安装 —— `uv sync` 会把 `agent-sec-perf` 装进虚拟环境
@@ -227,6 +231,7 @@ uv run agent-sec-perf run \
 | [`docs/research/`](docs/research/) | 前沿 AI 生态调研与论文笔记 |
 | [`docs/devlog/`](docs/devlog/) | **开发日志**（按议题/阶段分篇，过程记录） |
 | [`docs/engineering/post-build-checklist.md`](docs/engineering/post-build-checklist.md) | **构建后待办清单**（下一步行动） |
+| [`docs/engineering/product-handbook.md`](docs/engineering/product-handbook.md) | **产品使用与演示手册**（现状报告 + 上手 + 演示脚本 + 调试） |
 
 ---
 

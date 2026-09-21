@@ -16,6 +16,13 @@
 3. **无凭据泄漏**：事件 / 审计 / 两条输出流里都不出现凭据标记，且子进程环境 canary
    不回流（与 ``tests/security/test_spawn_credentials_canary.py`` 同一取证取向，
    但此处只做**我方通道**的检查，安全断言仍归 ``tests/security/``）。
+4. **多步会话**（`M2` 出口判据 `M2-1` / `M2-4` 的载体，2026-09-20 新增）：任务是
+   "先列目录、再读列出来的文件"——**第二步的输入来自第一步的输出**，因此"两次调用"
+   不是把同一件事说两遍，而是一条真实的 ReAct 链路。断言分两侧：
+   **审计侧**（`M2-1`）落盘文件里 ``kind=TOOL_CALL`` 且 ``outcome=OK`` 的事件 **≥ 2 条**，
+   且覆盖 **> 1** 个不同工具或不同参数；**回放侧**（`M2-4`）对该会话审计文件里
+   **每一条** ``TOOL_CALL`` 事件的 ``event_id`` 调 ``query_by_id`` 从**落盘文件**还原，
+   并逐条与事件流对齐（``kind`` / ``call_id`` / ``outcome``）——**不得只验单步**。
 
 **可用性参数（实测依据，2026-09-19，本容器）**：模型日志里 ``tg`` 稳定在 ``3.5 t/s``，
 而 ``harness/loop.py`` 调 ``chat`` 时**不传** ``timeout_s`` ⇒ 每次补全都用
@@ -83,7 +90,9 @@ import pytest
 from agent_sec_perf.cli import app as cli_app
 from agent_sec_perf.cli.app import EXIT_OK, RunRequest, execute
 from agent_sec_perf.cli.render import serialize_event
+from agent_sec_perf.contracts.audit import AuditEventKind, AuditOutcome
 from agent_sec_perf.contracts.harness import SessionEvent, SessionEventKind, TaskStatus
+from agent_sec_perf.contracts.tools import ToolResult
 from agent_sec_perf.foundation.config import AppConfig, PolicyConfig
 from agent_sec_perf.observability.audit import JsonlAuditSink
 
@@ -178,6 +187,75 @@ _CREDENTIAL_MARKERS: Final = (
 #: 状态行前缀（文本模式用于确认"只有一条终态行"，即渲染侧的 ``I6``）。
 _STATUS_PREFIXES: Final = tuple(f"{status.value}：" for status in TaskStatus)
 
+# ---------------------------------------------------------------------------
+# 多步会话（`M2-1` / `M2-4`）的参数：任务的**第二步依赖第一步的结果**
+# ---------------------------------------------------------------------------
+
+#: 多步会话的领域包。形状与基线包一致，只换名字（包名会出现在那条 ``role=USER`` 的数据消息里）；
+#: 白名单同时含 ``read_file`` 与 ``list_dir``，两者都声明 ``READ_FILE``（BASIC 档的能力预算）。
+_MULTI_STEP_PACK_DIRNAME: Final = "e2e-multistep-pack"
+_MULTI_STEP_PACK_TOML: Final = """\
+[pack]
+name = "e2e-multistep"
+version = "0.0.1"
+
+[tools]
+allowlist = ["read_file", "list_dir"]
+
+[security]
+capabilities = ["read_file"]
+
+[security.risk_overrides]
+read_file = "low"
+list_dir = "low"
+"""
+
+#: 工作目录里预置的两个文件，**内容互不相同**。为什么要两个：``M2-1`` 的判据是
+#: "覆盖 **> 1** 个不同工具或不同参数"，而**参数本身进不了事件流与审计**
+#: （``I8`` 禁止 ``arguments_json`` 进事件、``D2`` 禁止调用参数进审计）⇒
+#: "参数不同"唯一的可观察证据是"**读到的内容不同**"。只预置一个文件时，
+#: 同一工具读同一文件两次会得到两份相同内容，用例就该红——那正是判据要拦的情形。
+_MULTI_STEP_FILES: Final = (
+    ("hello.txt", "E2E-MULTI-A-2b19"),
+    ("notes.txt", "E2E-MULTI-B-7d42"),
+)
+
+#: 读取类工具（``M2-1`` 要求 ≥ 1 次为读取类工具，如 ``read_file`` / ``list_dir``）。
+#: BASIC 档的能力预算只含 ``READ_FILE`` ⇒ 能**执行成功**的工具名必然落在这个集合里。
+_MULTI_STEP_READ_TOOLS: Final = frozenset({"read_file", "list_dir"})
+
+#: 多步任务：第一步列目录、第二步读**列出来的**那个文件 ⇒ 两次调用之间有真实的数据依赖。
+#: 措辞沿用 BASIC 档提示的"单次单工具、等结果再决定下一步"，并要求"必须先列目录"，
+#: 以免模型跳过第一步直读文件（那样就只有一次调用，用例会如实红）。
+_MULTI_STEP_TASK: Final = (
+    "工作目录下有若干文件。请严格按顺序完成两步，每一步都必须真的调用工具："
+    "第一步，调用 list_dir 工具列出工作目录的条目（path 取值为 .）；"
+    "第二步，从列出的条目里找到 hello.txt，调用 read_file 工具读取它（path 取值为 hello.txt）。"
+    "必须先做第一步，等它的结果返回后再做第二步；"
+    "最后把 hello.txt 的内容原样作为最终回答。"
+)
+
+#: 多步会话**复用**基线的 ``max_completion_tokens``（384）与请求超时（240 s）：
+#: 实测两次工具调用都在 384 token 内以 ``finish_reason=tool_calls`` 完成
+#: （见 :data:`_MULTI_STEP_HARD_TIMEOUT_S` 的实测），且两个常量按"**单次补全**"计量
+#: ⇒ 多步只是"调用次数变多"，不构成第二份取值的理由。**不复制**它们，避免两份默认值漂移。
+#: 下面两个常量才是多步**新增**的（它们按"整轮会话"计量，与单步不同量级）。
+
+#: 多步会话的**模型往返**预算。取值依据：这条链路最少需要 3 次往返（列目录 → 读文件 →
+#: 给出结论），另留 3 次余量给"模型多绕一圈"（``loop`` 的瞬时重试**不**新开一步，
+#: 由 ``errors.MAX_TRANSIENT_RETRIES`` 独立兜住）⇒ 取 6。**只影响上限**，
+#: 不改变任何权限或校验语义；步数耗尽会以 ``LIMIT_REACHED``（退出码 2）响亮失败。
+_MULTI_STEP_MAX_STEPS: Final = 6
+
+#: 多步会话的硬超时（``signal.setitimer`` 兜底）。**取值依据（2026-09-20，本容器实测）**：
+#: 实测一轮多步会话 **≈ 190 s**（2026-09-20 两次实测：``pytest -k multi_step`` 185.7 s、
+#: 同 spec 的探针复跑 188.8 s），事件流为 ``list_dir`` → ``read_file`` → 结论的 3 次模型往返。
+#: 但硬超时是**兜底**，必须盖住"每次都恰好撞上请求超时"的最坏情况：
+#: ``_MULTI_STEP_MAX_STEPS``(6) x ``_MODEL_REQUEST_TIMEOUT_S``(240) = 1440 s ⇒ 取 1800 s。
+#: **不**复用基线的 600 s：那是按单步会话定的，多步的最坏情况会踩到它，
+#: 而硬超时一旦触发，失败信息会变成"超时"而不是"模型没做到两次调用"（归因错误）。
+_MULTI_STEP_HARD_TIMEOUT_S: Final = 1800.0
+
 
 class _HardTimeout(BaseException):
     """硬超时（**刻意不继承** ``Exception``）。
@@ -202,6 +280,50 @@ class _SessionOutcome:
     model_log_path: Path
     working_dir: Path
     port: int
+
+
+@dataclass(frozen=True)
+class _SessionSpec:
+    """一次真实会话的**输入参数**（任务 / 预置文件 / 领域包 / 步数与硬超时）。
+
+    为什么把它抽出来：多步用例与既有单步用例必须共用**同一套**驱动逻辑（装配顺序、
+    注入点、硬超时、进程回收、审计读取）。复制一份驱动只会立刻产生两份 teardown /
+    超时实现，而它们**必然漂移**（本项目的既有取向：同一事实不得两处表述）。
+
+    默认值由 :data:`_BASELINE_SPEC` 给出并**逐字保留既有单步用例的参数**——
+    既有 fixture 与断言的行为一字不改（这只是把常量搬到参数上，没有换判据）。
+    """
+
+    label: str
+    task: str
+    files: tuple[tuple[str, str], ...]
+    pack_dirname: str
+    pack_toml: str
+    max_steps: int
+    hard_timeout_s: float
+
+
+#: 既有单步用例的参数（原样搬入；**语义与取值一字未改**）。
+_BASELINE_SPEC: Final = _SessionSpec(
+    label="baseline",
+    task=_TASK,
+    files=((_SENTINEL_FILE, _SENTINEL),),
+    pack_dirname=_PACK_DIRNAME,
+    pack_toml=_PACK_TOML,
+    max_steps=_MAX_STEPS,
+    hard_timeout_s=_HARD_TIMEOUT_S,
+)
+
+#: 多步用例的参数（`M2-1` / `M2-4`）；可用性参数复用基线的取值，理由见其定义处。
+_MULTI_STEP_SPEC: Final = _SessionSpec(
+    label="multistep",
+    task=_MULTI_STEP_TASK,
+    files=_MULTI_STEP_FILES,
+    pack_dirname=_MULTI_STEP_PACK_DIRNAME,
+    pack_toml=_MULTI_STEP_PACK_TOML,
+    max_steps=_MULTI_STEP_MAX_STEPS,
+    hard_timeout_s=_MULTI_STEP_HARD_TIMEOUT_S,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +482,10 @@ def _event_text(event: SessionEvent) -> str:
 
 
 def _run_real_session(
-    tmp_path_factory: pytest.TempPathFactory, *, output_format: str
+    tmp_path_factory: pytest.TempPathFactory,
+    *,
+    output_format: str,
+    spec: _SessionSpec = _BASELINE_SPEC,
 ) -> _SessionOutcome:
     """按契约 §5.1 驱动一次**真实**会话并返回可断言快照。
 
@@ -368,23 +493,26 @@ def _run_real_session(
     给出，default-deny 的默认空集在这里**不**够用）与 ``sink``（落点必须能通过
     ``JsonlAuditSink`` 自己的白名单校验）。模型由 ``execute`` 用 ``RunRequest`` 的字段
     自己构造 —— **不走替身、不直接调 ``Session``**。
+
+    ``spec`` 缺省即既有单步用例（``_BASELINE_SPEC``，取值与重构前逐字相同）。
     """
     _require_enabled()
     binary, model_path = _require_assets()
 
-    working_dir = tmp_path_factory.mktemp(f"e2e-{output_format}")
-    (working_dir / _SENTINEL_FILE).write_text(f"{_SENTINEL}\n", encoding="utf-8")
+    working_dir = tmp_path_factory.mktemp(f"e2e-{spec.label}-{output_format}")
+    for name, content in spec.files:
+        (working_dir / name).write_text(f"{content}\n", encoding="utf-8")
     # 领域包必须落在 allowed_roots 内（``load_pack`` 自己会经 ``resolve_within`` 校验）。
-    pack_directory = working_dir / _PACK_DIRNAME
+    pack_directory = working_dir / spec.pack_dirname
     pack_directory.mkdir()
-    (pack_directory / "pack.toml").write_text(_PACK_TOML, encoding="utf-8")
+    (pack_directory / "pack.toml").write_text(spec.pack_toml, encoding="utf-8")
     audit_dir = working_dir / "audit"
     sink = JsonlAuditSink(audit_dir, roots=(working_dir,))
     model_log = working_dir / "llama-server.log"
     port = _free_port(_HOST)
 
     request = RunRequest(
-        task=_TASK,
+        task=spec.task,
         working_dir=working_dir,
         allowed_roots=(working_dir,),
         output_format=output_format,
@@ -394,7 +522,7 @@ def _run_real_session(
         model_log=model_log,
         host=_HOST,
         port=port,
-        max_steps=_MAX_STEPS,
+        max_steps=spec.max_steps,
         tool_timeout_s=_TOOL_TIMEOUT_S,
         # 慢硬件的可用性参数（取值依据见常量定义处）；断言不因它们而改变。
         max_completion_tokens=_MAX_COMPLETION_TOKENS,
@@ -418,7 +546,7 @@ def _run_real_session(
 
     patch.setattr(cli_app, "_write_event", _record)
     try:
-        with _hard_timeout(_HARD_TIMEOUT_S):
+        with _hard_timeout(spec.hard_timeout_s):
             exit_code = execute(request, stdout=out, stderr=err, config=config, sink=sink)
     finally:
         patch.undo()
@@ -452,6 +580,16 @@ def text_session(tmp_path_factory: pytest.TempPathFactory) -> _SessionOutcome:
 def json_session(tmp_path_factory: pytest.TempPathFactory) -> _SessionOutcome:
     """``--output-format json`` 的一次真实会话。"""
     return _run_real_session(tmp_path_factory, output_format="json")
+
+
+@pytest.fixture(scope="module")
+def multi_step_session(tmp_path_factory: pytest.TempPathFactory) -> _SessionOutcome:
+    """**多步**（≥ 2 次工具调用）的一次真实会话：第二步的输入来自第一步的输出。
+
+    与上面两个 fixture **并列**（互不替代）：它们替 `0.1.0` 的单步判据取证，
+    本 fixture 替 `M2-1` / `M2-4` 的多步判据取证。参数见 :data:`_MULTI_STEP_SPEC`。
+    """
+    return _run_real_session(tmp_path_factory, output_format="text", spec=_MULTI_STEP_SPEC)
 
 
 # ---------------------------------------------------------------------------
@@ -601,3 +739,203 @@ def test_no_credential_material_leaks_into_any_channel(
     # 审计的 detail 是"从不可信内容再脱敏一次"的纵深防御面（audit.md）：单独再扫一遍。
     for number, line in enumerate(json_session.audit_lines, start=1):
         assert _CANARY_VALUE.lower() not in line.lower(), f"JSON 模式审计第 {number} 行泄漏 canary"
+
+
+# ---------------------------------------------------------------------------
+# 4. 多步会话（`M2-1` / `M2-4`）：审计侧计数 + **逐条**可回放
+# ---------------------------------------------------------------------------
+
+
+def _audit_reader(outcome: _SessionOutcome) -> JsonlAuditSink:
+    """打开一个指向**本次会话已落盘的审计文件**的只读侧。
+
+    刻意**重新构造**一个 :class:`JsonlAuditSink`（走它自己的白名单参数，不改任何常量、
+    不把越界路径硬塞进去），而不是复用会话期持有的写侧对象：`M2-4` 的判据是
+    "由 ``query_by_id`` 从**落盘文件**还原"——复用写侧对象证明不了"落盘"这一环。
+    """
+    return JsonlAuditSink(outcome.audit_path.parent, roots=(outcome.working_dir,))
+
+
+def _expected_audit_outcome(result: ToolResult | None) -> AuditOutcome:
+    """把事件流一侧的工具结果映射成"审计该写什么"（`M2-4` 的对齐依据）。
+
+    ``result is None`` 是**未执行**路径（拒绝 ≠ 失败）⇒ ``DENY``；已执行则按 ``ok``
+    分 ``OK`` / ``ERROR``。映射与 ``tools/registry.audit_tool_call`` 同源，
+    因此这一层比较的是"**审计说做了什么**"与"**事件流说做了什么**"是否一致，
+    而不是把同一份数据与自己比较。
+    """
+    if result is None:
+        return AuditOutcome.DENY
+    return AuditOutcome.OK if result.ok else AuditOutcome.ERROR
+
+
+def _describe_events(events: tuple[SessionEvent, ...]) -> str:
+    """把事件流压成一行（**只含我方字段**：kind / seq / call_id / tool_name / status / error_kind）。
+
+    存在的理由：这条用例最可能的红法是"模型只做了一次调用"，而那时**必须看得到**
+    "模型到底请求了什么、哪些被拒了"。没有它，失败信息只剩"断言 1 >= 2"。
+    """
+    if not events:
+        return "事件流为空"
+    rendered: list[str] = []
+    for event in events:
+        bits = [f"seq={event.seq}", f"kind={event.kind.value}"]
+        if event.tool_name is not None:
+            bits.append(f"tool={event.tool_name}")
+        if event.call_id is not None:
+            bits.append(f"call_id={event.call_id}")
+        if event.status is not None:
+            bits.append(f"status={event.status.value}")
+        if event.error_kind is not None:
+            bits.append(f"error_kind={event.error_kind.value}")
+        rendered.append("[" + " ".join(bits) + "]")
+    return "事件流：" + " ".join(rendered)
+
+
+def test_multi_step_session_exits_zero_and_keeps_stream_invariants(
+    multi_step_session: _SessionOutcome,
+) -> None:
+    """多步会话仍满足既有不变量：退出码 ``0``、``I6``（恰好一条 ``TASK_FINISHED`` 且在最后）、
+    ``I9``（``seq`` 从 ``0`` 连续）——与单步用例同一口径，**不复用其 fixture**。"""
+    outcome = multi_step_session
+    events = outcome.events
+    assert outcome.exit_code == EXIT_OK, (
+        f"退出码应为 0（COMPLETED），实际 {outcome.exit_code}；"
+        f"stderr={outcome.stderr!r}；{_describe_events(events)}"
+    )
+    assert events, "事件流为空（至少应有 MODEL_RESPONSE 与 TASK_FINISHED）"
+
+    kinds = [event.kind for event in events]
+    assert kinds.count(SessionEventKind.TASK_FINISHED) == 1, (
+        f"I6：TASK_FINISHED 必须恰好一条；{_describe_events(events)}"
+    )
+    assert kinds[-1] is SessionEventKind.TASK_FINISHED, (
+        f"I6：TASK_FINISHED 必须是最后一条；{_describe_events(events)}"
+    )
+    assert events[-1].status is TaskStatus.COMPLETED, (
+        f"TASK_FINISHED.status 应为 COMPLETED，实际 {events[-1].status}；{_describe_events(events)}"
+    )
+
+    seqs = [event.seq for event in events]
+    assert seqs == list(range(len(events))), f"I9：seq 必须从 0 连续无空洞，实际 {seqs}"
+
+
+def test_multi_step_session_audit_has_at_least_two_ok_tool_calls(
+    multi_step_session: _SessionOutcome,
+) -> None:
+    """`M2-1` 的判据原文：该会话的审计文件里 ``kind=TOOL_CALL`` 且 ``outcome=OK`` 的事件 **≥ 2 条**，
+    且覆盖 **> 1** 个不同工具或不同参数。
+
+    "不同参数"在事件流与审计里都**不可直接观察**（``I8`` 禁止 ``arguments_json`` 进事件、
+    ``D2`` 禁止调用参数进审计）⇒ 这里的证据是"两次调用**读到的内容不同**"：预置的
+    ``hello.txt`` 与 ``notes.txt`` 内容不同（见 ``_MULTI_STEP_FILES``）。参数相同则内容相同，
+    断言就该红——这正是判据要拦的"同一件事说两遍"。
+    """
+    outcome = multi_step_session
+    audit_events = _audit_reader(outcome).read_all()
+    ok_calls = [
+        event
+        for event in audit_events
+        if event.kind is AuditEventKind.TOOL_CALL and event.outcome is AuditOutcome.OK
+    ]
+    executed = [
+        event
+        for event in outcome.events
+        if event.kind is SessionEventKind.TOOL_RESULT and event.result is not None
+    ]
+
+    assert len(ok_calls) >= 2, (
+        f"M2-1：审计里 kind=TOOL_CALL 且 outcome=OK 的事件应 ≥ 2 条，实际 {len(ok_calls)}；"
+        f"{_describe_events(outcome.events)}"
+    )
+
+    # 两次调用必须是**两个 call_id**（不是同一次调用被记了两遍）。
+    assert len({event.call_id for event in executed}) == len(executed), (
+        f"已执行的工具调用必须各有独立 call_id，实际 {[event.call_id for event in executed]}"
+    )
+    # 审计侧的 OK 条数与事件流侧的"已执行且成功"逐一对上（一条不漏、一条不多）。
+    assert len(ok_calls) == sum(
+        1 for event in executed if event.result is not None and event.result.ok
+    ), (
+        f"审计的 OK 条数（{len(ok_calls)}）与事件流里已执行且成功的调用数"
+        f"（{sum(1 for event in executed if event.result is not None and event.result.ok)}）不一致"
+    )
+
+    names = {event.tool_name for event in executed if event.tool_name is not None}
+    contents = {event.result.content for event in executed if event.result is not None}
+    assert len(names) > 1 or len(contents) > 1, (
+        "M2-1：两次调用必须覆盖 > 1 个不同工具或不同参数"
+        f"（工具名={sorted(names)}，读到的内容种类={len(contents)}）；{_describe_events(outcome.events)}"
+    )
+    # M2-1 的"≥ 1 次为读取类工具"：能**执行成功**的工具名必然落在读取类里
+    # （BASIC 档能力预算 + 领域包白名单共同决定，工具侧不自行放宽）。
+    assert names <= _MULTI_STEP_READ_TOOLS, (
+        f"M2-1：执行的工具名应全部是读取类 {sorted(_MULTI_STEP_READ_TOOLS)}，实际 {sorted(names)}"
+    )
+
+
+def test_multi_step_session_every_tool_call_is_replayable_by_query_by_id(
+    multi_step_session: _SessionOutcome,
+) -> None:
+    """`M2-4`：审计文件里**每一条** ``TOOL_CALL`` 事件都能由 ``query_by_id`` 从落盘文件还原，
+    且与事件流逐条对齐（``kind`` / ``call_id`` / ``outcome``）——**不得只验单步**。
+
+    三条独立的对照（缺一条就会退化成"自己和自己比"）：
+
+    1. ``query_by_id(event_id)`` 必须**命中**且字段自洽（回放链路真的从文件走通）；
+    2. 该 ``call_id`` 在事件流里**恰好一条** ``TOOL_CALL`` 事件、``tool_name`` 相同
+       （审计的调用与模型请求的那次调用是同一件事）；
+    3. 该 ``event_id`` 在事件流里**恰好被一条** ``TOOL_RESULT`` 引用，且该结果的
+       ``ok`` 与审计的 ``outcome`` 一致（``OK`` / ``ERROR`` / ``DENY`` 三分，见
+       :func:`_expected_audit_outcome`）。
+    """
+    outcome = multi_step_session
+    reader = _audit_reader(outcome)
+    audit_calls = [event for event in reader.read_all() if event.kind is AuditEventKind.TOOL_CALL]
+    assert len(audit_calls) >= 2, (
+        f"M2-4：待回放的 TOOL_CALL 审计事件应 ≥ 2 条（多步），实际 {len(audit_calls)}；"
+        f"{_describe_events(outcome.events)}"
+    )
+
+    session_calls: dict[str, list[SessionEvent]] = {}
+    for event in outcome.events:
+        if event.kind is SessionEventKind.TOOL_CALL and event.call_id is not None:
+            session_calls.setdefault(event.call_id, []).append(event)
+
+    linked_results: dict[str, list[SessionEvent]] = {}
+    for event in outcome.events:
+        if event.kind is SessionEventKind.TOOL_RESULT and event.audit_id is not None:
+            linked_results.setdefault(event.audit_id, []).append(event)
+
+    for audit_event in audit_calls:
+        restored = reader.query_by_id(audit_event.event_id)
+        assert restored is not None, f"审计事件 {audit_event.event_id} 无法由 query_by_id 还原"
+        assert restored.kind is AuditEventKind.TOOL_CALL, (
+            f"还原出的事件 kind 应为 tool_call，实际 {restored.kind}"
+        )
+        assert restored.event_id == audit_event.event_id
+        assert restored.call_id == audit_event.call_id, (
+            f"还原出的事件 call_id 与落盘事件不一致：{restored.call_id} != {audit_event.call_id}"
+        )
+        assert restored.outcome is audit_event.outcome, (
+            f"还原出的事件 outcome 与落盘事件不一致：{restored.outcome} != {audit_event.outcome}"
+        )
+
+        assert audit_event.call_id is not None, "TOOL_CALL 审计事件必须带 call_id（关联键）"
+        matching_calls = session_calls.get(audit_event.call_id, [])
+        assert len(matching_calls) == 1, (
+            f"call_id={audit_event.call_id} 在事件流里必须恰好一条 TOOL_CALL，"
+            f"实际 {len(matching_calls)}；{_describe_events(outcome.events)}"
+        )
+        assert matching_calls[0].tool_name == audit_event.tool_name, (
+            f"审计的 tool_name（{audit_event.tool_name}）与事件流（{matching_calls[0].tool_name}）不一致"
+        )
+
+        results = linked_results.get(audit_event.event_id, [])
+        assert len(results) == 1, (
+            f"审计事件 {audit_event.event_id} 必须被事件流里恰好一条 TOOL_RESULT 引用，"
+            f"实际 {len(results)}；{_describe_events(outcome.events)}"
+        )
+        assert audit_event.outcome is _expected_audit_outcome(results[0].result), (
+            f"审计 outcome（{audit_event.outcome}）与事件流结果（result={results[0].result}）不一致"
+        )
