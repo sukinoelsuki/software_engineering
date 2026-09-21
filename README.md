@@ -232,6 +232,7 @@ uv run agent-sec-perf run \
 | [`docs/devlog/`](docs/devlog/) | **开发日志**（按议题/阶段分篇，过程记录） |
 | [`docs/engineering/post-build-checklist.md`](docs/engineering/post-build-checklist.md) | **构建后待办清单**（下一步行动） |
 | [`docs/engineering/product-handbook.md`](docs/engineering/product-handbook.md) | **产品使用与演示手册**（现状报告 + 上手 + 演示脚本 + 调试） |
+| [`docs/engineering/product-walkthrough.md`](docs/engineering/product-walkthrough.md) | **产品跑测导引**（阶段式：执行顺序 + 每步看什么 + 设计取舍与代价；命令真源是上面的手册） |
 
 ---
 
