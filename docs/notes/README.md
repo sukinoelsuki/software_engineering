@@ -44,7 +44,7 @@
 | --- | --- | --- |
 | [probe-methodology.md](probe-methodology.md) | **如何验证"控制是否真的生效"**——退出码 0 不等于控制生效；探针必须能区分竞争解释 | devlog 0007 / 0008，含两次自我纠错 |
 | [isolation-mechanisms.md](isolation-mechanisms.md) | 隔离与资源控制的**机制分类**，以及本开发环境的实际能力矩阵 | ADR-0007、devlog 0008 |
-| [reproducibility-and-gates.md](reproducibility-and-gates.md) | 复现性与门禁：版本分叉、证据不可变形、构建期静默失败，以及**基础镜像的时间漂移**（同一份配置在不同镜像/不同时间语义不同） | devlog 0006 / 0007 / 0012 |
+| [reproducibility-and-gates.md](reproducibility-and-gates.md) | 复现性与门禁：版本分叉、证据不可变形、构建期静默失败、**基础镜像的时间漂移**（同一份配置在不同镜像/不同时间语义不同），以及**被平台杀掉的构建**（"无输出超时"会把网络卡顿伪装成 Dockerfile 写错）与 **`curl … \| sh` 的失败吞噬**、**`--no-cache` 使"层缓存省时间"不成立** | devlog 0006 / 0007 / 0012 / 0020 |
 | [hardware-probing.md](hardware-probing.md) | **硬件探测：同一个"核数"有六个答案**——哪些来源可信，哪些会给出错误答案 | 2026-09-15 实测；设计应用见 ADR-0010 |
 | [evaluation-pitfalls.md](evaluation-pitfalls.md) | **评估陷阱：判据会骗人**——提示词伪影、退出码污染、结论对但推导错，以及**把噪声当信号**（差值须与重复极差比较）、**被测系统自身状态**（KV 缓存让第二次"测量"不再是同一件事） | 三档（2B/4B/8B）对比实验；见 research/2026-09-15-tiers-s-m-l-comparison.md；情形四/五来自 2026-09-16 复跑与流水线试跑 |
 | [on-device-model-selection.md](on-device-model-selection.md) | **不存在"当前最好的端侧模型"**——只有某条轴、某个约束下更合适；厂商榜单只能当线索 | 2026-09-15 对 OpenBMB / Qwen 官方模型卡的核查；档位调整见 ADR-0011 |
