@@ -111,16 +111,41 @@ python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py --strict do
 
 | 方式 | 说明 |
 | --- | --- |
-| 编辑器内置预览 + Mermaid 支持扩展 | 开发环境镜像已装 `bierner.markdown-mermaid`；**能否渲染取决于客户端**（见 §7） |
+| 编辑器内置预览（**只用内建渲染器**） | code-server 1.137.0 的 VS Code **自带** `mermaid-markdown-features`（`engines ^1.104.0`）⇒ **不得再安装第三方 mermaid 预览扩展**（原因见 §7 结案框的原因 B） |
 | 任意支持 Mermaid 的查看器 | 例如代码托管平台的 markdown 渲染、本地编辑器、在线编辑器 |
 | 本地生成单体 HTML | 可用仓库外的临时手段（不验收、不入库）；**不得**作为仓库的一部分提交 |
 
-> ⚠️ **预览是客户端能力，不是镜像能力**：镜像只负责"把扩展装上"。
-> 若预览不渲染，排查方向在**客户端与浏览器侧**，不在 Docker 镜像（此判断有实测依据，见 §7）。
+> ⚠️ **"预览不出来"可能出在两侧，别预设在哪一侧**：渲染确实发生在客户端，
+> 但**镜像决定了客户端装了什么**——本次两条原因，一条在**图本身**（A）、一条在**镜像的扩展清单**（B）。
+> ⇒ 排查顺序固定为：**先取失败侧的原始报错**，再判断是图、是扩展、还是客户端（依据见 §7 结案框）。
 
 ---
 
-## 7. 已知环境问题：WebIDE 预览不渲染 Mermaid（2026-09-21 实测）
+## 7. 已知环境问题：预览渲染不稳（2026-09-21 **已结案**）
+
+> ### ✅ 结案结论：两条**互相独立**的原因，均已修复
+>
+> | # | 原因 | 归属 | 修复动作 | 验证方式与结果 |
+> | --- | --- | --- | --- | --- |
+> | **A** | `quadrantChart` 的**坐标轴标签用了中文** ⇒ 词法器报 `Lexical error`，**整张图渲染失败** | **本项目自己的图**写错 | 该图型改用嵌套子图的 2×2 矩阵（见 §9） | 交付包内已无 `quadrantChart`（`grep` 可复跑） |
+> | **B** | 环境里存在**两个** markdown-mermaid 渲染器：内建 `mermaid-markdown-features` 与第三方 `bierner.markdown-mermaid`，两者声明**完全相同的 8 个配置键**、并同时注入 `markdown.previewScripts` | **镜像的扩展清单**（基于"VS Code 不自带 mermaid"的过时前提） | 从 `.ide/Dockerfile` **移除** `bierner.markdown-mermaid` | 所有者 reload 后实测：**全部图正常显示**；客户端 8 条 `already registered` 消失 |
+>
+> **原因 B 的可复跑取证（不需要浏览器）**：
+>
+> ```bash
+> ls /usr/lib/code-server/lib/vscode/extensions/ | grep -i mermaid        # ① 内建渲染器是否存在
+> grep -l 'markdown-mermaid.lightModeTheme' ~/.local/share/code-server/extensions/*/package.json  # ② 第三方是否也声明同一批键
+> grep -l 'markdown.previewScripts' ~/.local/share/code-server/extensions/*/package.json         # ③ 是否都注入预览
+> ```
+>
+> **两条被推翻的初判（留痕，不抹掉）**：
+> 1. 我最初把方向收敛为"客户端加载脚本的问题"——**错**，真正的原因之一是**图写错了**（A）；
+> 2. 我随后把"`bierner.markdown-mermaid` 已装、已激活"当作"渲染链路没问题"的证据——**这个证据一直在空转**：
+>    真正渲染文件预览的是**内建**那个渲染器。**"装了某扩展且它已激活" ≠ "图就是它渲染的"**。
+>
+> 下面的内容是**当日的排查与更正过程**（原始记录，保留以便追溯）。
+
+**当日的初版记录如下**（现象与已排除项；结论以上方结案框为准）：
 
 **现象**：在 CNB 云原生开发环境的浏览器 WebIDE 中打开 markdown 预览，Mermaid 图不显示；
 同一仓库在本机 VS Code 中可正常显示。
