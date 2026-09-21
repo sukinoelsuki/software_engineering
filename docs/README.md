@@ -37,6 +37,7 @@
 | 我学到了什么、当时怎么想的？ | [`notes/`](notes/) |
 | 某个技术决策为什么这么定？ | [`adr/`](adr/) |
 | base project 为什么选它？ | [`proposals/0001-base-project-selection.md`](proposals/0001-base-project-selection.md) |
+| **文档里怎么画图、画在哪、怎么自检？** | [`engineering/diagram-conventions.md`](engineering/diagram-conventions.md) |
 | AI 代理该怎么协作？ | [`../CODEBUDDY.md`](../CODEBUDDY.md) |
 
 ---

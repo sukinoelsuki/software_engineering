@@ -233,6 +233,7 @@ uv run agent-sec-perf run \
 | [`docs/engineering/post-build-checklist.md`](docs/engineering/post-build-checklist.md) | **构建后待办清单**（下一步行动） |
 | [`docs/engineering/product-handbook.md`](docs/engineering/product-handbook.md) | **产品使用与演示手册**（现状报告 + 上手 + 演示脚本 + 调试） |
 | [`docs/engineering/product-walkthrough.md`](docs/engineering/product-walkthrough.md) | **产品跑测导引**（阶段式：执行顺序 + 每步看什么 + 设计取舍与代价；命令真源是上面的手册） |
+| [`docs/engineering/diagram-conventions.md`](docs/engineering/diagram-conventions.md) | **图表规范**（Mermaid 约定：一张图一个问题 / 必须写用途·读者·维护时点 / 图不得成为第二份真源；含自检工具与"WebIDE 预览不渲染"的实测结论） |
 
 ---
 
