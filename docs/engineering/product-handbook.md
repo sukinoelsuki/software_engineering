@@ -5,6 +5,10 @@
   判据 [`sdlc.md`](sdlc.md) §3.3）；台账下一级 `0.2.0` **待所有者决定是否落定**（见 §7）。
 - **证据口径**：本手册里的**每条命令都由团队领导于 2026-09-20 在本机实测跑过**，输出原样摘录；
   凡引用他人产出，一律注明出处。**没有实测过的命令不写进来。**
+- **独立复核（他证）**：2026-09-21 由**验证角色**逐字复跑全部 5 个舞台（只读本手册、自建临时目录），
+  **结论：逐条可跑通、结果一致**（置信度 高）。证据
+  [`../research/2026-09-21-handbook-reproducibility-review.md`](../research/2026-09-21-handbook-reproducibility-review.md)；
+  该复核指出的**三处呈现差异**已于同日按"更正而非抹掉"修正（见 §2.3、§3 舞台 3 / 舞台 4 的注）。
 - **权威源（不要在本文件找"结论真源"）**：里程碑判据 → [`sdlc.md`](sdlc.md) §3；
   接口契约 → [`docs/design/interfaces/`](../design/interfaces/README.md)；
   威胁状态 → [`docs/design/threat-model/README.md`](../design/threat-model/README.md) §4.1；
@@ -88,13 +92,14 @@
 - **模型相关取值不通用**：token 预算与超时是**本机 + 本模型**实测值，**换模型必须重测**。
 - **`examples/` 不随 wheel 分发**（`ADR-0021` §7 已实测：wheel 内 `examples/` 条目 0）。
 
-### 1.5 证据链在哪（想自己核就走这三条）
+### 1.5 证据链在哪（想自己核就从这几条走）
 
 | 想核什么 | 去处 |
 | --- | --- |
 | 里程碑结论与逐条判据 | [`sdlc.md`](sdlc.md) §3.1 / §3.2 / §3.3（每条都有"证据"列） |
 | 端到端实跑取证（含产品 CLI 多步会话、审计回放、集成用例复跑） | [`docs/research/2026-09-20-m2-exit-criteria-evidence.md`](../research/2026-09-20-m2-exit-criteria-evidence.md) |
 | `0.1.0` 发布时的单步端到端取证 | [`docs/research/2026-09-20-v0.1.0-e2e-evidence.md`](../research/2026-09-20-v0.1.0-e2e-evidence.md) |
+| **本手册自身能否逐字复跑**（他证，非作者自证） | [`docs/research/2026-09-21-handbook-reproducibility-review.md`](../research/2026-09-21-handbook-reproducibility-review.md) |
 
 ---
 
@@ -190,6 +195,13 @@ SENTINEL_IN_FINAL_ANSWER True       ← 最终回答里也确实引用了读到�
 **怎么读这段**：一次模型往返 = 一条 `model_response`；模型要工具 → `tool_call`；
 策略求值 → `policy_decision`；执行结果 → `tool_result`。两次 `tool_call` 说明是**两步**（不是一次批量）。
 
+> 📌 **以上是"派生扁平化视图"，不是 JSONL 的顶层键**（2026-09-21 独立复核指出，已更正呈现口径）：
+> `ok` / `audit_id` 在 `tool_result` 事件的 **`result` 对象内部**（`result.ok` / `result.audit_id`）；
+> 最终回答**不在** `task_finished`（它只有 `status` 与状态文案），而在**末条 `model_response` 的
+> `response.content`**。`KINDS` / `SEQ` / `FINAL_STATUS` / `SID` / `SENTINEL_*` 同理都是**派生的核对输出**。
+> 直接 `json.loads` 后取顶层 `ok` 会**取不到** —— 想按原文核字段请以
+> [复核报告](../research/2026-09-21-handbook-reproducibility-review.md) §4.4 的真实结构为准。
+
 ---
 
 ## 3. 演示脚本（建议按顺序做，5 个舞台）
@@ -236,6 +248,7 @@ from agent_sec_perf.foundation.config import default_audit_directory
 ap = default_audit_directory(); print('AUDIT_DIR', ap)
 mine = [json.loads(l) for l in ap.joinpath('audit.jsonl').read_text().splitlines()
         if l.strip() and json.loads(l)['session_id'] == '把舞台 2 的 SID 粘这里']
+print('AUDIT_LINES_THIS_SESSION', len(mine))
 sink = JsonlAuditSink(ap)
 for e in mine:
     print(e['kind'], e['outcome'], e.get('tool_name'), e['event_id'])
@@ -262,6 +275,10 @@ REPLAY e6112516443a4caeb5fea2e64ce828d8 => ('tool_call', 'VEko9pfMPQ3qybse15EgrF
 **从磁盘文件**（不是内存里那个对象）按 `event_id` 还原出"谁、什么工具、什么结果"，
 且能与事件流逐条对齐（`call_id` 一致）。
 
+> 📌 **一处更正（2026-09-21 独立复核发现）**：本块输出里的 `AUDIT_LINES_THIS_SESSION 4`
+> 在原命令中**并未打印**（属文档笔误）⇒ 命令已补上该行 `print`，使命令与输出对得上。
+> 该补法由复核角色实测过（[报告](../research/2026-09-21-handbook-reproducibility-review.md) §4.5）。
+
 ### 舞台 4：默认拒绝 / fail-secure（**约 8 分钟**，最能说明安全取向）
 
 ```bash
@@ -287,6 +304,10 @@ TOOL_RESULT result_is_None= True  text= 策略拒绝，本次调用未执行
 AUDIT policy_decision deny read_file {'missing': ['read_file'], 'reason': '未授权操作：缺少所需能力，能力只能由显式配置授予，单次确认不改变授权集合（REQ-SEC-01）', 'requested': ['read_file']}
 AUDIT tool_call       deny read_file {'denied_reason': 'policy_denied'}
 ```
+
+> 📌 上表两行 `AUDIT …` 同样是**派生视图**（2026-09-21 独立复核指出）：真实 JSONL 里
+> `missing` / `requested` / `reason` 在 **`policy_decision.detail`** 内、`denied_reason` 在
+> **`tool_call.detail`** 内，不在顶层。内容与字段完全一致，仅呈现层级不同。
 
 **四个值得讲的点**：
 1. **不是"执行失败"**：`tool_result` 的 `result` 是 **`None`**（未执行），与我方中文说明一起回喂模型；
@@ -398,6 +419,8 @@ AUDIT tool_call       deny read_file {'denied_reason': 'policy_denied'}
 | 2026-09-20 | 舞台 3（审计回放） | 本会话审计 **4 行**；2 条 `TOOL_CALL` 均可 `query_by_id` 从落盘文件还原并与事件流对齐 |
 | 2026-09-20 | 舞台 4（默认拒绝） | 退出码 **0**（会话自行收尾），**507 s**，2 次调用均 `result=None` + "策略拒绝"；审计 `policy_decision deny` / `tool_call deny` |
 | 2026-09-20 | 环境指纹 | uv 0.12.16 / Python 3.12.14 / 8 核 / 16GiB / llama-server 0.4.1-dev (69eb250) / Qwen3-4B-Q4_K_M (2,497,280,256 B) |
+| 2026-09-21 | **独立复核**（验证角色，**非作者自证**）：5 个舞台 + 环境自检 + 审计回放**逐字复跑** | 逐条通过；`make check` 955 passed（8.29 s）、`make test-security` 96 passed（1.25 s）；舞台 2 = 194 s、舞台 4 = 502 s（与手册 196 s / 507 s 属同量级**观察值**）；据实指出三处**呈现**差异，已按"更正而非抹掉"修正（见 §2.3 与 §3 舞台 3/4 的注）。证据：[复核报告](../research/2026-09-21-handbook-reproducibility-review.md) |
+| 2026-09-21 | **未复核项（如实登记，不得读成"已全部覆盖"）** | ① §1.3 第 8 条的真模型集成用例（`AGENT_SEC_PERF_E2E=1 … -m integration`，约 466 s）本轮**未重跑**（其独立证据见 [`m2` 取证报告](../research/2026-09-20-m2-exit-criteria-evidence.md)）；② **跨机 / 换模型**复跑**未做** ⇒ §6 第 3 条的"模型相关取值"声明成立，但**未被推翻也未被他证** |
 
 > 复现提示：本手册所有 demo 的临时目录都在 `/tmp`（`mktemp -d`），**不会**污染仓库；
 > 审计会写到用户状态目录（只追加）。想清理 demo 目录：`rm -rf /tmp/tmp.*`（**先确认没别的东西**）。
