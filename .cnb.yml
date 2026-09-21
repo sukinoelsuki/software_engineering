@@ -31,6 +31,15 @@
 #      注意：**不要**把 `LOCAL_HOOKS=0` 理解成"可以随便关"——它是**显式**开关，
 #      用来取代原先按 `$CI` 环境变量推断的做法（那个判据把云开发工作区误判成流水线，
 #      导致本地钩子从未安装且无人察觉，见一致性报告 A-11/A-15）。
+#   4. **合并提交不参与 Conventional Commits 校验**（2026-09-21 新增）。
+#      `push` 流水线的 `commit-message` 阶段跑 `cz check --rev-range HEAD~1..HEAD`；
+#      而合并提交的信息由平台自动生成（形如「合并来自 develop 的合并请求 #9」），
+#      **不是人写的**——Conventional Commits 约束的是人写的提交信息，约束不到平台。
+#      不豁免 ⇒ `develop`→`main` 的每一次合并都必然让 main 的 push 流水线红在该阶段
+#      （`cz check` 退出码 14 ⇒ `make` 报 `Error 14` ⇒ 阶段退出码 2，耗时 <1 s），
+#      而 PR 流水线**没有**这个阶段 ⇒ 症状是「PR 全绿、审查通过、合并后必红」。
+#      证据：构建 `cnb-5bp-1k31ffrg4`（PR #9 → 合并提交 `82db7d6`）；
+#      PR #7（`7138007`）、PR #8（`14000b3`）同为 `commit-message` 阶段 `error`。
 # ============================================================================
 
 "**":
@@ -67,7 +76,13 @@
             set -eu
             # 仅在非首个提交时校验提交信息规范
             if git rev-parse HEAD~1 >/dev/null 2>&1; then
-              make commit-check
+              # 合并提交不校验（头部硬规则 4）：它的信息由平台生成，不是人写的。
+              # 判据 = 存在第二父提交；squash 合并（单父）仍走校验，因为那条信息是人填的。
+              if git rev-parse --verify --quiet "HEAD^2" >/dev/null; then
+                echo ">> 合并提交，跳过提交信息校验"
+              else
+                make commit-check
+              fi
             else
               echo ">> 仓库首个提交，跳过提交信息校验"
             fi

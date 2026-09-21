@@ -86,6 +86,33 @@ def test_bench_crontab_keys_are_declared() -> None:
 
 
 @pytest.mark.unit
+def test_commit_message_stage_exempts_merge_commits() -> None:
+    """`commit-message` 阶段必须跳过**合并提交**，否则 `develop`→`main` 每合并一次就红一次。
+
+    2026-09-21 实测：PR #7 / #8 / #9 的 PR 流水线全绿、审查通过，合并后 `main` 的
+    `push` 流水线恒红在 `commit-message`（构建 `cnb-5bp-1k31ffrg4`，阶段退出码 2、
+    耗时 <1 s，日志只有三行 `commit validation: failed!`）。
+    根因：合并提交的信息由平台生成（「合并来自 develop 的合并请求 #9」），**不是人写的**，
+    而 Conventional Commits 约束的是人写的提交信息；PR 流水线又没有这个阶段，
+    于是症状表现为「PR 绿、合并后必红」——只看 PR 状态永远发现不了。
+
+    判据取"存在第二父提交"（`HEAD^2`）而不是"提交者是谁"：squash 合并是单父，
+    那条信息由人填写，仍必须受规范约束 ⇒ 不得一并豁免。
+    """
+    gate = _gate_pipeline_block()
+    stage = gate.split("- name: commit-message", 1)
+
+    assert len(stage) > 1, "门禁流水线里应当有具名的 commit-message 阶段"
+    body = stage[1]
+
+    assert "make commit-check" in body, "非合并提交仍必须校验提交信息规范"
+    assert re.search(r'rev-parse\s+--verify\s+--quiet\s+"?HEAD\^2"?', body), (
+        "合并提交（存在第二父提交）必须被跳过：平台生成的合并提交信息必然违反 "
+        "Conventional Commits，不豁免则 develop→main 的每次合并都会红"
+    )
+
+
+@pytest.mark.unit
 def test_every_gate_pipeline_has_a_dedicated_secret_scan_stage() -> None:
     """每个门禁流水线都必须有具名密钥扫描阶段（一致性报告 A-15 的处置①）。
 
