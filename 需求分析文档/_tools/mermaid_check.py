@@ -20,6 +20,8 @@ error（阻断）：
   * `erDiagram` 的关系行写法不合法（常见错误：用了 `-->`）
   * 占位符残留（TODO / TBD / XXX / 待填 / 占位 …）
   * `quadrantChart` 点位坐标不在 0~1 之间
+  * `quadrantChart` 的**坐标轴标签含非 ASCII**（2026-09-21 实测：词法器在第一个汉字处报
+    `Lexical error ... Unrecognized text`，**整张图渲染失败**且浏览器控制台会刷错误）
 
 warning（可用 `--strict` 升级为阻断）：
   * 单行引号不成对
@@ -28,6 +30,15 @@ warning（可用 `--strict` 升级为阻断）：
   * 制表符（Mermaid 对缩进敏感，制表符常导致渲染异常）
   * `journey` 任务行不是"任务: 分数: 角色"三段
   * 使用了保留字作为节点 id（end / subgraph / graph / class / style）
+  * `quadrantChart` 含**任何**非 ASCII 字符（只有"坐标轴标签"一处有实测证据，
+    象限名与数据点的支持情况未经证实 ⇒ 只提醒，不拦）
+
+图型对中文的兼容性（本项目实测口径）
+------------------------------------
+* `flowchart` / `stateDiagram` / `sequenceDiagram` / `erDiagram` / `journey` / `gantt` / `pie`
+  —— 现有文档（含中文标签）渲染正常，**无逆向证据**；
+* `quadrantChart` —— **坐标轴标签必须为 ASCII**（有实测的失败复现）。
+  ⚠️ "没报错"只是**弱证据**，不等于"已验证支持"；新图型首次使用时应在预览中确认。
 
 用法
 ----
@@ -85,6 +96,15 @@ SKIP_DIRS: frozenset[str] = frozenset(
 
 #: 出现即视为"图还没写完"
 PLACEHOLDERS: tuple[str, ...] = ("TODO", "TBD", "FIXME", "XXX", "???", "待填", "待补", "占位")
+
+#: quadrantChart 对非 ASCII 的实测结论（2026-09-21，来自浏览器控制台的原始报错）：
+#: 坐标轴标签处即报 `Lexical error ... Unrecognized text`，且**整张图渲染失败**。
+#: 其余位置（象限名、数据点）是否支持中文**未经证实** ⇒ 只提醒，不拦。
+QUADRANT_CJK_WARNING = (
+    "quadrantChart 含非 ASCII 字符：目前只有（坐标轴标签不接受中文）这一条有实测证据，"
+    "其余位置（象限名、数据点）的支持情况未经证实"
+    " ⇒ 建议该图型整体使用 ASCII，或改用嵌套子图的 2x2 矩阵"
+)
 
 #: 这些 id 在流程图里有特殊含义
 RESERVED_NODE_IDS: frozenset[str] = frozenset({"end", "subgraph", "graph", "class", "style"})
@@ -188,6 +208,11 @@ def detect_kind(block: Block) -> str:
     return ""
 
 
+def block_is_ascii(block: Block) -> bool:
+    """判断图块是否全部为 ASCII（用于 quadrantChart 的中文兼容性提醒）。"""
+    return all(ord(char) < 128 for _, text in block.lines for char in text)
+
+
 def check_block(block: Block) -> list[Issue]:
     """检查单个图块，返回问题列表。"""
     issues: list[Issue] = []
@@ -278,6 +303,17 @@ def check_block(block: Block) -> list[Issue]:
                     if not 0.0 <= number <= 1.0:
                         report("error", line_no, f"象限图坐标应落在 0~1，当前为 {value}")
 
+        if kind == "quadrantchart" and head in {"x-axis", "y-axis"}:
+            parts = stripped.split(None, 1)
+            if len(parts) > 1 and any(ord(char) > 127 for char in parts[1]):
+                report(
+                    "error",
+                    line_no,
+                    "quadrantChart 的坐标轴标签不接受非 ASCII 字符"
+                    "（词法器在第一个汉字处即报 Lexical error，图会整块渲染失败）"
+                    "⇒ 改用英文标签，或改用嵌套子图的 2x2 矩阵",
+                )
+
         if (
             kind == "journey"
             and ":" in stripped
@@ -293,6 +329,9 @@ def check_block(block: Block) -> list[Issue]:
                 block.start,
                 f"括号不配对：{token} 与 {closer} 相差 {abs(depth[token])} 个",
             )
+
+    if kind == "quadrantchart" and not block_is_ascii(block):
+        report("warning", block.start, QUADRANT_CJK_WARNING)
 
     if kind in {"graph", "flowchart"} and subgraph_count != end_count:
         report(
