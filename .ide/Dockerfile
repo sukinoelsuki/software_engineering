@@ -118,7 +118,19 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 # 6. code-server 与 VS Code 扩展
 #    安装 code-server 后，CNB 将以【单容器模式】启动开发环境。
-#    扩展含：CodeBuddy、Python 开发、Docker、Git、YAML/TOML、Markdown/Mermaid、TS 备用。
+#    扩展含：CodeBuddy、Python 开发、Docker、Git、YAML/TOML、Markdown、TS 备用。
+#
+#    ⚠️ **不要安装 bierner.markdown-mermaid（2026-09-21 实测移除）**：
+#      本镜像的 code-server 1.137.0 已**内置** markdown 的 Mermaid 支持
+#      （内建扩展 mermaid-markdown-features，engines `^1.104.0`），
+#      第三方扩展与它声明**完全相同的 8 个配置键**（markdown-mermaid.lightModeTheme /
+#      darkModeTheme / languages / maxTextSize / mouseNavigation.enabled / controls.show /
+#      resizable / maxHeight），并同时注入 `markdown.previewScripts` 与
+#      `markdown.markdownItPlugins` ⇒ 客户端刷 8 条
+#      "Cannot register 'markdown-mermaid.*'. This property is already registered"，
+#      且两个渲染器争抢同一个预览注入点，表现为**预览时好时坏**。
+#      卸载该第三方扩展后，预览恢复稳定（所有者 2026-09-21 在浏览器内实测确认）。
+#      参考：docs/engineering/diagram-conventions.md 的"预览与实际查看"一节。
 #
 #    扩展源说明：code-server 默认使用 Open VSX（微软 Marketplace 的使用条款禁止
 #    非微软产品访问，故不可用）。下列扩展均已逐一核对存在于 Open VSX。
@@ -152,7 +164,6 @@ RUN set -eu; \
         editorconfig.editorconfig \
         davidanson.vscode-markdownlint \
         yzhang.markdown-all-in-one \
-        bierner.markdown-mermaid \
         dbaeumer.vscode-eslint \
         esbenp.prettier-vscode \
         usernamehw.errorlens \
