@@ -90,7 +90,7 @@ from agent_sec_perf.contracts.tools import (
     ToolResult,
     ToolSpec,
 )
-from agent_sec_perf.foundation.errors import ToolArgumentsInvalidError
+from agent_sec_perf.foundation.errors import AuditWriteError, ToolArgumentsInvalidError
 from agent_sec_perf.foundation.logging import sanitize_for_display
 from agent_sec_perf.harness import errors
 from agent_sec_perf.harness.context import ContextBudget, assemble
@@ -681,6 +681,11 @@ class TaskLoop:
                     arguments_summary=summarize_arguments(arguments),
                 )
             )
+        except AuditWriteError:
+            # 证据面损坏**不是**"审批通路故障"：前者是"我们没留下痕迹"，后者是
+            # "权限判定的输入面不可用"。同形会让消费者把"证据面坏了"读成"任务失败"
+            # （威胁模型 §8.2 的 P-3）⇒ 按契约 audit.md §2.4「必须冒泡」，原样抛出。
+            raise
         except Exception as exc:
             return _ApprovalVerdict(
                 approval_event=None,

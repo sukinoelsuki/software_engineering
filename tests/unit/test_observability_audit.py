@@ -16,7 +16,7 @@ import pytest
 from agent_sec_perf.contracts.audit import AuditEvent, AuditEventKind, AuditOutcome
 from agent_sec_perf.contracts.policy import Capability, RiskLevel
 from agent_sec_perf.foundation import config
-from agent_sec_perf.foundation.errors import PathNotAllowedError, SchemaError
+from agent_sec_perf.foundation.errors import AuditWriteError, PathNotAllowedError, SchemaError
 from agent_sec_perf.foundation.logging import REDACTED
 from agent_sec_perf.observability.audit import JsonlAuditSink
 
@@ -142,11 +142,27 @@ def test_blank_lines_are_ignored_but_corrupt_content_is_not(sink: JsonlAuditSink
 
 @pytest.mark.unit
 def test_emit_failure_bubbles_when_the_target_is_not_writable(sink: JsonlAuditSink) -> None:
-    """写入失败必须抛异常（静默丢事件 = ``REQ-SEC-06`` 验收失败）。"""
+    """写入失败必须抛异常（静默丢事件 = ``REQ-SEC-06`` 验收失败）。
+
+    ⚠️ **2026-09-22 变更（契约 ``audit.md`` §2.4 + 威胁模型 ``P-3``）**：
+    类型由裸 ``OSError`` 改为 :class:`AuditWriteError`（底层 ``OSError`` 保留在 ``__cause__``）。
+    裸 ``OSError`` 与"调用方自身的 I/O 异常"**类型不可分**，下游只能用 ``except Exception``
+    一把抓 ⇒ 会把"**证据面坏了**"收敛成"**任务失败**"。
+    """
     sink.path.mkdir()  # 用同名目录顶替文件：追加写必然失败
 
-    with pytest.raises(OSError):
+    with pytest.raises(AuditWriteError) as excinfo:
         sink.emit(_event())
+
+    # 底层原因必须保留（磁盘满 / 权限 / 只读挂载的具体 OSError），不得丢。
+    assert isinstance(excinfo.value.__cause__, OSError)
+
+
+# 注：``P-3`` 的**行为级**断言（审计写入失败逃逸出 ``run()`` 而**不**被收敛成任务失败，
+# 以及"通用 gate 故障仍按 R3 收敛"的对照组）在 ``tests/unit/test_harness_loop.py``：
+#   * ``test_audit_write_failure_escapes_run_instead_of_being_a_task_failure``
+#   * ``test_generic_gate_failure_still_terminates_as_task_failure``（变异探针）
+# 这里只钉住 sink 侧的**类型与原因链**。
 
 
 @pytest.mark.unit

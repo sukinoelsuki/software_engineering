@@ -1173,7 +1173,22 @@ AuditOutcome.ERROR`）；"这次失败是路径越权"仅由 `detail["reason"] =
 
 ---
 
-#### `P-3`：审计写入失败缺"**可识别类型**"（**提案；只框定选项与代价，不含结论**）
+#### `P-3`：审计写入失败缺"**可识别类型**"（~~提案~~ ➜ **已裁决并落地，2026-09-22**）
+
+> **【裁决后状态，2026-09-22 · 所有者】`P-3` = 采纳候选 A 并已落地。**
+> 落地内容：① `foundation/errors.py` 新增 `AuditWriteError`（底层 `OSError` 保留在 `__cause__`）；
+> ② `observability/audit.py` 的 `emit` / `flush` 把 `OSError` 包装为 `AuditWriteError`；
+> ③ `harness/loop.py::_request_approval` 在 `except Exception` **之前** `except AuditWriteError: raise`；
+> ④ 契约 [`../interfaces/audit.md`](../interfaces/audit.md) §2.4 与
+> [`../interfaces/harness.md`](../interfaces/harness.md) §2.5.5 的 `R3` 措辞已写死；
+> ⑤ `cli/app.py` 的归因改为**按类型**判定（退出码仍 `4`）。
+> **证据**：`tests/unit/test_harness_loop.py` 的两条行为级用例（逃逸 + 通用故障仍按 `R3` 收敛的对照组），
+> **变异探针已实测**：摘掉 `except AuditWriteError` 后两条**同时翻红**。
+> ⚠️ **本条与威胁状态无关**（见下方原文），**不改任何 `T-XX` 状态与计数**（§4.1 仍 `1 / 10 / 2`、§5 仍 `6`）。
+> **失败方向未变**：仍是"不执行 + 终止"，只是**不再伪装成任务失败**。
+> 下方原文（选项、代价、风险）**保留不改**。
+
+#### `P-3`（原文，2026-09-21 开立时的提案文本，保留不改）
 
 > **性质**：**提案**，含架构侧**分析**，但**分析不是结论**。⚠️ **建议 ≠ 结论**；
 > **本轮 `§4.1` 的 `1 / 10 / 2`、§5 的 `6`、"已缓解并验证" 的 `1` 一个都不动**、**不改任何条目状态**。

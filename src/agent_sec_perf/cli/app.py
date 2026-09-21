@@ -65,7 +65,7 @@ from agent_sec_perf.contracts.model import CapabilityTier, ChatMessage, ModelCli
 from agent_sec_perf.contracts.policy import RiskLevel
 from agent_sec_perf.contracts.tools import Tool, ToolSpec
 from agent_sec_perf.foundation.config import AppConfig, load_config
-from agent_sec_perf.foundation.errors import BenchError, ConfigError
+from agent_sec_perf.foundation.errors import AuditWriteError, BenchError, ConfigError
 from agent_sec_perf.foundation.logging import configure_logging, get_logger, sanitize_for_display
 from agent_sec_perf.harness.arguments import SubsetArgumentValidator
 from agent_sec_perf.harness.domain_pack import load_pack
@@ -280,6 +280,11 @@ def execute(
                 _write_event(event, stdout=stdout, json_mode=assembly.json_mode)
                 if event.kind is SessionEventKind.TASK_FINISHED:
                     status = event.status
+    except AuditWriteError:
+        # 归因由**类型**直接判定（威胁模型 §8.2 的 ``P-3``）：证据面失败**不等同于**
+        # 任务失败。此前只靠 recorder 的旁路标记，这里补上类型这一条更可靠的路径。
+        logger.error("审计写入失败（证据面损坏，按 4 返回）")
+        return EXIT_AUDIT
     except Exception as exc:
         if assembly.recorder.failed:
             logger.error("审计写入失败", error_type=type(exc).__name__)

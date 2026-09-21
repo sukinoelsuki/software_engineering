@@ -66,6 +66,7 @@ from agent_sec_perf.contracts.tools import (
     ToolSpec,
 )
 from agent_sec_perf.foundation.errors import (
+    AuditWriteError,
     ModelProtocolError,
     ModelUnavailableError,
     ToolArgumentsInvalidError,
@@ -754,6 +755,56 @@ def test_confirmation_denied_by_gate_is_not_executed() -> None:
     ]
     assert sink.events[0].detail["denied_reason"] == "approval_denied"
     _assert_invariants(events, sink=sink)
+
+
+@pytest.mark.unit
+def test_audit_write_failure_escapes_run_instead_of_being_a_task_failure() -> None:
+    """``P-3``：审计写入失败（**证据面损坏**）**不得**被收敛成"任务失败"。
+
+    两者性质不同（威胁模型 §8.2 的 ``P-3``）：
+
+    * 审计写入失败 = 证据面坏了——任务可能其实成功了，只是**我们没留下痕迹**；
+    * 任务失败 = 业务路径真的没走通。
+
+    同形会让消费者去查任务逻辑而不是磁盘，且**落盘的事件流会永久把这次事故记成"任务失败"**。
+    """
+    tool = _FakeTool(READ_FILE)
+    gate = _FakeGate(error=AuditWriteError("审计写入失败：/tmp/x.jsonl"))
+    loop, _, _ = _build(
+        responses=[_response(_call("read_file"))],
+        tools=[tool],
+        decisions=[_decision(allow=True, requires_confirmation=True)],
+        gate=gate,
+    )
+
+    with pytest.raises(AuditWriteError):
+        list(loop.run("任务"))
+
+    assert tool.calls == []  # 失败方向仍是"拒绝"，没有放行
+
+
+@pytest.mark.unit
+def test_generic_gate_failure_still_terminates_as_task_failure() -> None:
+    """对照组（证明上一条**不是**恒过，且新增的 ``except`` **没有**过度捕获）。
+
+    gate 抛**非审计**异常 ⇒ 仍按 ``R3`` 收敛为 ``ERROR(INTERNAL)`` + ``TASK_FINISHED(FAILED)``，
+    且**不**逃逸出 ``run()``。若新增的 ``except AuditWriteError`` 写成了 ``except Exception``，
+    本用例必红。
+    """
+    tool = _FakeTool(READ_FILE)
+    gate = _FakeGate(error=RuntimeError("人工确认通路自身故障"))
+    loop, _, _ = _build(
+        responses=[_response(_call("read_file"))],
+        tools=[tool],
+        decisions=[_decision(allow=True, requires_confirmation=True)],
+        gate=gate,
+    )
+
+    events = list(loop.run("任务"))  # 不得抛出
+
+    assert tool.calls == []
+    assert any(event.kind is SessionEventKind.ERROR for event in events)
+    assert any(event.kind is SessionEventKind.TASK_FINISHED for event in events)
 
 
 @pytest.mark.unit

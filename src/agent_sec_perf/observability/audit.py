@@ -30,7 +30,7 @@ from typing import cast
 from agent_sec_perf.contracts.audit import AuditEvent, AuditEventKind, AuditOutcome, AuditSink
 from agent_sec_perf.contracts.policy import Capability, RiskLevel
 from agent_sec_perf.foundation import config
-from agent_sec_perf.foundation.errors import SchemaError
+from agent_sec_perf.foundation.errors import AuditWriteError, SchemaError
 from agent_sec_perf.foundation.logging import redact_sensitive, sanitize_for_display
 from agent_sec_perf.foundation.paths import resolve_within
 
@@ -97,26 +97,40 @@ class JsonlAuditSink(AuditSink):
 
         Raises:
             ValueError: 事件的时间戳不是带时区的 ISO-8601 文本（naive 时间跨时区比较会静默出错）。
-            OSError: 写入失败（磁盘满、权限、只读挂载……）——**必须冒泡**，不得吞。
+            AuditWriteError: **写入失败**（磁盘满、权限、只读挂载……）——**必须冒泡**，不得吞。
+                底层 ``OSError`` 保留在 ``__cause__``。
             TypeError: ``detail`` 里含不可 JSON 序列化的对象。
                 刻意不做 ``default=str`` 兜底：把任意对象"转成字符串"写进证据，
                 既可能漏掉结构信息，也可能把不可信文本原样固化进审计。
+
+        ⚠️ 为什么是 :class:`AuditWriteError` 而不是裸 ``OSError``（契约 ``audit.md`` §2.4
+        与威胁模型 ``P-3``）：裸 ``OSError`` 与"调用方自身的 I/O 异常"在类型上不可分，
+        下游只能用 ``except Exception`` 一把抓 ⇒ 会把"**证据面坏了**"收敛成"**任务失败**"。
         """
         payload = _event_to_payload(event)
         line = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        with self._lock, self._path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write(f"{line}\n")
+        try:
+            with self._lock, self._path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(f"{line}\n")
+        except OSError as exc:
+            raise AuditWriteError(f"审计写入失败：{self._path}") from exc
 
     def flush(self) -> None:
         """把已写入的事件强持久化到磁盘（``fsync``）。
 
         **幂等**：可重复调用（进程退出路径可能多次触发）；尚无事件文件时为空操作。
+
+        Raises:
+            AuditWriteError: ``fsync`` 失败（同 :meth:`emit`，**必须冒泡**）。
         """
         with self._lock:
             if not self._path.is_file():
                 return
-            with self._path.open("rb+") as handle:
-                os.fsync(handle.fileno())
+            try:
+                with self._path.open("rb+") as handle:
+                    os.fsync(handle.fileno())
+            except OSError as exc:
+                raise AuditWriteError(f"审计 flush 失败：{self._path}") from exc
 
     def read_all(self) -> tuple[AuditEvent, ...]:
         """按写入顺序读出全部事件（"可回放"的读取侧）。

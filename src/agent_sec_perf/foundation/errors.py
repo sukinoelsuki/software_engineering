@@ -55,6 +55,26 @@ class ConfigError(BenchError):
     """配置非法（fail-secure：不得捕获后继续用默认值）；实现见 ``foundation/config.py``。"""
 
 
+class AuditWriteError(BenchError):
+    """**审计写入失败**（证据面损坏）：落盘或 ``fsync`` 失败（磁盘满 / 权限 / 只读挂载）。
+
+    ⚠️ 它与"任务失败"是**两类事件**，不得同形：
+
+    * **本异常** = **证据面损坏**——任务可能其实成功了，但**我们没留下痕迹**；
+    * "任务失败" = 业务路径真的没走通。
+
+    同形的代价（``docs/design/threat-model/README.md`` §8.2 的 ``P-3``）：
+    消费者会把"证据面坏了"读成"任务失败" ⇒ 排查方向被带偏（去查任务逻辑而不是磁盘），
+    且**落盘的事件流会永久地把这次事故记成"任务失败"**——证据文件自己不知道自己是坏的。
+
+    刻意**不**继承 :class:`ProtocolError`：后者语义是"参数/协议不可比"，处置是**中止**；
+    本异常的处置是**让异常真的冒泡出 ``run()``**（契约 ``audit.md`` §2.4：
+    "``emit`` / ``flush`` 失败必须冒泡；禁止吞异常或降级为告警"）。
+
+    底层原因保留在 ``__cause__``（磁盘满 / 权限 / 只读挂载的具体 ``OSError``）。
+    """
+
+
 class ToolArgumentsInvalidError(BenchError):
     """工具参数的**信任边界校验**失败（模型给出的 ``arguments_json`` 不合法）。
 
