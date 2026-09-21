@@ -145,6 +145,21 @@ RUN set -eux; \
 #      安装 ms-azuretools.vscode-docker（镜像/容器/卷管理、Dockerfile 与
 #      compose 支持）。未安装 ms-vscode-remote.remote-containers —— 该扩展
 #      面向"本机 Docker Desktop 中开发 devcontainer"，在云端 WebIDE 内不可用。
+#
+#    ⚠️ **装完必须显式卸载 ms-python.vscode-python-envs（2026-09-21 实测结案）**：
+#      它**不**直接列在上面的清单里，而是 **ms-python.python 的 extensionPack 成员**
+#      （`--install-extension ms-python.python` 会把它连带装上）。
+#      它依赖一个平台专用的 `pet` 二进制（`python-env-tools/bin/pet`），而 Open VSX 的
+#      **universal** 包**不含该目录**（实测：扩展根目录下没有 `python-env-tools`）
+#      ⇒ 每次激活都走 "JSON CLI fallback"、spawn 失败，再触发
+#      `Request 'configure' timed out after 30000ms`（每次卡 30 秒）。
+#      实测代价：单次会话 **119 次** spawn 失败 / **86 次** 30 秒超时
+#      （旧计数 330/98 含"我的命令被写进同一日志"造成的回声灌水，已更正）。
+#      它提供的是"Python 环境管理"视图与命令，本项目**不用**（解释器固定 `.venv`、
+#      测试走 CLI、类型检查用 pyright、格式化用 ruff）⇒ **卸载零损失**。
+#      验证：卸载 + reload 后，新扩展主机里**连该扩展的日志文件都不再产生**，
+#      且无任何新增 pet 报错（详见 docs/devlog/0020 §3.12）。
+#      回滚：`code-server --install-extension ms-python.vscode-python-envs`。
 # ---------------------------------------------------------------------------
 RUN set -eux; \
     curl -fsSL https://code-server.dev/install.sh | sh
@@ -171,7 +186,9 @@ RUN set -eu; \
         echo "==> 安装扩展：${ext}"; \
         code-server --install-extension "${ext}" \
             || echo "[warn] 扩展安装失败：${ext}（不阻断构建）"; \
-    done
+    done; \
+    code-server --uninstall-extension ms-python.vscode-python-envs \
+        || echo "[warn] 卸载 vscode-python-envs 失败 —— 见文件头注释：它缺 pet 二进制，会每轮卡 30 秒"
 
 # ---------------------------------------------------------------------------
 # 7. llama.cpp（CPU 版，源码构建）
