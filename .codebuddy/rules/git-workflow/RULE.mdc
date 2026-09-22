@@ -2,7 +2,7 @@
 description: Git 分支模型、提交规范、PR 与发布流程（始终生效）
 alwaysApply: true
 enabled: true
-updatedAt: 2026-09-18T00:00:00.000Z
+updatedAt: 2026-09-22T00:00:00.000Z
 provider:
 ---
 
@@ -122,3 +122,27 @@ Refs: #<issue>
 - ✅ 提交前必须确认 `make check` 全绿。
 - ✅ 每次提交都必须符合 Conventional Commits，否则先修正信息再提交。
 - ⚠️ 禁止使用 `--no-verify` 跳过钩子；确需跳过必须有 ADR 记录。
+
+### 多会话并发（**提交 / 推送范围隔离**）
+
+> 同一工作区可能**同时跑着多个会话**（多个对话）。它们之间**没有共享领导、没有信箱、
+> 不共享上下文** ⇒ 不能靠"协调"解决，只能靠**缩小自己的范围 + 逐笔核对**。
+> 完整定义见 [`docs/engineering/git-workflow.md`](../../../docs/engineering/git-workflow.md) §6；
+> 决策见 [ADR-0022](../../../docs/adr/0022-multi-session-concurrency-discipline.md)。
+> **省略本节的后果**：默认叙述会推到"直接 `git add -A` 提交"这一**相反且有害**的动作。
+
+- ✅ **提交一律点名路径**：`git commit -o -m "<msg>" -- <本会话的显式路径>`（`--only`）。
+  新文件须**先** `git add <该文件>`——`-o` 对**未跟踪**路径直接报错。
+- ❌ **禁止整仓暂存**：`git add -A` / `git add .` / `git add -u` / `git commit -a` /
+  **不带路径且不带 `-o` 的 `git commit`**——按整个工作树取内容，会暂存**他人未提交**的改动。
+- ❌ **禁止波及他人的工作树清理**：`git stash`（**不带路径**）/ `git checkout -- .` /
+  `git restore .` / `git clean -fd`；需要暂存时用 `git stash push -- <自己的路径>`。
+- ✅ **推送前先核对归属**：`git fetch` → `git log --format='%h %s' @{u}..HEAD`。
+  `push` 推的是**整条分支**，会带走**同一分支上别的会话尚未推送的提交**；
+  A 类报告须覆盖"**实际推送的全部提交**"，非本会话的**单独标注**（§6.4）。
+- ❌ **推送被拒时禁止 `--force` / `--force-with-lease`**（D 类）：唯一合法路径是
+  `fetch` → 对**尚未推送**的本地提交 `pull --rebase`（或 merge）→ 再 `push`。
+- ⚠️ **不与另一会话并发提交**：`.git/COMMIT_EDITMSG` 是**单例**，并发提交会互相覆盖提交信息。
+- ⚠️ **冲突不自动合并**：同一文件被两个会话改过 ⇒ **停下、报告**，由所有者裁决取舍。
+- ⚠️ **边界**：以上是**流程纪律**，**不可由 CI 强制**（CI 看不到"是否存在多个会话"）
+  ⇒ 记为**部分缓解**，**不得**表述为机制。

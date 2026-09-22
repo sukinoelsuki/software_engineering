@@ -14,6 +14,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 新增**多会话并发纪律**：同一工作区同时跑多个会话时，提交与推送**只含本会话形成的内容**
+  （[`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §6 的规则 M-1~M-9，
+  含**推送前归属核对**与**推送被拒时的唯一合法路径**；
+  决策见 [ADR-0022](docs/adr/0022-multi-session-concurrency-discipline.md)）。
+  同时修正两处**反向建议**——`test-environments.md` §4 的 `P-1` 与 `testing-strategy.md` §6
+  原先推荐的 `git add -A` / 不带路径的 `git stash`，在共享工作区会波及**其他会话**未提交的改动。
+
 ## [0.2.0] - 2026-09-21
 
 > 本版以文档、研究与流程收敛为主，不引入新的代码层安全缓解；威胁模型文档有更新

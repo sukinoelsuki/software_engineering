@@ -104,12 +104,19 @@ docker run --rm -v "$PWD":/w -w /w python:3.12-bookworm \
 
 | 编号 | 规则 | 操作 |
 | --- | --- | --- |
-| **P-1** | 进入 T2/T3 之前，工作树必须干净 | `git status --porcelain` 为空；否则先 `git add -A && git commit` 或 `git stash` |
+| **P-1** | 进入 T2/T3 之前，工作树必须干净 | `git status --porcelain` 为空；否则**点名路径**入库（`git add <本会话产出的路径>` + `git commit -o -m "…" -- <同一批路径>`）或**限定路径**暂存（`git stash push -- <同一批路径>`）。⚠️ **禁止** `git add -A` / `git add .` / `git commit -a` / **不带路径**的 `git stash`——工作树与索引是**全仓共享**的，这些命令会波及**其他会话**未提交的改动（[`git-workflow.md`](git-workflow.md) §6「多会话并发纪律」） |
 | **P-2** | 测试原始数据必须落进仓库才算完成 | 写入 `docs/research/reports/<date>-<topic>/` 后再提交 |
 | **P-3** | 会话结束前把状态写进 devlog | 按 [`docs/devlog/README.md`](../devlog/README.md) 的约定追加 |
 
 **为什么 P-1 是硬规则**：未提交的改动是**唯一**无法从 git 恢复的东西。
 容器随时可以死（无记忆、可能被平台回收），改动不能丢。
+
+**为什么 P-1 要"点名路径"而不是 `-A`**：本工作区是**共享**的——同一仓库、同一工作树、同一索引。
+`git add -A` 会把**其他会话**未提交的改动一并暂存；`git stash`（不带路径）会把它们一并收走，
+之后任何一次不带 `-o` 的提交就会把它们推上远端。
+⇒ 纪律与判据见 [`git-workflow.md`](git-workflow.md) §6（决策：
+[ADR-0022](../adr/0022-multi-session-concurrency-discipline.md)）。
+本行原写作 `git add -A && git commit` / `git stash`，**2026-09-22 修正**（登记一致性报告 `A-19`）。
 
 **为什么不做成自动门禁**：误报会诱使"绕过规则"成为习惯，整体安全性反而下降。
 这条靠纪律执行，并在 [ADR-0008 §5](../adr/0008-dev-test-environment-strategy.md) 中记录为已知弱点。
