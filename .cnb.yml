@@ -299,3 +299,62 @@
 #   - 任何 `crontab` 触发的跑测
 #   - "基准数据保留期检查"（保留期清理改由 `make bench` 在数据分支的工作副本上做）
 # ============================================================================
+
+# ============================================================================
+# 【实验段 · 2026-09-25】桶归属与保活探针 E1
+#
+# 协议（判据、成本、未验证项）：
+#   docs/research/2026-09-25-bucket-attribution-probe.md §6 / §8
+#
+# 三个待测命题：
+#   P1 非 vscode 事件 + services: [vscode] ⇒ 计入**开发桶**（事实 A 的推论，此前未实测）
+#   P2 keepAliveTimeout: 20m 能让"**从未进入页面**"的环境活过 12 分钟
+#      （默认 10 分钟心跳是否可被**声明**覆盖，而不是靠模拟心跳）
+#   P3 环境可被 `cnb workspace workspace-stop` 程序化关闭
+#      ⇒ 决定"跑完即止"能否机制化（否则开发桶计费 = cpus × 存活时长，无上界）
+#
+# 为什么分支键是 `test/*` 而不是 `develop`：头部第 8 行写明"多个 glob 规则同时命中
+#   时流水线会并行执行" ⇒ 用 `develop:` 会让 `"**"` 与 `develop:` 同时命中、门禁跑两遍。
+#   `test/*` 不会被推代码（守则：`test/<slug>` 零提交），只用于借环境。
+#
+# 为什么不写 docker.build：镜像重建会让**所有环境下次拉起都重建**（头部硬规则 5 的推论），
+#   而本探针不跑模型、不需要预置资产 ⇒ 直接用与门禁同源的钉版镜像。
+#
+# 为什么每 60 s 输出一次：grammar.md §Job timeout —— **无输出 10 分钟即判超时**，
+#   这与 keepAliveTimeout 是两个独立的 10 分钟，都要满足。
+#
+# ⚠️ 本段是**实验**而非既定设计：测得数据后由 ADR-0025 决定保留 / 改写 / 移除。
+# ============================================================================
+test/*:
+  api_trigger_quota_probe:
+    - name: quota-probe
+      runner:
+        # 探针只测平台行为，不跑模型 ⇒ 1 核即可（内存 = 2 GiB）
+        cpus: 1
+      services:
+        # keepAliveTimeout：开发环境**离线保活时间**（grammar.md §service:vscode）。
+        # 默认 600000 ms（10 分钟）；这里声明 20m 以验证 P2。
+        # 支持单位 ms / s / m / h。
+        - name: vscode
+          options:
+            keepAliveTimeout: 20m
+      docker:
+        image: python:3.12-bookworm
+      stages:
+        - name: probe-timeline
+          script: |
+            set -eu
+            echo "[probe] start        $(date -u +%FT%TZ)"
+            echo "[probe] event=${CNB_EVENT:-unset} build=${CNB_BUILD_ID:-unset} cpus=${CNB_CPUS:-unset}"
+            i=0
+            while [ "$i" -lt 12 ]; do
+              echo "[probe] t+${i}min    $(date -u +%FT%TZ)"
+              i=$((i + 1))
+              sleep 60
+            done
+            echo "[probe] stages-done  $(date -u +%FT%TZ)"
+      endStages:
+        - name: probe-end
+          script: |
+            set -eu
+            echo "[probe][endStages]   $(date -u +%FT%TZ)"
