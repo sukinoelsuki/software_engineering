@@ -35,7 +35,7 @@ LOCAL_HOOKS ?= 1
 .PHONY: help setup hooks-check lint format format-check typecheck test test-cov test-security \
         security security-bandit security-secrets security-audit commit-check changelog \
         release bump \
-        check branch-status clean distclean \
+        check branch-status clean distclean quota \
         bench bench-round bench-publish bench-verify-assets
 
 # ---------------------------------------------------------------------------
@@ -145,6 +145,32 @@ release: ## 落定版本号到里程碑（VERSION=x.y.z；含门禁，失败即�
 # hooks-check 放在最前：本地防线缺失时应**立刻**失败并给出修复命令，
 # 而不是等 100+ 个测试跑完再说（见 hooks-check 目标与 scripts/check-local-hooks.sh）。
 check: hooks-check format-check lint typecheck test security ## 完整自检（提交 PR 前必须全绿）
+
+# ---------------------------------------------------------------------------
+# 额度核对（只读；数据来自平台 API）
+#
+# 为什么做成目标：ADR-0024 要求"**月末用平台数据核对一次**"并把数字写进 devlog。
+# 手敲四条命令容易漏、更容易凭印象报数字；做成目标后"读数"是唯一动作。
+# ⚠️ 它**故意不放进 `check`**：需要 `cnb` CLI 与组织级读权限（`group-resource:r`），
+#    在缺这些的环境里会失败，而它**不是质量门禁**（是记账）。
+# 口径与判据：docs/adr/0024-quota-discipline-and-cost-model.md §5（Q1）。
+# ---------------------------------------------------------------------------
+CNB_ORG ?= Mybase_Le0n3rd
+
+quota: ## 核对组织额度与用量（只读；需 cnb CLI 与组织读权限）
+	@command -v cnb >/dev/null 2>&1 || { \
+		echo ">> 需要 cnb CLI（登记见 ADR-0016；镜像内由 .ide/install-cnb-skills.sh 安装）"; \
+		exit 1; \
+	}
+	@echo ">> 1/4 组织月度额度（看 ci_in_sec / dev_in_sec 的 free）"
+	@cnb charge get-quota --slug $(CNB_ORG)
+	@echo ">> 2/4 组织本月用量"
+	@cnb charge get-volume --slug $(CNB_ORG)
+	@echo ">> 3/4 按仓库拆分：云原生构建（ci）"
+	@cnb charge get-repos-volume --slug $(CNB_ORG) --type charge_type_ci
+	@echo ">> 4/4 按仓库拆分：云原生开发（dev）"
+	@cnb charge get-repos-volume --slug $(CNB_ORG) --type charge_type_dev
+	@echo ">> 请把读数记入最新一篇 devlog（预计 vs 实际）"
 
 # ---------------------------------------------------------------------------
 # 分支卫生（只读，不阻断）

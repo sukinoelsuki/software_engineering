@@ -56,8 +56,10 @@ make bench-verify-assets
 > 而且**不会有任何报错**，它只是静静地变成一条不能用的序列。
 
 **环境要求**：跑测需要 **8 核 / 16 GiB**（L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM）
-与镜像内预置的模型 / `llama-server` ⇒ 它**只在云原生开发环境里**跑
-（开发额度 1600 核时/月，与构建额度分列）。运行分支建议用 `test/<slug>`
+与镜像内预置的模型 / `llama-server` ⇒ 它**只在云原生开发环境里**跑。
+⚠️ **开发额度不是"用不完"的**：组织本月开发用量 **2512.7 核时**已超免费额度 1600
+（实测见 [`../research/2026-09-25-quota-measurement-and-cost-model.md`](../research/2026-09-25-quota-measurement-and-cost-model.md)）
+⇒ **跑测前必读 §3.1 的成本纪律**。运行分支建议用 `test/<slug>`
 （见 [`.cnb.yml`](../../.cnb.yml) 头部与 [`CODEBUDDY.md`](../../CODEBUDDY.md) §2）。
 
 可覆盖的变量：`BENCH_DATA_ROOT`、`BENCH_TIERS`、`BENCH_REPEATS`、`BENCH_THREADS`、
@@ -97,10 +99,61 @@ make bench-verify-assets
 > 这两条是 2026-09-16 那次 `bench-push` 失败的完整根因（§7 前两行）。
 > 另注：门禁流水线必须**显式声明 `runner.cpus: 1`**——不声明就按平台默认 8 核计费。
 
+## 3.1 人工拉起流程与成本纪律（[ADR-0024](../adr/0024-quota-discipline-and-cost-model.md)）
+
+> **为什么这一节最重要**：开发环境按 `cpus × 存活时长` 计费。
+> **8 核环境开机 1 小时 = 8 核时**，与在不在跑测无关。
+> 一根夜轮 ≈6.1~7.3 核时，而**环境空转一天（8 h）= 64 核时 ≈ 9 根夜轮**
+> ⇒ 成本的第一来源是**环境活着**，不是跑测次数。
+
+**成本公式（背下来）**：
+
+```text
+开发桶成本 = runner.cpus × 环境存活小时数    （8 核 ⇒ 8 核时/小时）
+构建桶成本 = runner.cpus × 流水线时长        （单核门禁 ⇒ 1 核时/小时）
+```
+
+**七步流程（谁在什么时候做什么）**：
+
+| # | 步骤 | 判据 / 产物 |
+| --- | --- | --- |
+| ① | **决定**：需要一个新数据点吗？预计核时 = `cpus × 预计时长` | 写进最新一篇 devlog 的 §7（预算） |
+| ② | **拉起**：在 `test/<slug>` 上借环境（从与 `develop` 一致的提交起） | ⚠️ 这一刻计费时钟开始 |
+| ③ | **准备 + 跑测**：环境内 `make bench`，**一次跑完** | 四道闸门逐道 `[OK]` |
+| ④ | **校验 + 发布**：schema 校验 → `bench/data` | 发布成功 = 数据落地 |
+| ⑤ | **关闭**：发布成功**立即**关环境 | ⚠️ **"关闭"是流程的一步，不是收尾**；忘了关 = 直接损失 8 核时/小时 |
+| ⑥ | **记账**：同一会话内写 devlog（原因 / 标签 / **实际核时** / 是否入库） | 实际核时取自 `index.json` 的 `core_hours` |
+| ⑦ | **月度核对**：`make quota` → 把读数写进 devlog | 见下 |
+
+**三条硬纪律**：
+
+- `D-C1` **环境生命周期优先**：不做事就把环境关掉，**不允许"开着环境等"**。
+- `D-C2` **核数与档位匹配**：只跑 S/M ⇒ 4 核；跑 L ⇒ 8 核；门禁 ⇒ 1 核。
+- `D-C3` **预算与记账**：跑前报预计核时、跑后记实际核时、**月末核对组织额度**。
+
+**月末核对（唯一动作）**：
+
+```bash
+make quota          # 组织额度 + 本月用量 + 按仓库拆分的 ci / dev
+```
+
+判据（[ADR-0024](../adr/0024-quota-discipline-and-cost-model.md) §5 的 `Q1`）：
+`cnb charge get-quota` 的 `ci_in_sec.free` 应仍为 **576000 s = 160 核时/月**；
+`get-volume` 的 `ci_in_sec` 应**远小于**它（本项目已停自动跑测）；
+`dev_in_sec` 是**新方法真正要盯的数**。
+
+> ⚠️ **纪律的边界（不得表述为机制）**：⑦ 的核对与 ⑤ 的及时关闭都是**流程纪律**，
+> **不可由 CI 强制**（CI 已不跑测，看不到这些动作）⇒ 按威胁模型口径记**部分缓解**。
+
+---
+
 ## 4. 参数与预算
 
-`runner.cpus: 8` ⇒ 内存 16 GiB（内存 = 核数 × 2 GiB）。**不要降到 4 核**：
+`runner.cpus: 8` ⇒ 内存 16 GiB（内存 = 核数 × 2 GiB）。**跑 L 档时不要降到 4 核**：
 L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM。
+**但"一律 8 核"也是浪费**——只跑 S/M 时 4 核（8 GiB）就够
+（实测峰值 S 2.67 / M 4.84 GiB）⇒ 核数与档位要匹配，见 §3.1（ADR-0024 的 `D-C2`）。
+⚠️ "4 核跑 S/M"目前是**推论**：4 核下的耗时与峰值内存**没有实测**（待验证项 `W-2`）。
 
 | 规模 | 实测耗时（2026-09-16，S 档 3 次 = 163 s）推算 |
 | --- | --- |
@@ -243,7 +296,17 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 
 ## 9. 相关文档
 
-- 决策与取舍：[ADR-0014](../adr/0014-benchmark-automation.md)
+- 决策与取舍：[ADR-0014](../adr/0014-benchmark-automation.md)（§2.2/§2.3 已被下述两篇修订；
+  旧 ADR 正文按"只增不改"保留）
+- **停用自动跑测 + 闸门迁移**：[ADR-0023](../adr/0023-ci-downgrade-to-manual-trigger.md)
+- **额度纪律与成本模型**：[ADR-0024](../adr/0024-quota-discipline-and-cost-model.md)
+  （§3.1 的流程与三条硬纪律出自它）
+- **退役流水线配置的归档**（原文照录，**不可重新启用**）：
+  [`archived-ci-benchmark-pipelines.md`](archived-ci-benchmark-pipelines.md)
+- 额度与用量的**实测数据**（含成本模型推导）：
+  [`../research/2026-09-25-quota-measurement-and-cost-model.md`](../research/2026-09-25-quota-measurement-and-cost-model.md)
+- 停用前的盘点与证据保全：
+  [`../research/2026-09-24-ci-consumption-summary.md`](../research/2026-09-24-ci-consumption-summary.md)
 - 判据为什么这么定：[`notes/evaluation-pitfalls.md`](../notes/evaluation-pitfalls.md)（情形四）
 - 沙箱能力边界：[ADR-0007](../adr/0007-sandbox-capability-matrix.md)、
   [`test-environments.md`](test-environments.md)
