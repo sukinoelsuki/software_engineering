@@ -1,7 +1,7 @@
 # ============================================================================
 # CNB 云原生构建流水线
 #
-# 定位：CI 门禁。本文件中的命令必须与 Makefile 保持一致，
+# 定位：**轻量质量门禁 + 云原生开发环境**。本文件中的命令必须与 Makefile 保持一致，
 #       Makefile 是唯一事实来源，禁止在此另写一套检查逻辑。
 #
 # 说明：
@@ -40,11 +40,31 @@
 #      而 PR 流水线**没有**这个阶段 ⇒ 症状是「PR 全绿、审查通过、合并后必红」。
 #      证据：构建 `cnb-5bp-1k31ffrg4`（PR #9 → 合并提交 `82db7d6`）；
 #      PR #7（`7138007`）、PR #8（`14000b3`）同为 `commit-message` 阶段 `error`。
+#
+# 【2026-09-24：自动跑测全部下线，本文件只剩"轻门禁 + 开发环境"】
+#   5. **本文件不得再出现任何「跑测类」流水线。** `bench/nightly:` 段与
+#      `web_trigger_bench` 已**整体删除**，`crontab` 触发**一条都不保留**
+#      （定时任务是最不可控的消耗源）。判据由 `tests/unit/test_cnb_config.py` 钉住。
+#      为什么下线：组织级「云原生构建」免费额度只有 **160 核时/月**且按顶级组织共享，
+#      而 [ADR-0014](docs/adr/0014-benchmark-automation.md) §2.3 的预算基数（≈17600）
+#      与它差两个数量级 ⇒ 原"约占配额 1.8%"的结论在构建桶口径下不成立（按 160 计为
+#      **194%**）。实测账与口径分歧见
+#      docs/research/2026-09-24-ci-consumption-summary.md §4.5。
+#   6. **跑测改为"环境内一键"：`make bench`**（入口在 Makefile，
+#      实现在 `scripts/bench/run.sh`）。⚠️ **四道可信闸门不随 CI 一起消失**——
+#      它们从"流水线的 stage 结构"**迁移为脚本里的断言**，判据不变。
+#      闸门清单（KV 重启 / token≥32 且计时行 3 条 / 只暴露中位数+极差 / 入库前 schema 校验）
+#      见 docs/research/2026-09-24-ci-consumption-summary.md §5.2。
+#      **承载位置变了，判据没变**；少一道，那一轮数据就不可比。
+#   7. **门禁一律单核（`runner.cpus: 1`）**：跑测要起模型、需 8 核 16 GiB，
+#      而 lint / typecheck / test / security 单核足矣。不显式声明就等于按平台的
+#      **默认 8 核**计费——那是本次盘点里最容易漏算的一项消耗。
+#      另加 `ifModify` 限定只在相关路径变更时触发、`lock` 只保留最新一条排队。
 # ============================================================================
 
 "**":
   # --------------------------------------------------------------------------
-  # 推送：对任意分支的每次提交执行完整门禁
+  # 推送：对任意分支的每次提交执行轻量门禁
   # --------------------------------------------------------------------------
   push:
     - name: ci
@@ -130,6 +150,11 @@
   #   - image 为构建失败时的回退镜像。
   #   - services [vscode, docker]：分别启用 VS Code 服务与容器内 docker 命令。
   #   - 该事件下的 stages 会在开发环境启动后自动执行（此处仅做环境自检输出）。
+  #   - ⚠️ 本事件走的是**云原生开发**额度（1600 核时/月），**不是**云原生构建额度
+  #     （160 核时/月）；两者是官方计费表里分列的独立计费项。见
+  #     docs/research/2026-09-24-ci-consumption-summary.md §4.4。
+  #   - ⚠️ **不要频繁改本段的 `build.by` / `.ide/Dockerfile`**：每改一次，
+  #     所有环境下次拉起都要重建镜像（多花一次构建）。只改文档 / 代码时**不必**动它。
   # --------------------------------------------------------------------------
   vscode:
     - name: dev-env
@@ -172,6 +197,7 @@
             printf 'codebuddy: %s\n' "$(codebuddy --version 2>&1 | head -n1)"
             echo "--------------------------------------------------"
             echo "首次使用请执行：make setup && make check"
+            echo "跑测（人工一键，含四道可信闸门）：make bench"
             echo "=================================================="
 
         - name: branch-hygiene
@@ -203,197 +229,13 @@
             fi
 
 # ============================================================================
-# 基准自动化（仅挂在 bench/nightly 分支）
-#
-# 为什么单独一条分支（而不是挂在 develop 上）：
-#   1. **crontab 只支持单一明确分支名**（不支持 glob），必须选一条；
-#   2. 定时任务取**该分支 HEAD** 的代码 ⇒ 把测试代码与日常开发分开，
-#      才能保证"同一份协议反复测"——协议一变，前后数据就不可比（ADR-0014）；
-#   3. 数据写入独立的数据分支 `bench/data`，**不回写本分支**，
-#      因此不存在"CI 推数据 → 又触发一轮测试"的死循环。
-#
-# 三种触发各司其职（互不遮挡，见 docs/engineering/benchmark-automation.md）：
-#   push        —— 改了测试代码立刻跑一轮（R=3，S/M 两档，快速反馈）
-#   crontab     —— 周二~周日 04:00 夜轮（R=10，三档）；周一 04:00 深跑（R=20 + 线程 4 对照）
-#   web_trigger —— 手动补跑（页面上点一下，不改变量）
-#
-# 关键设计点：
-#   - `runner.cpus: 8` ⇒ 内存 = 8 × 2 GiB = 16 GiB；**不能降到 4 核**：
-#     L 档常驻 8.70 GiB，4 核只有 8 GiB，会 OOM（ADR-0014）；
-#   - 复用 `.ide/Dockerfile` 的镜像（模型与 llama.cpp 已预置）：构建输入未变时命中
-#     制品库缓存，因此 nightly 不必每晚重新下载 GB 级权重；
-#   - `lock` 串行化：保证同一时刻**只有一轮**基准在跑，否则两个 runner 抢 CPU
-#     会让吞吐数字失去可比性（这是数据有效性的要求，不是省钱）；
-#   - 发布放在 `endStages`：即使测量阶段失败也把**已完成的部分数据**落盘
-#     （半份数据比没有数据好，但会被标记为 partial）；
-#   - 发布阶段**不吞错误**：`make bench-publish` 失败会让构建变红。
-#     2026-09-16 首次真实运行正是被 `|| echo "[warn] ..."` 掩盖成"绿着但没数据"
-#     ——最难发现的一类失败，比直接报错糟得多。
-# ============================================================================
-bench/nightly:
-  # --------------------------------------------------------------------------
-  # 推送即跑：验证新的测试代码能跑通，不求统计精度
-  # --------------------------------------------------------------------------
-  push:
-    - name: bench-push
-      runner:
-        cpus: 8
-      docker:
-        build:
-          dockerfile: .ide/Dockerfile
-          by:
-            - .ide/settings.json
-            - .ide/assets/models.txt
-            - .ide/assets/benchmarks.txt
-            - .ide/assets/references.txt
-            - .ide/fetch-assets.sh
-            - .ide/install-cnb-skills.sh
-            - .ide/assets/cnb-skills.txt
-      lock:
-        key: bench-cpu
-        wait: true
-        timeout: 3600
-      stages:
-        - name: verify
-          script: |
-            set -eu
-            make setup LOCAL_HOOKS=0
-            make check LOCAL_HOOKS=0
-        - name: round-quick
-          script: |
-            set -eu
-            make bench-round BENCH_TIERS=S,M BENCH_REPEATS=3 BENCH_LABEL=push
-      endStages:
-        - name: publish
-          script: |
-            set -u
-            make bench-publish
-
-  # --------------------------------------------------------------------------
-  # 夜轮：周二~周日 04:00（Asia/Shanghai）三档各重复 10 次
-  # --------------------------------------------------------------------------
-  "crontab: 0 4 * * 2-6,0":
-    - name: bench-nightly
-      runner:
-        cpus: 8
-      docker:
-        build:
-          dockerfile: .ide/Dockerfile
-          by:
-            - .ide/settings.json
-            - .ide/assets/models.txt
-            - .ide/assets/benchmarks.txt
-            - .ide/assets/references.txt
-            - .ide/fetch-assets.sh
-            - .ide/install-cnb-skills.sh
-            - .ide/assets/cnb-skills.txt
-      lock:
-        key: bench-cpu
-        wait: true
-        timeout: 3600
-      stages:
-        - name: prepare
-          script: |
-            set -eu
-            make setup LOCAL_HOOKS=0
-        - name: round-nightly
-          timeout: 90m
-          script: |
-            set -eu
-            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=10 BENCH_LABEL=nightly
-      endStages:
-        - name: publish
-          script: |
-            set -u
-            make bench-publish
-
-  # --------------------------------------------------------------------------
-  # 深跑：周一 04:00 —— 更多重复（20 次）+ 线程数对照（4 线程，R=5）
-  #   线程 4 的轮次与线程 8 的轮次**不是同一条序列**（比较签名不同），
-  #   用途是回答"核数变少时该降哪一档"，即 REQ-PERF-05/06 的取数。
-  # --------------------------------------------------------------------------
-  "crontab: 0 4 * * 1":
-    - name: bench-deep
-      runner:
-        cpus: 8
-      docker:
-        build:
-          dockerfile: .ide/Dockerfile
-          by:
-            - .ide/settings.json
-            - .ide/assets/models.txt
-            - .ide/assets/benchmarks.txt
-            - .ide/assets/references.txt
-            - .ide/fetch-assets.sh
-            - .ide/install-cnb-skills.sh
-            - .ide/assets/cnb-skills.txt
-      lock:
-        key: bench-cpu
-        wait: true
-        timeout: 7200
-      stages:
-        - name: prepare
-          script: |
-            set -eu
-            make setup LOCAL_HOOKS=0
-        - name: round-deep
-          timeout: 150m
-          script: |
-            set -eu
-            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=20 BENCH_LABEL=deep
-        - name: round-threads4
-          timeout: 60m
-          script: |
-            set -eu
-            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=5 BENCH_THREADS=4 BENCH_LABEL=deep-t4
-      endStages:
-        - name: publish
-          script: |
-            set -u
-            make bench-publish
-
-  # --------------------------------------------------------------------------
-  # 手动补跑：页面上点一下即可（不改变量，等价于夜轮）
-  # --------------------------------------------------------------------------
-  web_trigger_bench:
-    - name: bench-manual
-      runner:
-        cpus: 8
-      docker:
-        build:
-          dockerfile: .ide/Dockerfile
-          by:
-            - .ide/settings.json
-            - .ide/assets/models.txt
-            - .ide/assets/benchmarks.txt
-            - .ide/assets/references.txt
-            - .ide/fetch-assets.sh
-            - .ide/install-cnb-skills.sh
-            - .ide/assets/cnb-skills.txt
-      lock:
-        key: bench-cpu
-        wait: true
-        timeout: 3600
-      stages:
-        - name: prepare
-          script: |
-            set -eu
-            make setup LOCAL_HOOKS=0
-        - name: round-manual
-          timeout: 90m
-          script: |
-            set -eu
-            make bench-round BENCH_TIERS=S,M,L BENCH_REPEATS=5 BENCH_LABEL=manual
-      endStages:
-        - name: publish
-          script: |
-            set -u
-            make bench-publish
-
-# ============================================================================
 # TODO（随项目推进补充，需先确认 CNB 语法）：
 #   - 发布流程：tag_push "v*" → 构建制品 + 生成发布说明
 #   - 安全扫描：SCA 依赖与许可证扫描（PR 增量）
-#   - 基准数据保留期检查：每月确认 bench/data 的体积与清理效果
 #   - 定时任务：每周依赖更新检查
+#
+# ⚠️ 已**移除**且**不得加回**的项（见头部硬规则 5）：
+#   - 基准 nightly / deep / push / 手动补跑流水线（改用 `make bench`）
+#   - 任何 `crontab` 触发的跑测
+#   - "基准数据保留期检查"（保留期清理改由 `make bench` 在数据分支的工作副本上做）
 # ============================================================================

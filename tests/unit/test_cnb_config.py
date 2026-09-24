@@ -18,6 +18,12 @@
 4. **发布必须"合并本轮"，不能整体替换数据子目录**：CI 的数据根目录只有本轮，
    整体替换会删掉历史轮次的日志/产物/报告，数据分支永远只剩最新一轮。
 
+2026-09-24 追加一条**方向相反**的约束（`ADR-0023`：CI 从"全自动跑测"降级为
+"人工触发 + 环境内自动化"）：**本仓库不得再有任何自动触发的跑测流水线**——
+`bench/nightly:` 段与 `web_trigger_bench` 已整体删除，`crontab` 一条不留。
+原有那条"两条 crontab 键必须在"的断言由此**换靶**为
+`test_no_pipeline_runs_benchmarks_automatically`（门槛未降、靶子换了）。
+
 这里把结论固化成断言：禁止 bash 专有语法、镜像必须钉到发行版、
 阶段脚本不得把 git 输出接入 `head`、发布脚本必须走合并路径。
 """
@@ -42,8 +48,15 @@ def _lines() -> list[str]:
 
 
 def _gate_pipeline_block() -> str:
-    """取 `"**":` 门禁流水线组的正文（截止到 `bench/nightly:` 之前）。"""
-    return "\n".join(_lines()).split('"**":', 1)[1].split("bench/nightly:", 1)[0]
+    """取 `"**":` 门禁流水线组的正文（截止到文件末尾的 TODO 注释块之前）。
+
+    2026-09-24 起 `bench/nightly:` 段已被**整体删除**（[ADR-0023](../../docs/adr/0023-ci-downgrade-to-manual-trigger.md)：
+    自动跑测下线），因此本函数的终点从"`bench/nightly:` 之前"改为
+    "`# TODO（随项目推进补充` 之前"——否则末尾的注释块会被算进门禁组里，
+    让下面那两个**成对计数**的断言失去意义。
+    """
+    tail = "\n".join(_lines()).split('"**":', 1)[1]
+    return tail.split("# TODO（随项目推进补充", 1)[0]
 
 
 @pytest.mark.unit
@@ -76,13 +89,43 @@ def test_python_images_are_pinned_to_a_distribution() -> None:
 
 
 @pytest.mark.unit
-def test_bench_crontab_keys_are_declared() -> None:
-    """定时任务的键名与 cron 表达式是"数据节奏"本身，改动必须被看见。"""
-    text = "\n".join(_lines())
+def test_no_pipeline_runs_benchmarks_automatically() -> None:
+    """**本仓库不得再有任何自动触发的跑测流水线**（2026-09-24，ADR-0023）。
 
-    assert '"crontab: 0 4 * * 2-6,0"' in text, "夜轮（周二~周日 04:00）缺失"
-    assert '"crontab: 0 4 * * 1"' in text, "深跑（周一 04:00）缺失"
-    assert "bench/nightly:" in text, "基准流水线必须挂在单一明确分支上"
+    这条断言**替换**了此前的 `test_bench_crontab_keys_are_declared`
+    （它钉住的恰好是现在被**移除**的那两条 `crontab` 键），是"规则变更 ⇒
+    联动更新"的一处显式落点，**不是**在放宽检查：门槛没有降低，而是**换了靶子**——
+    从"两条定时任务必须在"变成"任何自动跑测都不许在"。
+
+    为什么必须钉死：
+    1. **额度**：组织级「云原生构建」免费额度只有 160 核时/月且按顶级组织共享，
+       而一轮夜轮实测就 6.1~7.3 核时（`bench/data` 的 `index.json`）；
+    2. **不可控**：`crontab` 是最不可控的消耗源——它不等人、不看当天有没有别的事；
+    3. **判据**：跑测的**四道可信闸门已迁移到脚本**（`make bench` →
+       `scripts/bench/run.sh`），所以"删掉 CI 上的跑测"**不等于**"降低可信度"；
+       真正会降低可信度的是**加回一条自动跑测却只跑一半的流程**。
+
+    采用**文本级黑名单**（而不是"只检查 crontab"）：只要这些入口重新出现在
+    `.cnb.yml` 里，本用例即失败 ⇒ "顺手加回一条定时任务"必须**显式改测试**，
+    不可能悄悄发生。参见 `docs/research/2026-09-24-ci-consumption-summary.md`。
+
+    **只扫非注释行**（与 `test_publish_script_never_pipes_git_output_into_head` 同口径）：
+    本文件头部的注释需要**指名**这些被删除的入口来解释"为什么删"，
+    若连注释一起扫，"把理由写清楚"反而会踩红——那会逼出一种最糟的写法：
+    删掉理由。注释不是配置，判据要看的是**活着的键**。
+    """
+    text = "\n".join(line for line in _lines() if not line.lstrip().startswith("#"))
+
+    forbidden = {
+        "crontab:": "定时触发是最不可控的核时消耗源，已整体移除",
+        "bench/nightly:": "基准分支不再挂任何流水线",
+        "web_trigger_bench": "页面手动跑测入口已删除（改用 make bench）",
+        "bench-round": "跑测编排只允许出现在本地一键入口（Makefile / scripts/bench/）",
+        "bench-publish": "发布只允许由 scripts/bench/run.sh 触发",
+    }
+    offenders = {key: why for key, why in forbidden.items() if key in text}
+
+    assert offenders == {}, f".cnb.yml 不得再出现自动跑测入口：{offenders}"
 
 
 @pytest.mark.unit
