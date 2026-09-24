@@ -41,29 +41,36 @@
 #      证据：构建 `cnb-5bp-1k31ffrg4`（PR #9 → 合并提交 `82db7d6`）；
 #      PR #7（`7138007`）、PR #8（`14000b3`）同为 `commit-message` 阶段 `error`。
 #
-# 【2026-09-24：自动跑测全部下线，本文件只剩"轻门禁 + 开发环境"】
-#   5. **本文件不得再出现任何「跑测类」流水线。** `bench/nightly:` 段与
-#      `web_trigger_bench` 已**退役并归档**（**不是丢弃**：原文逐字保留在
-#      [docs/engineering/archived-ci-benchmark-pipelines.md](docs/engineering/archived-ci-benchmark-pipelines.md)，
-#      作为"这套机制当年确实建起来并跑通过"的证据），`crontab` 触发**一条都不保留**
-#      （定时任务是最不可控的消耗源）。判据由 `tests/unit/test_cnb_config.py` 钉住。
-#      为什么下线：组织级「云原生构建」免费额度只有 **160 核时/月**且按顶级组织共享
-#      （**已由平台 API 实测确认**），而
-#      [ADR-0014](docs/adr/0014-benchmark-automation.md) §2.3 的预算基数（≈17600）
-#      其实是**开发桶的总量** ⇒ 原"约占配额 1.8%"是**跨桶比较**；按构建桶免费额度
-#      160 计为 **194%**。额度实测与成本模型见
-#      docs/research/2026-09-25-quota-measurement-and-cost-model.md，
-#      决策见 [ADR-0023](docs/adr/0023-ci-downgrade-to-manual-trigger.md) 与
-#      [ADR-0024](docs/adr/0024-quota-discipline-and-cost-model.md)。
-#   6. **跑测改为"环境内一键"：`make bench`**（入口在 Makefile，
-#      实现在 `scripts/bench/run.sh`）。⚠️ **四道可信闸门不随 CI 一起消失**——
+# 【2026-09-25 修订（[ADR-0025](docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)）：
+#   跑测**迁回自动化**，但一律走**云原生开发桶**。
+#   2026-09-24 那次"自动跑测全部下线"的前提已被推翻两条：
+#   ① "自动化 ⇒ 必烧构建桶"不成立（判据是"有没有 `services: [vscode]`"，不是"怎么被触发"）；
+#   ② "开发桶超额 157%"是拿 used 比 free 的口径错误（`total` = 17600，余 ≈15000）。
+#   ⇒ 真正的硬顶是**构建桶**（`total == free == 160 核时/月），跑测不该占它。】
+#   5. **跑测类流水线必须声明 `services: [vscode]`**，否则就掉回构建桶。
+#      出处：https://docs.cnb.cool/zh/workspaces/workspace-vs-build.md
+#      （"云原生开发本质上是一条声明了 service.vscode 的云原生构建流水线……分配开发节点"）。
+#      **已由探针 E1 实测**（`sn=cnb-gnb-1k3ao4u18`）：平台自打标签 `vscode=远程开发`，
+#      `ci` 增量仅 +110 s（= 门禁量）而 `dev` 冻结量 +37800 s ⇒ 确实走开发桶。
+#      判据由 `tests/unit/test_cnb_config.py` 钉住。
+#      `bench/nightly:` 段与 `web_trigger_bench` 仍**退役并归档**（**不是丢弃**：原文逐字
+#      保留在 [docs/engineering/archived-ci-benchmark-pipelines.md](docs/engineering/archived-ci-benchmark-pipelines.md)）；
+#      `crontab` 仍**不采用**，但理由已变：不是"烧构建桶"，而是**本项目需求是"按需"而非"按点"**
+#      （定时不等人、不看当天有没有别的事）。
+#   6. **跑测有两个入口**：① 自动化 `api_trigger_bench`（本文件末尾，按分支键分派机器）；
+#      ② 人工 `make bench`（在 `vscode` 环境里；入口在 Makefile，实现在
+#      `scripts/bench/run.sh`）。⚠️ **四道可信闸门不随承载变化而消失**——
 #      它们从"流水线的 stage 结构"**迁移为脚本里的断言**，判据不变。
 #      闸门清单（KV 重启 / token≥32 且计时行 3 条 / 只暴露中位数+极差 / 入库前 schema 校验）
 #      见 docs/research/2026-09-24-ci-consumption-summary.md §5.2。
 #      **承载位置变了，判据没变**；少一道，那一轮数据就不可比。
-#      ⚠️ 跑测走的是**云原生开发**额度，而**开发桶本月已超免费额度**
-#      ⇒ 跑测前后请遵守 ADR-0024 的环境生命周期纪律（**用完即关**），
-#      并用 `make quota` 做月末核对。
+#   6.1 ⚠️ **开发桶环境不能"跑完即止"（ADR-0025 §2.4，三条均为实测）**：
+#      stages 跑完不销毁；`keepAliveTimeout` 到期也不回收；流水线内
+#      `cnb workspace workspace-stop` 因令牌缺**账号级** `account-engage:rw` 被 403 拒绝。
+#      ⇒ **成本上界 = `cpus` × 到人工关闭的时长**，不是"跑测时长"。
+#      ⇒ 跑测结束**必须人工关闭环境**（账号级令牌自毁属 C 类，待所有者裁决），
+#        并用 `make quota` 做月末核对。⚠️ 开发桶超出免费额度部分**按 ¥0.125/核时计费**
+#        ——**容量充足 ≠ 免费**。
 #   7. **门禁一律单核（`runner.cpus: 1`）**：跑测要起模型、需 8 核 16 GiB，
 #      而 lint / typecheck / test / security 单核足矣。不显式声明就等于按平台的
 #      **默认 8 核**计费——那是本次盘点里最容易漏算的一项消耗。
@@ -294,67 +301,95 @@
 #   - 安全扫描：SCA 依赖与许可证扫描（PR 增量）
 #   - 定时任务：每周依赖更新检查
 #
-# ⚠️ 已**移除**且**不得加回**的项（见头部硬规则 5）：
-#   - 基准 nightly / deep / push / 手动补跑流水线（改用 `make bench`）
-#   - 任何 `crontab` 触发的跑测
+# ⚠️ 已**移除**的项（理由见头部硬规则 5；"不得加回"**只对前两条**成立）：
+#   - 基准 nightly / deep / push 流水线（走构建桶 ⇒ 不再采用）
+#   - `web_trigger_bench` 页面手动补跑（与 `api_trigger_bench` 重叠，且不可编程）
+#   - 任何 `crontab` 触发的跑测（需求是"按需"，不是"按点"——理由已于 09-25 变更）
 #   - "基准数据保留期检查"（保留期清理改由 `make bench` 在数据分支的工作副本上做）
 # ============================================================================
 
 # ============================================================================
-# 【实验段 · 2026-09-25】桶归属与保活探针 E1
+# 【跑测段 · 2026-09-25】按分支键分派机器，**走云原生开发桶**
+# 决策：[ADR-0025](docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)
+# 证据：docs/research/2026-09-25-bucket-attribution-probe.md §7
 #
-# 协议（判据、成本、未验证项）：
-#   docs/research/2026-09-25-bucket-attribution-probe.md §6 / §8
+# 触发（**显式**，不会自己跑）：
+#   cnb build start-build --repo <slug> --branch test/amd64-8 --event api_trigger_bench
 #
-# 三个待测命题：
-#   P1 非 vscode 事件 + services: [vscode] ⇒ 计入**开发桶**（事实 A 的推论，此前未实测）
-#   P2 keepAliveTimeout: 20m 能让"**从未进入页面**"的环境活过 12 分钟
-#      （默认 10 分钟心跳是否可被**声明**覆盖，而不是靠模拟心跳）
-#   P3 环境可被 `cnb workspace workspace-stop` 程序化关闭
-#      ⇒ 决定"跑完即止"能否机制化（否则开发桶计费 = cpus × 存活时长，无上界）
+# 四条"为什么"：
+#   · 必须声明 `services: [vscode]` —— 那是走开发桶的**唯一**判据（头部硬规则 5）；
+#     去掉它就掉回构建桶（硬顶 160 核时/月）。
+#   · 分支键用**精确名**（`test/amd64-8`）而不是通配符 —— 机器规格按分支分派，
+#     分支上仍**零提交**（CODEBUDDY.md §2），配置全部集中在 `develop` 的这个文件中。
+#   · 不用 `branch.create` —— 它会为**每一个**新建分支拉起环境，副作用不可控。
+#   · 不用 `crontab` —— 本项目需求是"按需"，不是"按点"（定时不等人）。
 #
-# 为什么分支键是 `test/*` 而不是 `develop`：头部第 8 行写明"多个 glob 规则同时命中
-#   时流水线会并行执行" ⇒ 用 `develop:` 会让 `"**"` 与 `develop:` 同时命中、门禁跑两遍。
-#   `test/*` 不会被推代码（守则：`test/<slug>` 零提交），只用于借环境。
+# ⚠️ 四条实测得到的硬约束（ADR-0025 §2.3~§2.5，改这段前必须读）：
+#   ① 环境**不会**跑完自毁 ⇒ 跑测结束**必须人工关闭**
+#      （成本上界 = cpus × 到人工关闭的时长，见头部硬规则 6.1）；
+#   ② `keepAliveTimeout` 只用来把无人值守的存活下限从 10 分钟抬高，
+#      **不得**当作"跑完自动结束"（实测到期不回收）；
+#   ③ 单片内**输出间隔必须 < 10 分钟**（grammar.md §Job 的"无输出超时"），
+#      故下面起了一个每 60 s 打印时间戳的后台循环——它**不是**伪造 http/ssh 心跳，
+#      只是满足超时判据；
+#   ④ **产物外推必须在 `stages` 内完成** —— `endStages` 是**销毁前**钩子，
+#      而销毁时机不可控（实测 stages 结束后查它返回"没有查询到该 stage 信息"）。
 #
-# 为什么不写 docker.build：镜像重建会让**所有环境下次拉起都重建**（头部硬规则 5 的推论），
-#   而本探针不跑模型、不需要预置资产 ⇒ 直接用与门禁同源的钉版镜像。
-#
-# 为什么每 60 s 输出一次：grammar.md §Job timeout —— **无输出 10 分钟即判超时**，
-#   这与 keepAliveTimeout 是两个独立的 10 分钟，都要满足。
-#
-# ⚠️ 本段是**实验**而非既定设计：测得数据后由 ADR-0025 决定保留 / 改写 / 移除。
+# ⚠️ 目前只落地 **amd64-8** 一台机器：arm64 需先验证 `.ide/Dockerfile`
+#     （内含预置的模型与 llama-server）能在 arm64 上构建，**未验证前不得照抄本段**。
 # ============================================================================
-test/*:
-  api_trigger_quota_probe:
-    - name: quota-probe
+test/amd64-8:
+  api_trigger_bench:
+    - name: bench-amd64-8
       runner:
-        # 探针只测平台行为，不跑模型 ⇒ 1 核即可（内存 = 2 GiB）
-        cpus: 1
+        tags: cnb:arch:amd64
+        # 8 核 / 16 GiB：L 档常驻 8.70 GiB，4 核（8 GiB）会 OOM（ADR-0024 的 D-C2）
+        cpus: 8
       services:
-        # keepAliveTimeout：开发环境**离线保活时间**（grammar.md §service:vscode）。
-        # 默认 600000 ms（10 分钟）；这里声明 20m 以验证 P2。
-        # 支持单位 ms / s / m / h。
+        # ⚠️ 这一行是"走开发桶"的判据，**不要删**（头部硬规则 5）。
+        # keepAliveTimeout：把无人值守的存活下限抬到 90m（> 单片上限 60m + 余量）。
         - name: vscode
           options:
-            keepAliveTimeout: 20m
+            keepAliveTimeout: 90m
       docker:
-        image: python:3.12-bookworm
+        # 与 `vscode` 段的镜像同源（含预置模型与 llama-server）⇒ 命中构建缓存。
+        # ⚠️ by 列表必须与 `vscode` 段**逐字一致**，否则镜像版本会分叉。
+        build:
+          dockerfile: .ide/Dockerfile
+          by:
+            - .ide/settings.json
+            - .ide/assets/models.txt
+            - .ide/assets/benchmarks.txt
+            - .ide/assets/references.txt
+            - .ide/fetch-assets.sh
+            - .ide/install-cnb-skills.sh
+            - .ide/assets/cnb-skills.txt
+        image: cnbcool/default-dev-env:latest
+      lock:
+        # 并发测量会互抢 CPU ⇒ 吞吐数字失去可比性。这是**数据有效性**要求，不是省钱。
+        # （ADR-0023 §4.2 曾把这条记为"退化为纪律"，自动化后恢复为机制。）
+        key: bench-cpu
+        wait: true
       stages:
-        - name: probe-timeline
+        - name: run
           script: |
             set -eu
-            echo "[probe] start        $(date -u +%FT%TZ)"
-            echo "[probe] event=${CNB_EVENT:-unset} build=${CNB_BUILD_ID:-unset} cpus=${CNB_CPUS:-unset}"
-            i=0
-            while [ "$i" -lt 12 ]; do
-              echo "[probe] t+${i}min    $(date -u +%FT%TZ)"
-              i=$((i + 1))
-              sleep 60
-            done
-            echo "[probe] stages-done  $(date -u +%FT%TZ)"
+            ( while true; do echo "[bench] alive $(date -u +%FT%TZ)"; sleep 60; done ) &
+            HB=$!
+            trap 'kill "$HB" 2>/dev/null || true' EXIT
+            make bench \
+              BENCH_TIERS="${BENCH_TIERS:-S,M,L}" \
+              BENCH_REPEATS="${BENCH_REPEATS:-10}" \
+              BENCH_LABEL="${BENCH_LABEL:-amd64-8}" \
+              BENCH_DATA_ROOT="${BENCH_DATA_ROOT:-${PWD}/.bench-data}"
+            kill "$HB" 2>/dev/null || true
       endStages:
-        - name: probe-end
+        # ⚠️ 这里**不做**产物外推（见本段注释 ④）；只做"别忘了关环境"的提醒。
+        - name: remind-close
           script: |
-            set -eu
-            echo "[probe][endStages]   $(date -u +%FT%TZ)"
+            set +e
+            echo "=================================================="
+            echo " 跑测流程已结束，但**环境不会自动销毁**"
+            echo " （ADR-0025 §2.4：stages 结束不销毁、keepAliveTimeout 到期也不回收）"
+            echo " ⇒ 请到云原生开发页面关闭本环境，否则按 cpus × 时长持续计费"
+            echo "=================================================="
