@@ -19,53 +19,73 @@
 **在别的分支上取数**：`git fetch origin bench/data` 即可，不必切分支，
 也不需要改工作区——数据分支与开发分支互不干扰。
 
-## 2. 三条常用命令
+## 2. 一键跑测（`make bench`）
+
+> **2026-09-24 起跑测不再由 CI 触发**：组织级「云原生构建」免费额度只有
+> **160 核时/月**且按**顶级组织**共享 ⇒ 自动跑测全部下线
+> （[ADR-0023](../adr/0023-ci-downgrade-to-manual-trigger.md)；实测账与口径分歧见
+> [`../research/2026-09-24-ci-consumption-summary.md`](../research/2026-09-24-ci-consumption-summary.md)）。
+> 跑测改为**在借来的云原生开发环境里人工一键触发**。
+> ⚠️ **闸门没有跟着下线**：四道可信闸门从 CI 的 stage 结构**迁移进脚本**
+> （`scripts/bench/run.sh` + `scripts/bench/gates.py`），**判据一条未改**。
 
 ```bash
-# 本地跑一轮（默认参数：三档 × 10 次；本地数据根目录 .bench-data，不入库）
-make bench-round
+# 一键跑测：跑一轮 → 四道可信闸门 → schema 校验 → 发布到数据分支
+make bench
+
+# 只跑 + 校验，不发布（演练改动时用这个）
+BENCH_DRY_RUN=1 make bench
 
 # 快速自检（S 档 3 次，约 3 分钟）：改完测量代码先跑这个
-make bench-round BENCH_TIERS=S BENCH_REPEATS=3 BENCH_LABEL=local
+make bench BENCH_TIERS=S BENCH_REPEATS=3 BENCH_LABEL=local
 
 # 校验预置资产摘要（复用构建期脚本，不引入第二个真源）
 make bench-verify-assets
-
-# 发布数据（CI 用；本地演练必须显式加 DRY_RUN/BENCH_ALLOW_LOCAL）
-DRY_RUN=1 BENCH_ALLOW_LOCAL=1 bash scripts/bench/publish.sh
 ```
 
-**更新基准分支（重要）**：定时任务读的是 `bench/nightly` 的 HEAD 代码，
-所以它必须与 `develop` 上**已验证**的基准代码保持一致：
+**四道闸门与它们的失败表现**（`make bench` 会逐道打印 `[gate ①..④][OK/FAIL]`）：
 
-```bash
-# 在 develop 上跑完 make check 之后，同步过去（推送会立即触发一轮即时测试）
-git push origin develop:bench/nightly
-```
+| 闸门 | 判据 | 不过时 |
+| --- | --- | --- |
+| ① 清 KV | 跑前清掉**同款** `llama-server` 残留；轮次内每次重复一个**全新**进程（`valid_prefill_repeats == repeats`） | 直接中止，不开跑 |
+| ② token / 计时行 | 每份日志的 prefill 与 gen 各**恰好** 3 行，且每个 prefill 的被评估 token 数 ≥ 32 | 拒绝入库 |
+| ③ 只暴露中位数 + 极差 | `index.json` 条目里**不得**出现单次采样（`values`） | 拒绝入库 |
+| ④ schema 校验 | `rounds.validate_latest`（与发布脚本**同一套实现**） | 拒绝入库 |
 
-不要直接在 `bench/nightly` 上开发：它是"被定时任务读取的快照"，
-不是开发分支——在它上面提交会让协议在没有 `make check` 把关的情况下生效。
+> 记忆锚点：**「跑起来」≠「可信」**。少一道闸门，那一轮数据就不可比——
+> 而且**不会有任何报错**，它只是静静地变成一条不能用的序列。
 
-**只在必要时同步**：同步会触发一轮即时测试（约 20 分钟、≈3 核时），
-因此只有**基准代码或 `.cnb.yml`** 变更时才同步；纯文档提交（devlog、手册、
-笔记）不必同步，让它自然落后几个提交没有影响。
+**环境要求**：跑测需要 **8 核 / 16 GiB**（L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM）
+与镜像内预置的模型 / `llama-server` ⇒ 它**只在云原生开发环境里**跑
+（开发额度 1600 核时/月，与构建额度分列）。运行分支建议用 `test/<slug>`
+（见 [`.cnb.yml`](../../.cnb.yml) 头部与 [`CODEBUDDY.md`](../../CODEBUDDY.md) §2）。
 
 可覆盖的变量：`BENCH_DATA_ROOT`、`BENCH_TIERS`、`BENCH_REPEATS`、`BENCH_THREADS`、
-`BENCH_LABEL`、`BENCH_KEEP_DAYS`、`BENCH_MODEL_DIR`、`BENCH_ISOLATION`。
+`BENCH_LABEL`、`BENCH_KEEP_DAYS`、`BENCH_MODEL_DIR`、`BENCH_ISOLATION`、`BENCH_DRY_RUN`。
 
-## 3. 自动触发（都挂在 `bench/nightly` 分支上）
+> `make bench-round` / `make bench-publish` 仍在，但它们是**子步骤**：
+> 单独跑会**绕过闸门**，只用于排障，不要用来产出可入库的数据。
+
+## 3. 触发方式（**不再有自动触发**）
 
 | 触发 | 规模 | 何时用 |
 | --- | --- | --- |
-| `push` | S/M × R=3 | 改了测试代码，推上去自动验证 |
-| `crontab: 0 4 * * 2-6,0` | 三档 × R=10 | 夜轮（周二~周日 04:00，Asia/Shanghai） |
-| `crontab: 0 4 * * 1` | 三档 × R=20 + 线程 4 × R=5 | 深跑（周一 04:00） |
-| `web_trigger_bench` | 三档 × R=5 | 页面手动补跑 |
+| `make bench`（人工，在开发环境里） | 默认三档 × R=10 | 需要一轮可入库的数据 |
+| `make bench BENCH_TIERS=S BENCH_REPEATS=3` | S × R=3 | 改完测量代码自检（约 3 分钟） |
 
-所有触发共用一把锁（`bench-cpu`）：**同一时刻只有一轮在跑**。
-并发测量会让吞吐数字失去可比性，所以这一步是硬约束，不是优化。
+**已移除、不得加回**（`tests/unit/test_cnb_config.py` 会拦下）：
 
-> **改流水线前必读两条硬规则**（`tests/unit/test_cnb_config.py` 会检查）：
+- `crontab` 夜轮 / 深跑（定时触发是最不可控的核时消耗源）；
+- `bench/nightly` 的 `push` 即时轮；
+- `web_trigger_bench` 页面手动补跑（改用 `make bench`）。
+
+⚠️ **并发测量的约束仍然成立**，只是承载方式变了：以前靠 CI 的 `lock` 保证
+"同一时刻只有一轮在跑"，现在靠"**人工一次只起一个环境**"。
+两轮并发会互抢 CPU，吞吐数字立刻失去可比性——这条是数据有效性的要求，
+不是省钱。`make bench` 的闸门①会清掉残留的 `llama-server`，
+但**清不掉另一个正在跑测的环境**。
+
+> **改 `.cnb.yml` 前必读两条硬规则**（`tests/unit/test_cnb_config.py` 会检查）：
 >
 > 1. **阶段脚本由镜像的 `/bin/sh` 执行**（Debian 12 上是 dash），
 >    因此不要写 `set -euo pipefail` 这类 bash 专有语法——dash 会在第一行报
@@ -75,6 +95,7 @@ git push origin develop:bench/nightly
 >    并与开发镜像（bookworm）分叉。
 >
 > 这两条是 2026-09-16 那次 `bench-push` 失败的完整根因（§7 前两行）。
+> 另注：门禁流水线必须**显式声明 `runner.cpus: 1`**——不声明就按平台默认 8 核计费。
 
 ## 4. 参数与预算
 
@@ -88,8 +109,19 @@ L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM。
 | L × R=10 | ≈ 23 min |
 | 三档 × R=10 + 判定 | ≈ 50 min（含每轮模型加载） |
 
-月预算约 310 核时（≈ 配额的 1.8%）。**余量不要靠加重复用掉**：噪声只随 √n 下降；
-把余量投向扩任务集与参数维度（见 ADR-0014 §2.3）。
+**核时纪律（2026-09-24 改写，原文见本段末尾的历史说明）**：一轮三档 × R=10
+实测就是 **6.1 ~ 7.3 核时**（`bench/data` 的 `index.json`）。
+组织级「云原生构建」免费额度只有 **160 核时/月**且按顶级组织共享 ⇒
+**"每月跑几轮"本身就是要算的事**：每日一轮（≈200 核时/月）会直接超掉整个组织的额度。
+
+- 因此**不再有定时跑测**；改为"需要时才 `make bench`"（ADR-0023）；
+- 重复次数不要用来"用掉余量"：噪声只随 √n 下降，边际收益递减；
+  需要扩的是**任务集**与**参数维度**（线程数对照），不是重复次数；
+- ⚠️ 历史说明：本条原写"月预算约 310 核时（≈ 配额的 1.8%）"，其配额基数
+  （≈17600）与官方免费额度表不是同一口径 ⇒ 按 160 计为 **194%**。
+  口径分歧已登记在
+  [`../research/2026-09-24-ci-consumption-summary.md`](../research/2026-09-24-ci-consumption-summary.md) §4.5；
+  [ADR-0014](../adr/0014-benchmark-automation.md) §2.3 按"ADR 只增不改"**保留原文**。
 
 ## 5. 改协议 / 改任务集的正确姿势
 
@@ -103,7 +135,13 @@ L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM。
 
 > 记忆锚点：**跨版本的数据不得放在同一条序列上比较**。协议变了，之前的数字就只是历史。
 
-## 6. 首次上线验证清单（第一夜之后逐项确认）
+## 6. 首次上线验证清单（**已失效，2026-09-24**）
+
+> ⚠️ **本节与 §6.1 描述的是"定时任务上线"的验证，已随 ADR-0023 一并失效**
+> ——定时任务已从 `.cnb.yml` 整体移除，不再有"第一夜"。
+> **原文保留**（它是当时真实做过的验证过程，属"当时怎么想"的记录），
+> 但**不要再按它执行**。当前对应的验证清单见 §2 与
+> [`../research/2026-09-24-ci-consumption-summary.md`](../research/2026-09-24-ci-consumption-summary.md) §7。
 
 - [ ] 定时任务确实触发了（构建历史里有 `bench-nightly`，触发方式为定时）
 - [ ] `bench/data` 分支出现了当天的目录，且 `index.json` 多了一条
@@ -178,7 +216,8 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 | 发布失败：缺 `CNB_TOKEN` / 权限不足 | 该事件的令牌权限不含 `repo-code:rw` | 查 CNB 文档的事件权限表；必要时把发布改挂到 `push` 事件（可信事件） |
 | 提交里只有 JSON、没有日志/产物 | `.gitignore` 的 `*.log` / `artifacts/` 生效了 | 确认 `.gitignore` 末尾有 `!bench/**`（后面的规则覆盖前面的） |
 | 任务一直"无输出"被杀 | 单任务无输出超时（默认 10 分钟） | 轮次是逐请求打日志的，正常情况下不会触发；若触发，查是不是卡在模型下载/镜像拉取 |
-| 定时任务完全不触发 | 分支名/权限/负责人变更 | 定时任务只能挂**单一明确分支**；执行身份是"最后修改该配置的人"，账号被移出仓库会导致失败 |
+| 定时任务完全不触发 | 分支名/权限/负责人变更 | **已不适用**（2026-09-24 起不再有定时任务，见 ADR-0023）；保留原文作为历史 |
+| `make bench` 报 `[gate ...][FAIL]` | 该轮产出不满足四道闸门之一 | **不要放行**。按闸门号对照 §2 的表定位：① 有残留进程或某次重复被丢弃；② 计时行数≠3 或 token<32；③ 索引里混进单次采样；④ schema 校验不过。修的是**原因**，不是闸门 |
 
 ## 8. 保留期与体积
 
@@ -195,9 +234,12 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 **任何情况下都不会删除历史轮次**。早期版本是"整体替换数据子目录"，在 CI 上会删掉
 历史轮次（数据根目录只有本轮），已废弃并被测试钉住。
 
-> 保留期清理（`BENCH_KEEP_DAYS`）目前只在**跑轮次**时对本地数据根生效，
-> 而 CI 的数据根只有本轮 ⇒ 在 CI 上等于不生效。历史轮次的清理需要在数据分支的
-> 工作副本上做（见 devlog 0012 §7）。
+> ⚠️ **保留期清理仍未真正生效（2026-09-24 复核，口径更新）**：
+> `BENCH_KEEP_DAYS` 只在**跑轮次**时对**本地数据根**生效，而跑测环境里的
+> `.bench-data` 通常也只有本轮 ⇒ 历史轮次的清理依旧**没有执行者**。
+> 清理需要在数据分支的工作副本上做（原登记见 devlog 0012 §7）。
+> 2026-09-24 起 CI 已不再跑基准，这条"没有执行者"的性质没变、只是原因换了
+> ⇒ **不要再按"CI 会清理"去理解**。
 
 ## 9. 相关文档
 

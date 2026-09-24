@@ -10,8 +10,10 @@
 #   1. **只推数据分支**：分支名来自 BENCH_DATA_BRANCH（默认 bench/data），
 #      推送形式固定为 `HEAD:${BENCH_DATA_BRANCH}`，**不提供**推其它分支的入口；
 #   2. **禁止 force**：不使用 --force / --force-with-lease；
-#   3. **来源分支白名单**：默认只允许从 bench/nightly 运行；本地演练需显式
-#      BENCH_ALLOW_LOCAL=1（避免在 develop/main 上误触发发布）；
+#   3. **来源分支白名单**：默认只允许从 `bench/nightly` 或 `test/*` 运行
+#      （2026-09-24 起跑测改在 `test/<slug>` 借来的云原生开发环境里人工触发，
+#       见 ADR-0023）；本地演练需显式 `BENCH_ALLOW_LOCAL=1`
+#      （避免在 develop/main 上误触发发布）；
 #   4. **提交前校验**：调用生产代码里的同一套 schema 校验，失败即拒绝发布
 #      （不发布坏数据——坏数据比没有数据更难发现）；
 #   5. **凭据**：不读取、不落盘任何密钥。CI 里用运行期临时令牌（构建结束即销毁），
@@ -19,14 +21,20 @@
 #   6. **失败即非零退出**（fail-secure），不重试、不吞错。
 #
 # 【用法】
-#   bash scripts/bench/publish.sh                 # 发布到数据分支（CI）
+#   bash scripts/bench/publish.sh                 # 发布到数据分支（跑测环境）
 #   DRY_RUN=1 bash scripts/bench/publish.sh       # 只演练：校验+提交，不推送
 #   BENCH_DATA_ROOT=/tmp/bench-data DRY_RUN=1 BENCH_ALLOW_LOCAL=1 bash scripts/bench/publish.sh
+#
+# 通常不必直接调它：`make bench`（scripts/bench/run.sh）会在四道可信闸门全过之后调。
 # ============================================================================
 
 set -euo pipefail
 
-readonly CODE_BRANCH="${BENCH_CODE_BRANCH:-bench/nightly}"
+#: 来源分支白名单（**ERE**，不是单个分支名）。2026-09-24 由"只允许 bench/nightly"
+#: 扩为"bench/nightly 或 test/*"：跑测不再由 CI 触发，而是在 `test/<slug>`
+#: 借来的云原生开发环境里人工触发（ADR-0023）。develop/main **仍然不在白名单里**
+#: ——"人手触发"不等于"可以在主干上顺手发布数据"。
+readonly CODE_BRANCH_PATTERN="${BENCH_CODE_BRANCH_PATTERN:-^bench/nightly$|^test/}"
 readonly DATA_BRANCH="${BENCH_DATA_BRANCH:-bench/data}"
 readonly DATA_SUBDIR="${BENCH_DATA_SUBDIR:-bench}"
 readonly DATA_ROOT="${BENCH_DATA_ROOT:-${PWD}/.bench-data}"
@@ -42,11 +50,11 @@ die()  { printf '[bench-publish][ERROR] %s\n' "$*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 [[ -d "${DATA_ROOT}" ]] || die "数据根目录不存在：${DATA_ROOT}（先跑 make bench-round）"
 
-if [[ "${CURRENT_BRANCH}" != "${CODE_BRANCH}" ]]; then
+if [[ ! "${CURRENT_BRANCH}" =~ ${CODE_BRANCH_PATTERN} ]]; then
     if [[ "${BENCH_ALLOW_LOCAL:-0}" == "1" ]]; then
-        log "本地演练模式：当前分支 ${CURRENT_BRANCH} 不等于 ${CODE_BRANCH}，已放行"
+        log "本地演练模式：当前分支 ${CURRENT_BRANCH} 不在白名单 ${CODE_BRANCH_PATTERN} 内，已放行"
     else
-        die "只允许从 ${CODE_BRANCH} 运行（当前 ${CURRENT_BRANCH}）；本地演练请设 BENCH_ALLOW_LOCAL=1"
+        die "只允许从 ${CODE_BRANCH_PATTERN} 运行（当前 ${CURRENT_BRANCH}）；本地演练请设 BENCH_ALLOW_LOCAL=1"
     fi
 fi
 
@@ -120,7 +128,8 @@ fi
 # 数据提交**不运行代码钩子**（core.hooksPath 指向空目录）：
 #   钩子是为代码质量设计的（ruff 会格式化 Markdown/`.py` 里的代码块），
 #   而这里提交的是模型产出与日志——它们必须字节保真，不能被"格式化"。
-#   代码侧的门禁在 bench/nightly 推送时已经执行过，此处既不重复也不适用。
+#   代码侧的门禁由**借来的开发环境**里的 pre-commit 与 `make check` 承担
+#   （2026-09-24 起已无 CI 推送这条路径，见 ADR-0023）；此处既不重复也不适用。
 #   该豁免已登记：docs/adr/0014-benchmark-automation.md。
 readonly EMPTY_HOOKS_DIR="$(mktemp -d)"
 readonly COMMIT_MSG_FILE="$(mktemp)"

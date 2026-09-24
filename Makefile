@@ -36,7 +36,7 @@ LOCAL_HOOKS ?= 1
         security security-bandit security-secrets security-audit commit-check changelog \
         release bump \
         check branch-status clean distclean \
-        bench-round bench-publish bench-verify-assets
+        bench bench-round bench-publish bench-verify-assets
 
 # ---------------------------------------------------------------------------
 help: ## 显示所有可用目标
@@ -173,6 +173,11 @@ BENCH_KEEP_DAYS ?= 30
 BENCH_MODEL_DIR ?= /opt/models
 # 隔离模式：user = 非特权 uid + 资源上限 + 最小环境（默认；CI 必须用这个）
 BENCH_ISOLATION ?= user
+# 唯一入口：`make bench`（四道可信闸门在它调的脚本里；CI 已停用自动跑测，见 ADR-0023）
+BENCH_DRY_RUN   ?= 0
+
+bench: ## 一键跑测：跑一轮 → 四道可信闸门 → 校验入库（BENCH_DRY_RUN=1 只跑不发布）
+	bash scripts/bench/run.sh
 
 bench-round: ## 跑一轮基准并落盘（BENCH_TIERS/BENCH_REPEATS/BENCH_THREADS/BENCH_LABEL 可覆盖）
 	PYTHONPATH=$(PWD)/src $(UV) run python -m agent_sec_perf.bench.rounds \

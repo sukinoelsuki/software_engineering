@@ -229,6 +229,36 @@ def test_every_gate_pipeline_has_a_dedicated_secret_scan_stage() -> None:
     assert "make security-secrets" in gate, "密钥扫描必须复用 Makefile 的目标（唯一事实来源）"
 
 
+#: 发布脚本里来源分支白名单的声明行（取出其默认值，**在 Python 里实跑**这条正则）
+_CODE_BRANCH_PATTERN_RE = re.compile(
+    r'readonly CODE_BRANCH_PATTERN="\$\{BENCH_CODE_BRANCH_PATTERN:-([^}]*)\}"'
+)
+
+
+@pytest.mark.unit
+def test_publish_script_restricts_source_branches() -> None:
+    """发布脚本必须把来源分支限制在 `bench/nightly` 与 `test/*`，**主干不得入选**。
+
+    背景：2026-09-24 起跑测不再由 CI 触发，而是在 `test/<slug>` 借来的云原生开发
+    环境里人工触发（[ADR-0023](../../docs/adr/0023-ci-downgrade-to-manual-trigger.md)）。
+    白名单因此从"一个分支名"变成"一条正则"，而这正是**最容易被顺手放宽**的地方：
+    把它改成 `.*` 或加一条 `develop` 就能让数据从主干上推出去，而后果不是"多跑一次"，
+    是"发布的来源无法追溯"。
+
+    判据不止看"文本里有 test/"：本用例把脚本里那条正则**取出来在 Python 里实跑**，
+    逐个候选分支验证放行/拒绝——否则 `^test/|develop` 这类的写法会**骗过**文本断言。
+    """
+    match = _CODE_BRANCH_PATTERN_RE.search(PUBLISH_SH.read_text(encoding="utf-8"))
+
+    assert match, "发布脚本必须声明来源分支白名单 `BENCH_CODE_BRANCH_PATTERN`"
+    pattern = match.group(1)
+
+    assert re.search(pattern, "test/ci-quota-downgrade"), "`test/<slug>` 必须被放行"
+    assert re.search(pattern, "bench/nightly"), "长驻基准分支仍须被放行（历史数据来源）"
+    for branch in ("develop", "main", "master", "refs/heads/develop", "feature/x"):
+        assert not re.search(pattern, branch), f"主干/无关分支不得作为发布来源：{branch}"
+
+
 @pytest.mark.unit
 def test_ci_setup_and_check_disable_local_hooks_explicitly() -> None:
     """流水线里的 `make setup` / `make check` 必须**显式**带 `LOCAL_HOOKS=0`。
