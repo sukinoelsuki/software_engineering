@@ -23,6 +23,9 @@
 `bench/nightly:` 段与 `web_trigger_bench` 已整体删除，`crontab` 一条不留。
 原有那条"两条 crontab 键必须在"的断言由此**换靶**为
 `test_no_pipeline_runs_benchmarks_automatically`（门槛未降、靶子换了）。
+同时新增 `test_light_gate_is_single_core_path_scoped_and_debounced`，
+把"轻门禁必须单核 + 路径过滤 + 只保留最新一条排队"也钉成机器检查——
+这三条都直接对应核时消耗，只写在注释里迟早会被改回去。
 
 这里把结论固化成断言：禁止 bash 专有语法、镜像必须钉到发行版、
 阶段脚本不得把 git 输出接入 `head`、发布脚本必须走合并路径。
@@ -57,6 +60,52 @@ def _gate_pipeline_block() -> str:
     """
     tail = "\n".join(_lines()).split('"**":', 1)[1]
     return tail.split("# TODO（随项目推进补充", 1)[0]
+
+
+#: 一条轻门禁的 `ifModify` 块（**允许块内夹注释**——正是那里的注释解释了为什么省这些核时）
+_IFMODIFY_BLOCK = re.compile(r"ifModify:\n((?:(?:[ ]*#[^\n]*\n)|(?:[ ]+- \"[^\"]+\"\n))+)")
+#: 从块里只取出路径项，忽略注释 ⇒ 两处副本可以注释不同、**路径必须逐字相同**
+_IFMODIFY_ITEM = re.compile(r'^[ ]+- "([^"]+)"$', re.MULTILINE)
+
+
+def _ifmodify_lists() -> list[list[str]]:
+    """取出门禁组里所有 `ifModify` 的路径清单（每条流水线一份）。"""
+    return [
+        _IFMODIFY_ITEM.findall(block) for block in _IFMODIFY_BLOCK.findall(_gate_pipeline_block())
+    ]
+
+
+@pytest.mark.unit
+def test_light_gate_is_single_core_path_scoped_and_debounced() -> None:
+    """轻门禁必须是**单核 + 路径过滤 + 只保留最新一条排队**（2026-09-24，ADR-0023）。
+
+    三条都直接对应核时消耗，因此都必须是"机器的判据"而不是注释里的承诺：
+
+    * `cpus: 1` —— **不显式声明就按平台默认 8 核计费**。轻门禁的负载是静态检查与
+      单元测试（本地 957 passed ≈ 9 s），8 核纯属浪费；
+    * `ifModify` —— 纯文档提交不再触发；这是"路径过滤"这一省法的唯一载体；
+    * `lock: {wait: true, cancel-in-wait: true}` —— 排队而不是堆积。1 核的流水线
+      若无人清理会排成长队，而**排队期间同样按核时计费**。
+
+    另断言**两处 `ifModify` 清单逐字一致**：它们刻意是重复文本（不用 YAML 锚点，
+    理由见 `.cnb.yml` 该段注释），因此"改一处忘另一处"是这里**唯一**的分叉来源，
+    没有这条断言就不会有人发现。
+    """
+    gate = _gate_pipeline_block()
+    lists = _ifmodify_lists()
+
+    assert gate.count("cpus: 1") == 2, (
+        "两条轻门禁都必须显式声明 `runner.cpus: 1`；"
+        f"未声明即按平台默认 8 核计费。实际出现 {gate.count('cpus: 1')} 次"
+    )
+    assert len(lists) == 2, f"两条轻门禁都必须有 ifModify（实际找到 {len(lists)} 处）"
+    assert lists[0] == lists[1], "两处 ifModify 路径清单必须逐字一致（否则会悄悄分叉）"
+    for path in ("src/**", "tests/**", "scripts/**", "Makefile", "pyproject.toml", "uv.lock"):
+        assert path in lists[0], f"ifModify 缺少关键路径：{path}"
+    assert gate.count("lock:") == 2, "两条轻门禁都必须有排队锁"
+    assert gate.count("cancel-in-wait: true") == 2, (
+        "锁必须配 `cancel-in-wait: true`（只保留最新一条排队），否则会排成一条长队"
+    )
 
 
 @pytest.mark.unit
