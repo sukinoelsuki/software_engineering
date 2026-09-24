@@ -246,14 +246,40 @@ t0+15 cnb charge get-volume                              # 与 t0 前的读数�
 
 ---
 
-## 7. 实验结果（**待填**）
+## 7. 实验结果（2026-09-25 06:2x ~ 06:4x，北京时间）
+
+探针：`sn = cnb-gnb-1k3ao4u18`，事件 `api_trigger_quota_probe`，分支 `test/quota-probe`，
+T0 = `2026-09-24T22:21:32Z`（北京 06:21:32）。
+
+### 7.1 结论表
 
 | # | 命题 | 结果 | 证据 |
 | --- | --- | --- | --- |
-| P1 | 桶归属 | 待填 | |
-| P2 | 保活 | 待填 | |
-| P3 | 程序化关闭 | 待填 | |
-| P3' | stages 后自动销毁 | 待填 | |
+| **P1** | 非 `vscode` 事件 + `services: [vscode]` ⇒ 走**开发桶** | ✅ **成立** | ① `list-workspaces --status running` 返回该流水线（`pipeline_id: cnb-gnb-1k3ao4u18-001`，branch `test/quota-probe`）⇒ 平台把它归类为**云原生开发环境**；② 平台自打标签 `ARCH=amd64,cpus=1,memory=2,vscode=远程开发`；③ 用量增量：`ci_in_sec` 仅 **+110 s**（= 本人两次 push 触发的 1 核门禁），`dev_in_sec` 的冻结量 `freeze_dev_in_sec` **+37800 s** |
+| **P2** | `keepAliveTimeout: 20m` 让**从未进入页面**的环境活过 12 分钟 | ✅ **成立** | `stage-0` `status: success`、`duration: 12m 0s`；日志时间线 `t+0min … t+11min` **连续无中断**，末行 `stages-done 2026-09-24T22:33:46Z`。全程无人进入 VSCode 页面 |
+| **P3** | 环境可被 `cnb workspace workspace-stop` 程序化关闭 | ❌ **不成立** | `403 / errcode 10023`：`The token's authorization scope does not match this request. Missing required scopes: account-engage:rw` ⇒ 流水线内令牌是**仓库级**，关闭工作区需要**账号级**权限 |
+| **P3'** | stages 结束后环境**自动**销毁 | ❌ **不成立** | stages 于 `22:33:46` 结束；`22:39` / `22:43` / `22:48` 三次观测，环境**均仍 `running`**，构建状态恒为 `pending` |
+| 附 | `keepAliveTimeout` **到期是否回收** | ❌ **未观察到回收** | 声明 `20m`（应于 `22:41:42` 到期）；`22:43:20`、`22:48:55` 两次观测仍 `running` |
+
+### 7.2 由结果推出的三条硬约束（**写进设计，不得淡化**）
+
+1. ⭐ **开发桶环境不能"跑完即止"。** stages 结束不销毁、`keepAliveTimeout` 到期也不回收
+   （推测：runner agent 与平台保持长连接 ⇒ 一直有心跳，`keepAliveTimeout` 形同不触发；
+   **该推测未证实**，见 §8 U6）。
+   ⇒ 成本上界 = `cpus × (到人工关闭 / 18 h 上限 / 不过夜回收)`，而不是 `cpus × 跑测时长`。
+2. ⭐ **`endStages` 不能用作"每片结束兜底外推"。** 它是**销毁前**钩子，而销毁时机不可控；
+   实测 stages 结束后查 `stage-endStages-0` 返回"没有查询到该 stage 信息"。
+   ⇒ **产物外推必须在 `stages` 内完成**，外推点 = 每片的最后一步。
+3. **"程序化自毁"需要账号级令牌**（`account-engage:rw`），而流水线内令牌无此权限。
+   ⇒ 这是**所有者决策项**（涉凭据，C 类）；在它被解决之前，
+   "自动跑测"只能是**半自动**：启动与跑测自动，**关闭仍需人或平台上限兜底**。
+
+### 7.3 本次实验的实际成本
+
+| 项 | 值 |
+| --- | --- |
+| 探针已存活（至 22:48:55 仍未回收） | ≥ **27.4 min × 1 核 ≈ 0.46 核时**（开发桶，仍在增长） |
+| 未能主动关闭 | 上界 1 核 × 18 h = 18 核时（对余 ≈15000 的桶**可接受**，但**不可接受为常态**） |
 
 ---
 
@@ -266,3 +292,6 @@ t0+15 cnb charge get-volume                              # 与 t0 前的读数�
 | U3 | `api_trigger` 触发的环境，其 `CNB_EVENT` 值与计费口径的一致性 | 由 P1 间接验证 |
 | U4 | `sandbox: true` 下能否改用部署令牌/其它方式发布 `bench/data` | 需设计 + 实测 |
 | U5 | 分片跨环境续跑后的**可比性**（不同物理机 ⇒ `cpu_model` 不同 ⇒ 签名不同） | 已有 `comparison_signature` 含 `cpu_model`，但**跨机同轮**尚未实测 |
+| **U6** | `keepAliveTimeout` 到期为何**不回收**（推测 runner agent 与平台保持长连接 ⇒ 恒有心跳） | 需一次**更短**的 `keepAliveTimeout`（如 `2m`）对照实验；或平台侧解释。**在它被解释前，不得假定它能用来"跑完自动结束"** |
+| **U7** | 无人关闭的环境的**最终归宿**（18 h 上限？不过夜？） | 需让一个探针环境跑到被回收为止（成本 = `cpus ×` 实际存活时长，**未做**） |
+| **U8** | `api_trigger` 环境内 `CNB_TOKEN` 的完整权限清单 | 已实测缺 `account-engage:rw`；其余 scope 未枚举 |
