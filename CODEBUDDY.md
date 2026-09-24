@@ -131,21 +131,33 @@ Refs: #<issue>
 `main`（发布，保护）← `develop`（集成，保护）← `feat/*` 等短期分支。
 完整定义见 [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md)。
 
-### 跑测与 `test/<slug>` 分支守则（2026-09-24）
+### 跑测与 `test/<slug>` 分支守则（2026-09-25 改写）
 
-CI 的自动跑测已下线（[ADR-0023](docs/adr/0023-ci-downgrade-to-manual-trigger.md)：
-组织级构建额度只有 160 核时/月且按顶级组织共享），跑测改为**在借来的云原生
-开发环境里**执行 `make bench`（四道可信闸门在脚本里，见 §5）。四条守则：
+跑测**不再走构建桶**（[ADR-0025](docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)）：
+"自动化 ⇒ 必烧构建桶"这个前提**已被实测推翻**——区分构建/开发的判据是
+"有没有声明 `services: [vscode]`"，不是"它是怎么被触发的"
+⇒ `api_trigger_bench` + vscode 走**云原生开发桶**（`total` 17600 核时/月，余 ≈15000）。
+⚠️ 构建桶 `total == free == 160` 是**硬顶**，只留 1 核门禁。
+
+两个入口：① 自动 `api_trigger_bench`（显式调用 `cnb build start-build`，机器按分支名分派）；
+② 人工 `make bench`（在 `vscode` 环境里；四道可信闸门在脚本里，见 §5）。
 
 1. **`test/<slug>` = test-only 分支**：只用于**借一台云原生开发环境**，
    **绝不允许任何提交**（不 `add`、不 `commit`、不 `push`；环境用完即弃）。
    它与"工作分支"是两种东西——把提交放上去等于把工作放在"下次会话不存在"的地方。
+   **机器分派**：一种机器配置对应一条分支（如 `test/amd64-8`），
+   `runner.tags` / `cpus` 写在 `develop` 的 `.cnb.yml` 里**按分支名分派**
+   ⇒ **分支上仍然零提交**，配置不随分支走。
 2. **测试数据与分析的唯一持久化出口是 `data` 分支**（`bench/data`；只由
    `make bench` → `scripts/bench/publish.sh` 写）；**大文件走制品库**。
    **不许把测试数据推到代码分支**（含 `test/<slug>`、`develop`、`main`）。
 3. **环境必须从与 `develop` 一致的提交拉起** ⇒ 命中镜像缓存 ⇒
    **不额外消耗构建桶**；从陈旧提交拉起还会让"同一份协议"这一可比性前提失效。
-4. **推论：`.ide/Dockerfile` 不要频繁改**——每改一次，**所有环境下次拉起都要重建镜像**
+4. ⚠️ **环境不会自毁**（实测：stages 结束不销毁、`keepAliveTimeout` 到期也不回收、
+   流水线内 `workspace-stop` 因缺**账号级** `account-engage:rw` 被 403 拒绝）
+   ⇒ **跑测结束必须人工关闭环境**，成本 = `cpus` × 存活时长。
+   ⚠️ 开发桶超出免费额度部分**按 ¥0.125/核时计费**——**容量充足 ≠ 免费**。
+5. **推论：`.ide/Dockerfile` 不要频繁改**——每改一次，**所有环境下次拉起都要重建镜像**
    （多花一次构建桶）。纯文档 / 代码改动**不必**动它。
 
 ### 版本与发布

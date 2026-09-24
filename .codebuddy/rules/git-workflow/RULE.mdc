@@ -28,8 +28,11 @@ main        稳定发布线（保护分支，只能通过 PR 合入）
 - 命名：全小写，单词用 `-` 连接，禁止中文与空格；必须带 Issue 编号（`docs`/`chore` 可省略）。
 - 发布相关：`release/<version>`、`hotfix/<version>`。
 - ⚠️ **`test/<slug>` 是 test-only 分支：只用于借一台云原生开发环境，绝不允许任何提交**
-  （跑测入口 `make bench`；唯一持久化出口是 `bench/data` 分支，大文件走制品库）。
+  （跑测入口：自动 `api_trigger_bench` / 人工 `make bench`，**都走云原生开发桶**；
+   唯一持久化出口是 `bench/data` 分支，大文件走制品库）。
   **不许把测试数据推到代码分支**（含 `test/<slug>`、`develop`、`main`）。
+  ⚠️ 环境**不会自毁**（2026-09-25 实测：stages 结束不销毁、`keepAliveTimeout` 到期不回收、
+  流水线内自毁缺账号级权限）⇒ **跑测结束必须人工关闭**，成本 = `cpus` × 存活时长。
   环境必须从与 `develop` 一致的提交拉起（命中镜像缓存 ⇒ 不额外消耗构建桶）
   ⇒ 推论：**`.ide/Dockerfile` 不要频繁改**（每改一次，所有环境下次拉起都要重建镜像）。
 - ⚠️ **例外（长驻：不合回、不得删除）**：`bench/nightly`、`bench/data`
