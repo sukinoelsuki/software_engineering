@@ -75,8 +75,15 @@ stages **完整跑完、未被中断**（`[probe2] t+0min / t+1min / stages-done
 
 | 探针 | 声明 | 计时基准 | 判定释放 | 实际延迟 |
 | --- | --- | --- | --- | --- |
-| E2 | `1m` | 07:22:39 | 07:27:39 | **+5m** |
-| E1 | `20m` | 06:31:45 | 06:51:45 | **+20m**（精确） |
+| E2（1 核） | `1m` | 07:22:39 | 07:27:39 | **+5m** |
+| E3（**8 核**，真实跑测） | `5m` | 07:45:06 | 07:50:06 | **+5m**（8 核同样成立） |
+| E1（1 核） | `20m` | 06:31:45 | 06:51:45 | **+20m**（精确） |
+
+✅ **E3 是端到端演练**（`sn=cnb-obc-1k3aslg93`，8 核，真实跑 `make bench`）：
+`Offline recycling: 5m` → `The user has been offline (more than 5m) and starts to release the workspace.`
+→ `- Service vscode beforeEnd [5m 4s]`；总 `duration 725965 ms`（**12.1 min**）；
+stages 内跑测 `duration: 2m 23s`，四道闸门全过，`status: success`。
+⇒ **"下界 5 分钟"在 8 核上同样成立**（此前只有 1 核证据）。
 
 ⇒ 平台**每 5 分钟**做一次连接检查（日志可见 `docker pull orangeci/check-is-remote-connections`）；
 实际释放 = 基准 + **max(声明值, 一个检查周期)**。
@@ -221,7 +228,7 @@ Missing required scopes: account-engage:rw
 | V1 | `keepAliveTimeout` 能否突破 18 h / 不过夜 | 决定能不能跑超长任务 |
 | V2 | "使用时间"的定义（存活时长 or 累计活跃） | 不过夜判据的分母 |
 | V3 | 5 分钟检查周期是否稳定（负载/规格变化时） | §3.2 的下界是否可靠 |
-| V4 | 无人环境在**不同 `cpus`** 下的释放延迟是否一致（E1/E2 都是 1 核） | ⚠️ 8 核未验证 |
+| ~~V4~~ | ~~8 核下的释放延迟是否与 1 核一致~~ | ✅ **已解决**（E3：8 核同样 +5m） |
 | V5 | 离线计时基准的精确定义（`beforeEnd` 起点 or 末次连接） | E1/E2 的两个基准对不齐 |
 | V6 | 备份在有大量未提交产物时的行为与体积上限 | §3.5 的风险边界 |
 
