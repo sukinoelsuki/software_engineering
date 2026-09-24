@@ -138,25 +138,29 @@ def test_python_images_are_pinned_to_a_distribution() -> None:
 
 
 @pytest.mark.unit
-def test_no_pipeline_runs_benchmarks_automatically() -> None:
-    """**本仓库不得再有任何自动触发的跑测流水线**（2026-09-24，ADR-0023）。
+def test_no_pipeline_runs_benchmarks_on_build_bucket_or_timer() -> None:
+    """**不得再有「走构建桶的」或「定时的」跑测流水线**（2026-09-25 换靶，ADR-0025）。
 
-    这条断言**替换**了此前的 `test_bench_crontab_keys_are_declared`
-    （它钉住的恰好是现在被**移除**的那两条 `crontab` 键），是"规则变更 ⇒
-    联动更新"的一处显式落点，**不是**在放宽检查：门槛没有降低，而是**换了靶子**——
-    从"两条定时任务必须在"变成"任何自动跑测都不许在"。
+    本用例原名 `test_no_pipeline_runs_benchmarks_automatically`（2026-09-24，ADR-0023），
+    当时钉的是"**任何**自动跑测都不许在"。**该前提已被 ADR-0025 推翻**：
 
-    为什么必须钉死：
-    1. **额度**：组织级「云原生构建」免费额度只有 160 核时/月且按顶级组织共享，
-       而一轮夜轮实测就 6.1~7.3 核时（`bench/data` 的 `index.json`）；
-    2. **不可控**：`crontab` 是最不可控的消耗源——它不等人、不看当天有没有别的事；
-    3. **判据**：跑测的**四道可信闸门已迁移到脚本**（`make bench` →
-       `scripts/bench/run.sh`），所以"删掉 CI 上的跑测"**不等于**"降低可信度"；
-       真正会降低可信度的是**加回一条自动跑测却只跑一半的流程**。
+    - 旧前提是"自动化 ⇒ 必然烧构建桶（硬顶 160 核时/月）"；
+    - 探针 E1 实测证明：判据是"有没有声明 `services: [vscode]`"，不是"怎么被触发"
+      ⇒ `api_trigger` + vscode **走开发桶**（`total` = 17600，余 ≈15000）。
 
-    采用**文本级黑名单**（而不是"只检查 crontab"）：只要这些入口重新出现在
-    `.cnb.yml` 里，本用例即失败 ⇒ "顺手加回一条定时任务"必须**显式改测试**，
-    不可能悄悄发生。参见 `docs/research/2026-09-24-ci-consumption-summary.md`。
+    ⇒ **门槛没有降低，靶子换了**：从"不许自动化"换成"**不许走构建桶、不许定时**"。
+    （"必须声明 vscode"这一半由
+    `test_bench_pipelines_declare_vscode_service_to_stay_in_dev_bucket` 钉住。）
+
+    为什么这两条仍然必须钉死：
+    1. **构建桶是硬顶**：`ci_in_sec.total == free == 160` 核时/月，已用 99.33；
+    2. **定时不可控**：`crontab` 不等人、不看当天有没有别的事。
+       ⚠️ 理由已于 09-25 变更——不是"烧构建桶"，而是**本项目需求是"按需"而非"按点"**；
+    3. **跑测编排不得回到流水线**：四道可信闸门已在 `scripts/bench/gates.py`
+       （ADR-0023 §2.4），流水线上只许出现 `make bench` 这一个入口调用。
+
+    采用**文本级黑名单**：只要这些入口重新出现在 `.cnb.yml` 里，本用例即失败 ⇒
+    "顺手加回一条定时任务"必须**显式改测试**，不可能悄悄发生。
 
     **只扫非注释行**（与 `test_publish_script_never_pipes_git_output_into_head` 同口径）：
     本文件头部的注释需要**指名**这些被删除的入口来解释"为什么删"，
@@ -307,4 +311,123 @@ def test_publish_script_merges_instead_of_replacing_published_history() -> None:
             continue
         assert not re.search(r'rm -rf\s+"\$\{WORKTREE:\?\}/\$\{DATA_SUBDIR:\?\}"\s*$', stripped), (
             "不得整体删除已发布的数据子目录（会丢掉历史轮次的日志、产物与报告）"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-25（[ADR-0025](../../docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)）
+#
+# 前提被推翻：此前认为"自动化跑测 ⇒ 必然烧构建桶"（ADR-0023 §2.1 据此停掉了
+# 全部自动跑测）。探针 E1（`sn=cnb-gnb-1k3ao4u18`）实测证明：
+# **判据是"有没有声明 services: [vscode]"，不是"它是怎么被触发的"** ——
+# `api_trigger` + vscode 的流水线被平台归类为云原生开发环境（`vscode=远程开发`），
+# 用量计入 `dev` 而非 `ci`。
+#
+# ⇒ 跑测因此迁回自动化并改走开发桶。而"走开发桶"这件事**只靠一行配置**成立，
+#   删掉那一行就静默掉回构建桶（硬顶 160 核时/月），且从流水线状态上看不出区别
+#   ⇒ 必须由机器钉住。同理，"机器矩阵"里的 GPU tags 实测额度为 0，也不得出现。
+# ---------------------------------------------------------------------------
+
+#: 跑测流水线的事件名（ADR-0025 §2.2：以 api_trigger 为主）
+_BENCH_EVENT = "api_trigger_bench"
+
+#: 平台提供的**真机**架构（grammar.md / build-node.md，2026-09-25）
+#: ⚠️ GPU 两个 tags **不在**其中：`cnb charge get-quota` 实测 `*_gpu_in_sec.total = 0`
+_ALLOWED_RUNNER_TAGS = frozenset({"cnb:arch:amd64", "cnb:arch:arm64:v8"})
+
+
+def _bench_pipeline_blocks() -> list[str]:
+    """取出所有跑测流水线的配置块（自 `api_trigger_bench:` 起，到下一个顶层键之前）。"""
+    lines = _lines()
+    blocks: list[str] = []
+    for i, line in enumerate(lines):
+        if line.strip().startswith(f"{_BENCH_EVENT}:"):
+            j = i + 1
+            while j < len(lines) and (not lines[j].strip() or lines[j][0] in " \t"):
+                j += 1
+            blocks.append("\n".join(lines[i:j]))
+    return blocks
+
+
+def _runner_tags() -> list[str]:
+    """取出配置里出现的所有 `runner.tags`（同行写法与列表写法都要覆盖）。"""
+    lines = _lines()
+    tags: list[str] = []
+    for i, line in enumerate(lines):
+        inline = re.match(r"^\s*tags:\s*(\S+)\s*$", line)
+        if inline:
+            tags.append(inline.group(1))
+            continue
+        if re.match(r"^\s*tags:\s*$", line):
+            j = i + 1
+            while j < len(lines):
+                item = re.match(r"^\s*-\s*(\S+)\s*$", lines[j])
+                if not item:
+                    break
+                tags.append(item.group(1))
+                j += 1
+    return tags
+
+
+@pytest.mark.unit
+def test_bench_pipelines_declare_vscode_service_to_stay_in_dev_bucket() -> None:
+    """跑测流水线**必须**声明 `services: [vscode]` 并给出 `keepAliveTimeout`（ADR-0025）。
+
+    为什么这条必须由机器钉住：
+
+    1. **它决定用哪个桶，而两个桶的余量差两个数量级。** 构建桶 `total == free == 160`
+       核时/月（已用 99.33），开发桶 `total == 17600`（余 ≈15000）。去掉 `vscode`
+       ⇒ 静默掉回构建桶，而流水线状态、日志、产物**全都看不出区别**；
+    2. **它不是"自动 vs 人工"的问题。** ADR-0023 停掉自动跑测的前提是
+       "自动化 ⇒ 必烧构建桶"，探针 E1 已推翻该前提（`vscode=远程开发` 标签、
+       `ci` 增量仅 +110 s 而 `dev` 冻结量 +37800 s）；
+    3. **`keepAliveTimeout` 是无人值守的存活下限**（默认 10 分钟心跳）。
+       ⚠️ 它**不能**用来"跑完自动结束"——实测到期不回收（ADR-0025 §2.3），
+       但缺了它，无人值守的跑测会在 10 分钟时被回收。
+    """
+    blocks = _bench_pipeline_blocks()
+
+    assert blocks, (
+        f"应当至少有一条跑测流水线（事件名 `{_BENCH_EVENT}`，ADR-0025 §2.2）；"
+        "没有则本断言失去意义——请删除本用例而不是留它空过"
+    )
+    for block in blocks:
+        assert "services:" in block, "跑测流水线必须声明 `services:`（否则掉回构建桶）"
+        assert re.search(r"^\s*-\s*name:\s*vscode\s*$", block, re.MULTILINE), (
+            "跑测流水线必须声明 `services: [vscode]`：这是「分配开发节点、计入云原生开发用量」的"
+            "**唯一**判据（docs.cnb.cool/zh/workspaces/workspace-vs-build.md）。"
+            "去掉它 ⇒ 走构建桶（硬顶 160 核时/月），且从流水线状态上看不出来"
+        )
+        assert re.search(r"keepAliveTimeout:\s*\d+\s*(ms|s|m|h)?", block), (
+            "跑测流水线必须声明 `keepAliveTimeout`：无人值守环境的默认存活下限是 10 分钟"
+        )
+
+
+@pytest.mark.unit
+def test_runner_tags_are_limited_to_machines_that_actually_exist() -> None:
+    """`runner.tags` 只能是**有真机、且有额度**的架构（ADR-0025 §2.7）。
+
+    机器矩阵（2026-09-25 实测 + 官方文档）：
+
+    | tags | 架构 | 核数 | 额度 | |
+    | --- | --- | --- | --- | --- |
+    | `cnb:arch:amd64` | amd64 | 1~64 | 开发桶 17600 | ✅ |
+    | `cnb:arch:arm64:v8` | arm64/v8 | 1~**16** | 同上 | ✅ |
+    | `cnb:arch:amd64:gpu` / `:gpu:L40` | amd64 | 固定 16 | **`total = 0`** | ❌ |
+
+    ⚠️ GPU 两档虽然写在 build-node.md 里，但 `cnb charge get-quota` 实测
+    `ci_gpu_in_sec.total = dev_gpu_in_sec.total = 0` ⇒ **一开就要付费且无额度**
+    ⇒ 禁止出现在配置里。
+
+    ⚠️ 另有两条**不在**本断言范围内（它们是"结论口径"而非"能否跑"）：
+    ① 第三方转载页把 arm64 写成 1~8 核，官方是 1~16；
+    ② riscv64 / loongarch64 **没有真机**，只能 qemu —— 其结果是**结论口径**问题：
+    qemu 数字**禁止**进性能表（不可比），只允许进"正确性 / 可移植性"结论。
+    """
+    tags = _runner_tags()
+
+    for tag in tags:
+        assert tag in _ALLOWED_RUNNER_TAGS, (
+            f"未知的 runner.tags：{tag}。可选真机只有 {sorted(_ALLOWED_RUNNER_TAGS)}；"
+            "GPU tags 实测额度为 0，riscv64 / loongarch64 没有真机节点"
         )
