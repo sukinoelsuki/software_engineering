@@ -23,6 +23,14 @@
 `bench/nightly:` 段与 `web_trigger_bench` 已整体删除，`crontab` 一条不留。
 原有那条"两条 crontab 键必须在"的断言由此**换靶**为
 `test_no_pipeline_runs_benchmarks_automatically`（门槛未降、靶子换了）。
+
+2026-09-25 该断言**再次换靶并改名**
+（[ADR-0025](../../docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)）：
+探针 E1 实测证明"自动化 ⇒ 必烧构建桶"不成立——判据是"有没有 `services: [vscode]`”，
+不是"怎么被触发" ⇒ 跑测迁回自动化、改走开发桶。现在钉的是
+`test_no_pipeline_runs_benchmarks_on_build_bucket_or_timer`
+（不许走构建桶、不许定时）；"必须声明 vscode”由
+`test_bench_pipelines_declare_vscode_service_to_stay_in_dev_bucket` 钉住。
 同时新增 `test_light_gate_is_single_core_path_scoped_and_debounced`，
 把"轻门禁必须单核 + 路径过滤 + 只保留最新一条排队"也钉成机器检查——
 这三条都直接对应核时消耗，只写在注释里迟早会被改回去。
