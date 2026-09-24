@@ -43,19 +43,27 @@
 #
 # 【2026-09-24：自动跑测全部下线，本文件只剩"轻门禁 + 开发环境"】
 #   5. **本文件不得再出现任何「跑测类」流水线。** `bench/nightly:` 段与
-#      `web_trigger_bench` 已**整体删除**，`crontab` 触发**一条都不保留**
+#      `web_trigger_bench` 已**退役并归档**（**不是丢弃**：原文逐字保留在
+#      [docs/engineering/archived-ci-benchmark-pipelines.md](docs/engineering/archived-ci-benchmark-pipelines.md)，
+#      作为"这套机制当年确实建起来并跑通过"的证据），`crontab` 触发**一条都不保留**
 #      （定时任务是最不可控的消耗源）。判据由 `tests/unit/test_cnb_config.py` 钉住。
-#      为什么下线：组织级「云原生构建」免费额度只有 **160 核时/月**且按顶级组织共享，
-#      而 [ADR-0014](docs/adr/0014-benchmark-automation.md) §2.3 的预算基数（≈17600）
-#      与它差两个数量级 ⇒ 原"约占配额 1.8%"的结论在构建桶口径下不成立（按 160 计为
-#      **194%**）。实测账与口径分歧见
-#      docs/research/2026-09-24-ci-consumption-summary.md §4.5。
+#      为什么下线：组织级「云原生构建」免费额度只有 **160 核时/月**且按顶级组织共享
+#      （**已由平台 API 实测确认**），而
+#      [ADR-0014](docs/adr/0014-benchmark-automation.md) §2.3 的预算基数（≈17600）
+#      其实是**开发桶的总量** ⇒ 原"约占配额 1.8%"是**跨桶比较**；按构建桶免费额度
+#      160 计为 **194%**。额度实测与成本模型见
+#      docs/research/2026-09-25-quota-measurement-and-cost-model.md，
+#      决策见 [ADR-0023](docs/adr/0023-ci-downgrade-to-manual-trigger.md) 与
+#      [ADR-0024](docs/adr/0024-quota-discipline-and-cost-model.md)。
 #   6. **跑测改为"环境内一键"：`make bench`**（入口在 Makefile，
 #      实现在 `scripts/bench/run.sh`）。⚠️ **四道可信闸门不随 CI 一起消失**——
 #      它们从"流水线的 stage 结构"**迁移为脚本里的断言**，判据不变。
 #      闸门清单（KV 重启 / token≥32 且计时行 3 条 / 只暴露中位数+极差 / 入库前 schema 校验）
 #      见 docs/research/2026-09-24-ci-consumption-summary.md §5.2。
 #      **承载位置变了，判据没变**；少一道，那一轮数据就不可比。
+#      ⚠️ 跑测走的是**云原生开发**额度，而**开发桶本月已超免费额度**
+#      ⇒ 跑测前后请遵守 ADR-0024 的环境生命周期纪律（**用完即关**），
+#      并用 `make quota` 做月末核对。
 #   7. **门禁一律单核（`runner.cpus: 1`）**：跑测要起模型、需 8 核 16 GiB，
 #      而 lint / typecheck / test / security 单核足矣。不显式声明就等于按平台的
 #      **默认 8 核**计费——那是本次盘点里最容易漏算的一项消耗。
