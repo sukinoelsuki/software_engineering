@@ -231,7 +231,8 @@
   #     否则构建报错 —— 这是 CNB 的硬性约束。
   #   - image 为构建失败时的回退镜像。
   #   - services [vscode, docker]：分别启用 VS Code 服务与容器内 docker 命令。
-  #   - 该事件下的 stages 会在开发环境启动后自动执行（此处仅做环境自检输出）。
+  #   - 该事件下的 stages 会在开发环境启动后自动执行（含把 Agent 权限设置合并进
+  #     运行中的 User 设置——见首段 stage 的注释；其余为环境自检输出）。
   #   - ⚠️ 本事件走的是**云原生开发**额度（1600 核时/月），**不是**云原生构建额度
   #     （160 核时/月）；两者是官方计费表里分列的独立计费项。见
   #     docs/research/2026-09-24-ci-consumption-summary.md §4.4。
@@ -263,6 +264,28 @@
         - vscode
         - docker
       stages:
+        # ⚠️ 为什么必须有这一步（2026-09-25 实测；机制参考同平台 compute-matrix 的
+        #    同名步骤 `apply-workspace-settings`）：
+        #   1. `codingcopilot.autoRun` / `safeDeleteEnabled` / `safeDeleteBulkThreshold` /
+        #      `customBlacklistCommands` / `disabledSecurityCategories` 的
+        #      **`scope = application`**（本环境读扩展 package.json 自证）⇒ **只能写在 User 级**；
+        #      仓库级 `.vscode/settings.json` 与镜像里 Machine 级的那份**都不生效**。
+        #   2. 平台会在环境启动时用自己的一份覆盖 `User/settings.json`
+        #      ⇒ 构建期 COPY 进去的键**会被抹掉** —— 这就是"配置看起来是对的、
+        #      运行时照样弹确认"的根因（`.ide/settings.json` 单独存在**不会自动生效**）。
+        #   3. ⇒ 唯一可靠时机 = **环境启动后**（本阶段的 stages 在开发环境容器里跑）把设置
+        #      **合并**进运行中的 User 设置，并**断言**已生效。任一项不符即非零退出。
+        #   ⚠️ 前提是**单容器模式**（本镜像自带 code-server ⇒ 满足）。双容器模式下 stages 与
+        #      code-server 不在同一容器，这一步会"**永远绿、永远不生效**"
+        #      （参考实现的血泪教训：compute-matrix docs/platform-facts.md §10.2）
+        #      ⇒ 脚本会断言目标目录存在，让这种失败**变红**而不是静默。
+        #   ⚠️ 本段的 `script:` 由 `/bin/sh`（dash）执行 ⇒ 只用 POSIX sh 语法 + `set -eu`，
+        #      不要写 `pipefail` / `[[ ]]` / 数组（写错会让 step 以退出码 2 秒失败）。
+        - name: agent-permissions
+          script: |
+            set -eu
+            make apply-ide-settings
+
         - name: welcome
           script: |
             set +e

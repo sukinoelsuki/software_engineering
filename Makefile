@@ -35,7 +35,7 @@ LOCAL_HOOKS ?= 1
 .PHONY: help setup hooks-check lint format format-check typecheck test test-cov test-security \
         security security-bandit security-secrets security-audit commit-check changelog \
         release bump \
-        check branch-status clean distclean quota \
+        check branch-status apply-ide-settings clean distclean quota \
         bench bench-round bench-publish bench-verify-assets
 
 # ---------------------------------------------------------------------------
@@ -118,6 +118,17 @@ security-secrets: ## 密钥泄漏扫描（复用 pre-commit 的 detect-private-k
 
 security-audit: ## 依赖漏洞审计
 	$(UV) run pip-audit
+
+# ---------------------------------------------------------------------------
+# 云原生开发环境（Agent 权限落地）
+# ---------------------------------------------------------------------------
+# `codingcopilot.autoRun` 等键的 `scope = application` ⇒ **只能写在 User 级**；
+# 仓库级 `.vscode/settings.json` 与镜像里 Machine 级的那份都不生效，而平台会在
+# 环境启动时覆盖 `User/settings.json`（构建期 COPY 进去的键会被抹掉）。
+# ⇒ 由 `.cnb.yml` 的 `vscode` 事件在**环境启动后**调用本目标把设置合并进去并断言。
+# 手工复跑（环境内自检 / 排查"配置看起来对但没生效"）：make apply-ide-settings
+apply-ide-settings: ## 把 .ide/settings.json 合并进运行中的 code-server User 设置并断言已生效
+	$(PYTHON) scripts/apply_ide_settings.py
 
 # ---------------------------------------------------------------------------
 # 提交与版本

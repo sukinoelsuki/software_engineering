@@ -278,6 +278,14 @@ ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
 #    平台写入发生在本 COPY 之后，因此不会互相破坏。保留这四条的理由是：
 #    在不同平台版本或 Remote-SSH 客户端下生效范围可能不同，删掉的收益小于风险；
 #    但**不要**据此认为"只写 Machine 就够"或"四条都一定生效"。
+#
+#    ⚠️ 适用范围（2026-09-25 实测补充）：本 COPY 只对 `window` / `machine` 作用域的
+#    设置有效（主题、字体、缩进等）。`codingcopilot.autoRun` / `safeDeleteEnabled` /
+#    `customBlacklistCommands` / `disabledSecurityCategories` 的
+#    **`scope = application`** ⇒ **只能写在 User 级**，且平台会在环境启动时覆盖
+#    `User/settings.json`（把本 COPY 写进去的键抹掉）⇒ 它们**不由本文件生效**，
+#    而是由 `.cnb.yml` 的 `vscode` 事件首个 stage `agent-permissions` 在环境启动后
+#    调用 `make apply-ide-settings` 合并 + 断言。详见 `.ide/settings.json` 头部注释。
 # ---------------------------------------------------------------------------
 COPY .ide/settings.json /root/.local/share/code-server/Machine/settings.json
 COPY .ide/settings.json /root/.local/share/code-server/User/settings.json
