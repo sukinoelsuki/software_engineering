@@ -383,3 +383,13 @@ flowchart LR
   `Makefile` 的 `apply-ide-settings`、`tests/unit/test_apply_ide_settings.py`（**17 条**）；
   参考实现口径来自 `compute-matrix`（**未逐字核对**，见 `U1`）。
   **本 ADR 不修改任何既有 ADR 的结论**；与 ADR-0016 / 0018 的关系见 §5.5。
+- **2026-09-25（修订 · 环境重建后实测）**：**更正 §6 第 4 条的一处事实**——命令链切分口径为
+  `\|\|`、`&&`、`&`、`;`、换行，**不含单 `\|`**（出处：扩展产物 `splitCommandChain`；
+  实机探针 `sn=cnb-174-1k3c5dnng`：`echo aGVsbG8= | base64 -d | cat` 命中并弹确认）。
+  本文正文按"只增不改"保留原文，**该处以本条为准**；机制侧的完整更正与故障判据见
+  [`agent-command-gate.md`](../engineering/agent-command-gate.md) §5 `D7` 与 §8。
+  同批实测另确认：`V6` / `V7` **已闭环**——stage `agent-permissions` 为 success 且打印
+  `[ok] Agent 权限已落地…`；运行中会话的日志出现 `Loaded 33 custom blacklist commands`、
+  `Loaded 12 disabled security categories`（不含 `custom`）、`isAutoExecuteTerminal: true`；
+  两次命中探针均判 `source=safety_rule_ask, allowed=true, needConfirm=true` 且经 `user_confirmed`
+  ⇒ §7「复核时间点」第 2 条已完成。
