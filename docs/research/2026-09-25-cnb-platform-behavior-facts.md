@@ -220,9 +220,9 @@ Missing required scopes: account-engage:rw
 | 5 | `sandbox: true` 会让 `CNB_TOKEN` 失效 ⇒ 与"需要令牌发布"冲突 | 📄 grammar.md |
 | 6 | `lock` 在 Pipeline / Stage / Job 三级都可用 ⇒ 并发控制可以做**机制**而非纪律 | 📄 grammar.md |
 | 7 | **`--sha` 不能跨分支**：git-clone **只 fetch `--branch` 指定的 ref**，随后 `git checkout <sha>` ⇒ 该提交必须在**该分支上可达**，否则 `fatal: reference is not a tree`（退出码 128，Prepare 阶段失败）。⇒ 想验证"某个提交"必须让环境分支**快进**到它 | ✅ `sn=cnb-k12-1k3av99mv`（2026-09-25） |
-| 8 | **开发节点机型不固定**：同一 `runner.tags`（`cnb:arch:amd64`）可落在不同 CPU 型号（历史 8 轮 `AMD EPYC 9754 128-Core`，本轮 `AMD EPYC 9K65 192-Core`）⇒ 跨轮可比性**只能**靠签名（本项目 `comparison_signature` 含 `cpu_model`），**不得**假定"自动化环境每次同机" | ✅ `sn=cnb-til-1k3b07aqj` 的 `env.json.runner.cpu_model` |
+| 8 | **开发节点机型不固定，且"同机型"仍有宿主级方差**：同一 `runner.tags`（`cnb:arch:amd64`）可落在不同 CPU 型号（历史 8 轮 `AMD EPYC 9754 128-Core`、2026-09-25 的 `AMD EPYC 9K65 192-Core`）；**而且 `cpu_model` 完全相同**的三次运行里，同档 prefill 为 **121.68 → 109.50 → 107.58**（≈**10%** 波动）⇒ 跨轮可比性只能靠签名，而"**同签名内的方差**"是**未量化**的噪声源，**不得**假定"同签名 ⇒ 同环境" | ✅ `sn=cnb-8g5-1k3avbsr4` / `cnb-til-1k3b07aqj` / `cnb-93a-1k3b6mmsn` 的 `env.json` 与索引，2026-09-25 |
 | 9 | **镜像缓存看日志才知**：`local image cache miss` → `docker pull …/dockerfile-caches:<内容哈希>` → `remote image cache hit`。`.ide/Dockerfile` 与其 `build.by` 输入不变时**不重建**；Prepare 耗时随缓存位置在 **14 s ~ 4.6 min** 之间波动 | ✅ `sn=cnb-8g5-1k3avbsr4`（4.6 min）与 `sn=cnb-til-1k3b07aqj`（14 s） |
-| 10 | **构建级核时可对账**：`get-build-status` 的 `metricCoreHours` 与组织 `charge get-volume` 的 `dev_in_sec` 增量可交叉核对（本次 1.63 + 1.08 = **2.71**，组织同期 +**2.70**） | ✅ 2026-09-25 |
+| 10 | **可归因的核时只有构建级 `metricCoreHours`**。⚠️ **不得**用组织 `charge get-volume` 的 `dev_in_sec` 增量做**单次归因**——它含**其他仓库与其他会话**的用量：实测一轮完整跑测 = `metricCoreHours` **5.83**，而同期组织 `dev_in_sec` **+57.3** 核时。（该条**更正**了本清单早前的表述：先前一次"2.71 vs 2.70 吻合"是**巧合**） | ✅ 2026-09-25（`sn=cnb-93a-1k3b6mmsn` 与 `charge get-volume` 两次读数） |
 | 11 | **`stop-build` 能停掉尚未开跑的构建**：`status: cancel`，`run` 未开始 ⇒ **无产物落库**（发现配置不对时的止损手段） | ✅ `sn=cnb-01p-1k3b06kbh`（2026-09-25） |
 
 ---
