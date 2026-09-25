@@ -48,7 +48,7 @@
 | `docs/<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
 | `chore/<slug>` | `develop` | `develop` | merge commit（默认） | 短期 |
 | `exp/<slug>` | `develop` | — | 归档结论后关闭 | 短期 |
-| `test/<slug>` | `develop` 的某个提交 | — | — | **用完即弃（例外，见下）** |
+| `test/<slug>` | ~~`develop` 的某个提交~~ | — | — | ⛔ **已废弃**（2026-09-25，见 [ADR-0028](../adr/0028-benchmark-runs-on-develop.md)；遗留远端分支不可删） |
 | `release/<version>` | `develop` | `main` | merge commit | 短期 |
 | `hotfix/<version>` | `main` | `main` + 回合 `develop` | merge commit | 短期 |
 | `bench/nightly` | `develop` | **不合入** | — | **长驻**（例外，见下） |
@@ -108,23 +108,26 @@
 > 现行的**分支与数据纪律**以本节与
 > [ADR-0023](../adr/0023-ci-downgrade-to-manual-trigger.md) 为准。
 
-### 关于 `test/*`（跑测专用分支，**例外**）
+### 关于 `test/*`（**已废弃**：2026-09-25 取消，见 [ADR-0028](../adr/0028-benchmark-runs-on-develop.md)）
 
-`test/<slug>` 是本工作流里**唯一"零提交"的分支**：它存在的意义不是承载工作，
-而是**借一台云原生开发环境**（[ADR-0023](../adr/0023-ci-downgrade-to-manual-trigger.md)）。
+**跑测直接跑在 `develop` 上** ⇒ `test/<slug>` 这一类分支**整体取消**。现行规则如下
+（⚠️ **不要再按"借一台环境分支"的旧做法执行**；旧表的"零提交 + 引用快进"两条纪律随之失效）：
 
-| 项 | 规则 |
+| 项 | 现行规则（2026-09-25 起） |
 | --- | --- |
-| 用途 | 从与 `develop` 一致的提交拉起一台云原生开发环境，在里面跑 `make bench` |
-| 提交 | ❌ **绝不允许**（不 `add`、不 `commit`、不 `push`）——它不是工作分支，用完即弃 |
-| **引用** | ⚠️ **触发前必须快进到被测提交**：`git push origin HEAD:refs/heads/test/<slug>`（`HEAD` = `develop` 的 tip）——**只动引用、不新增提交**；见 [ADR-0027](../adr/0027-test-branch-ref-must-track-the-commit-under-test.md) |
+| 跑测分支 | **`develop`**：`cnb build start-build --branch develop --event api_trigger_bench` |
+| 机器 / 架构分派 | **事件名**（`api_trigger_bench`；将来如 `api_trigger_bench_arm64`）——**不是分支名** |
+| 环境来源 | 必然是 `develop` 的 tip ⇒ "与 `develop` 一致"**自动成立**（**无需**任何"快进引用"步骤） |
+| 提交 | 跑测**不改分支结构**：`develop` 本身就是允许直推的工作主干 |
 | 数据出口 | 只有 `bench/data`（经 `make bench` → `scripts/bench/publish.sh`）；大文件走制品库 |
-| 环境来源 | 必须是**与 `develop` 一致**的提交 ⇒ 命中镜像缓存 ⇒ 不额外消耗构建桶 |
-| 推论 | **`.ide/Dockerfile` 不要频繁改**：每改一次，所有环境下次拉起都要重建镜像 |
+| 遗留 | `test/amd64-8` / `test/keepalive-probe` / `test/quota-probe` **不可删**（D 类）⇒ 已停用 |
 
-> **为什么"零提交"要写进规则**：默认推导会落到"跑测要改脚本 ⇒ 那就提交到这条分支上"，
-> 而 `test/*` 用完即弃、且**不参与任何合入** ⇒ 提交在上面的改动**下次会话等于不存在**
-> （与 `develop` 直推那一节同源的机制，见 [ADR-0013](../adr/0013-branch-model-for-solo-dev.md)）。
+> ⚠️ **为什么取消**：`test/<slug>` 是"以为不能用 CI"时代的遗物——它要求在每个环境分支上
+> 维持"零提交 + 引用新鲜"两条纪律，而"**引用不会自己前进**"会**静默**导致
+> "用旧代码测新修复（且日志、状态、报告看不出区别）"（2026-09-25 实测踩到，见 ADR-0027）。
+> 挂到 `develop` 让这个失效模式**不可能发生**——**能消除失效模式就不要管理它**。
+> ⚠️ **代价（如实写出）**：**只能测 `develop` 的 tip**，未合入的改动要先合入；
+> 本项目 `develop` 是工作主干且允许直推 ⇒ 接受该代价（见 [ADR-0013](../adr/0013-branch-model-for-solo-dev.md)）。
 
 ### 摘要与完整文档的分工（口径）
 

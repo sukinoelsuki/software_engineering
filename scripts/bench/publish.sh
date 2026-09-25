@@ -30,11 +30,12 @@
 
 set -euo pipefail
 
-#: 来源分支白名单（**ERE**，不是单个分支名）。2026-09-24 由"只允许 bench/nightly"
-#: 扩为"bench/nightly 或 test/*"：跑测不再由 CI 触发，而是在 `test/<slug>`
-#: 借来的云原生开发环境里人工触发（ADR-0023）。develop/main **仍然不在白名单里**
-#: ——"人手触发"不等于"可以在主干上顺手发布数据"。
-readonly CODE_BRANCH_PATTERN="${BENCH_CODE_BRANCH_PATTERN:-^bench/nightly$|^test/}"
+#: 来源分支白名单（**ERE**，不是单个分支名）。2026-09-25 改为"`bench/nightly` 或 `develop`"：
+#: 跑测**直接跑在 `develop` 上**（[ADR-0028](../../docs/adr/0028-benchmark-runs-on-develop.md)，
+#: 取代 ADR-0027 与 ADR-0025 §2.2 的"按分支名分派"）——环境必然取自 `develop` 的 tip，
+#: "引用陈旧 ⇒ 用旧代码测新修复"这一失效模式随之消失。
+#: **`main` / `master` 仍不在白名单里**：受保护分支上"顺手发布数据"始终不允许。
+readonly CODE_BRANCH_PATTERN="${BENCH_CODE_BRANCH_PATTERN:-^bench/nightly$|^develop$}"
 readonly DATA_BRANCH="${BENCH_DATA_BRANCH:-bench/data}"
 readonly DATA_SUBDIR="${BENCH_DATA_SUBDIR:-bench}"
 readonly DATA_ROOT="${BENCH_DATA_ROOT:-${PWD}/.bench-data}"

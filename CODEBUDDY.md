@@ -86,9 +86,10 @@
   **`develop` 是工作主干、允许直推、无需批准**
   （[ADR-0013](docs/adr/0013-branch-model-for-solo-dev.md)）；**`main` 受保护，写入需事先批准**；
   **远端写入按上一条的 A~F 分级**（**不是**"一律事先批准"，也**不是**"一律事后报告"）。
-- ❌ **在 `test/<slug>` 分支上提交任何东西**：它是"借一台云原生开发环境"用的
-  **test-only 分支**（跑测专用），**零提交**；数据只落 `bench/data`（见 §3 的守则）。
-  省略这一条会推出相反动作——把工作提交到一条用完即弃的分支上 = 下次会话不存在。
+- ❌ **把测试数据推到代码分支**：跑测产出（日志 / 产物 / 报告 / 索引）的**唯一持久化出口**
+  是 `bench/data`，且只由跑测脚本写。⚠️ 跑测**直接跑在 `develop` 上**
+  （[ADR-0028](docs/adr/0028-benchmark-runs-on-develop.md)：`test/<slug>` 环境分支**已取消**），
+  所以"跑测发生在主干"**不是**"可以往主干提交数据"——**两者是两件事**，省略这一条会推出相反动作。
 - ❌ 在未获确认的情况下：引入新依赖、新服务、新网络端口、扩大权限范围、修改 CI 门禁强度。
 - ❌ 提交任何密钥、令牌、私钥、真实凭证或未脱敏数据（见 [`SECURITY.md`](SECURITY.md)）。
 - ❌ 绕过或静默削弱安全检查（`# nosec`、关闭 linter 规则、跳过测试）而不留记录。
@@ -131,33 +132,31 @@ Refs: #<issue>
 `main`（发布，保护）← `develop`（集成，保护）← `feat/*` 等短期分支。
 完整定义见 [`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md)。
 
-### 跑测与 `test/<slug>` 分支守则（2026-09-25 改写）
+### 跑测守则（2026-09-25 改写：**没有"跑测专用分支"**）
 
-跑测**不再走构建桶**（[ADR-0025](docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)）：
+跑测**不走构建桶**（[ADR-0025](docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)）：
 "自动化 ⇒ 必烧构建桶"这个前提**已被实测推翻**——区分构建/开发的判据是
 "有没有声明 `services: [vscode]`"，不是"它是怎么被触发的"
 ⇒ `api_trigger_bench` + vscode 走**云原生开发桶**（`total` 17600 核时/月，余 ≈15000）。
 ⚠️ 构建桶 `total == free == 160` 是**硬顶**，只留 1 核门禁。
 
-两个入口：① 自动 `api_trigger_bench`（显式调用 `cnb build start-build`，机器按分支名分派）；
+两个入口：① 自动 `api_trigger_bench`（**挂在 `develop` 键下**，显式触发：
+`cnb build start-build --repo <slug> --branch develop --event api_trigger_bench`）；
 ② 人工 `make bench`（在 `vscode` 环境里；四道可信闸门在脚本里，见 §5）。
 
-1. **`test/<slug>` = test-only 分支**：只用于**借一台云原生开发环境**，
-   **绝不允许任何提交**（不 `add`、不 `commit`、不 `push`；环境用完即弃）。
-   它与"工作分支"是两种东西——把提交放上去等于把工作放在"下次会话不存在"的地方。
-   **机器分派**：一种机器配置对应一条分支（如 `test/amd64-8`），
-   `runner.tags` / `cpus` 写在 `develop` 的 `.cnb.yml` 里**按分支名分派**
-   ⇒ **分支上仍然零提交**，配置不随分支走。
-   ⚠️ **但它的引用不会自己前进 ⇒ 触发前必须快进到被测提交**
-   （`git push origin HEAD:refs/heads/test/<slug>`，**只动引用、不新增提交**；
-   见 [ADR-0027](docs/adr/0027-test-branch-ref-must-track-the-commit-under-test.md)）。
-   不做这一步，环境会从**旧提交**拉起 ⇒ **用旧代码测新修复**，
-   而且日志、流水线状态、报告**全都看不出区别**（2026-09-25 实测踩到）。
+1. **跑测直接跑在 `develop` 上**（[ADR-0028](docs/adr/0028-benchmark-runs-on-develop.md)）：
+   环境必然取自 `develop` 的 tip ⇒ "从与 `develop` 一致的提交拉起"**自动成立**，
+   不再需要"先快进环境分支"这类纪律。
+   ⚠️ 代价：**只能测 `develop` 的 tip**，不能测未合入的提交（要测就先合入）。
+   **多机器 / 多架构不需要新分支**：在同一个 `develop:` 键下加一个**独立事件名**
+   （将来如 `api_trigger_bench_arm64`）+ 对应 `runner.tags` 即可。
+   ⚠️ **遗留**：`test/amd64-8`、`test/keepalive-probe`、`test/quota-probe` 三条远端分支
+   **不可删**（D 类）⇒ 已停用，**勿再依赖**。
 2. **测试数据与分析的唯一持久化出口是 `data` 分支**（`bench/data`；只由
    `make bench` → `scripts/bench/publish.sh` 写）；**大文件走制品库**。
-   **不许把测试数据推到代码分支**（含 `test/<slug>`、`develop`、`main`）。
-3. **环境必须从与 `develop` 一致的提交拉起** ⇒ 命中镜像缓存 ⇒
-   **不额外消耗构建桶**；从陈旧提交拉起还会让"同一份协议"这一可比性前提失效。
+   **不许把测试数据推到代码分支**（含 `develop`、`main`）。
+3. **环境取自 `develop` 的 tip**（由第 1 条自动成立）⇒ 命中镜像缓存 ⇒
+   **不额外消耗构建桶**；这也是"同一份协议"这一可比性前提的一部分。
 4. ⚠️ **环境会在 stages 跑完后自动释放，但有 ≈5 分钟延迟**：`keepAliveTimeout` 是
    **离线宽限期**（不是总时长），实测下界 = 一个 **5 分钟检查周期**（设更小没用 ⇒ 设 `5m`）
    ⇒ 成本 ≈ `cpus` × (跑测时长 + 5 min)；**想立刻停**才需要人工关闭。

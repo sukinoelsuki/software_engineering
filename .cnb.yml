@@ -57,7 +57,8 @@
 #      保留在 [docs/engineering/archived-ci-benchmark-pipelines.md](docs/engineering/archived-ci-benchmark-pipelines.md)）；
 #      `crontab` 仍**不采用**，但理由已变：不是"烧构建桶"，而是**本项目需求是"按需"而非"按点"**
 #      （定时不等人、不看当天有没有别的事）。
-#   6. **跑测有两个入口**：① 自动化 `api_trigger_bench`（本文件末尾，按分支键分派机器）；
+#   6. **跑测有两个入口**：① 自动化 `api_trigger_bench`（本文件末尾，挂在 `develop:` 键下；
+#      机器分派用**事件名**，见头部硬规则 8）；
 #      ② 人工 `make bench`（在 `vscode` 环境里；入口在 Makefile，实现在
 #      `scripts/bench/run.sh`）。⚠️ 两个入口都**必须先有 dev 依赖**：
 #      自动化的 `prepare` 阶段跑 `make setup`，人工入口依赖 `vscode` 环境里已跑过它。
@@ -75,13 +76,20 @@
 #      流水线内 `cnb workspace workspace-stop` 仍因令牌缺**账号级**
 #      `account-engage:rw` 被 403 拒绝 ⇒ **想立刻停，只能人工关**。
 #      ⇒ 成本 ≈ `cpus` × (跑测时长 + 5 min)，**不是**"到人工关闭为止"；
-#      ⇒ 跑测结束**必须人工关闭环境**（账号级令牌自毁属 C 类，待所有者裁决），
-#        并用 `make quota` 做月末核对。⚠️ 开发桶超出免费额度部分**按 ¥0.125/核时计费**
-#        ——**容量充足 ≠ 免费**。
+#      ⇒ **无需人工干预**（环境自己会释放）；"想立刻停"才人工关闭
+#        （账号级令牌自毁属 C 类，待所有者裁决），并用 `make quota` 做月末核对。
+#        ⚠️ 开发桶超出免费额度部分**按 ¥0.125/核时计费**——**容量充足 ≠ 免费**。
 #   7. **门禁一律单核（`runner.cpus: 1`）**：跑测要起模型、需 8 核 16 GiB，
 #      而 lint / typecheck / test / security 单核足矣。不显式声明就等于按平台的
 #      **默认 8 核**计费——那是本次盘点里最容易漏算的一项消耗。
 #      另加 `ifModify` 限定只在相关路径变更时触发、`lock` 只保留最新一条排队。
+#   8. **跑测直接跑在 `develop` 上，不再使用 `test/<slug>`**（2026-09-25 所有者重估，
+#      [ADR-0028](docs/adr/0028-benchmark-runs-on-develop.md)）：
+#      分派键用**事件名**而不是分支名；`develop` 就是"最新模版"，环境必然取自它的 tip
+#      ⇒ "从与 develop 一致的提交拉起"**自动成立**，并**消除**了 `test/<slug>` 的
+#      "引用陈旧 ⇒ 用旧代码测新修复（且看不出区别）"这一失效模式。
+#      ⚠️ 代价：跑测只能测 `develop` 的 tip（不能再测未合入的提交）。
+#      一次性探针同样挂 `develop` 键 + 独立事件名（`api_trigger_probe_*`），不再新开分支。
 # ============================================================================
 
 "**":
@@ -316,36 +324,55 @@
 # ============================================================================
 
 # ============================================================================
-# 【跑测段 · 2026-09-25】按分支键分派机器，**走云原生开发桶**
-# 决策：[ADR-0025](docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md)
-# 证据：docs/research/2026-09-25-bucket-attribution-probe.md §7
+# 【跑测段 · 2026-09-25 改写】直接跑在 `develop` 上，**走云原生开发桶**
+# 决策：[ADR-0028](docs/adr/0028-benchmark-runs-on-develop.md)
+#       （**取代** [ADR-0027](docs/adr/0027-test-branch-ref-must-track-the-commit-under-test.md)
+#        与 [ADR-0025](docs/adr/0025-benchmark-automation-moves-to-dev-bucket.md) §2.2 的
+#        "按分支名分派机器"；被取代者的原文保留，不改）
+# 证据：docs/research/2026-09-25-bucket-attribution-probe.md §7、
+#       docs/research/2026-09-25-cnb-platform-behavior-facts.md §2/§3
 #
 # 触发（**显式**，不会自己跑）：
-#   cnb build start-build --repo <slug> --branch test/amd64-8 --event api_trigger_bench
+#   cnb build start-build --repo <slug> --branch develop --event api_trigger_bench
+#
+# 为什么不挂在 `test/<slug>` 上（2026-09-25 所有者重估）：
+#   · **不需要**：多机器/多架构的分派键可以是**事件名**，不必是分支名
+#     （grammar.md：分支键下是「事件名 → Pipeline」的映射，**不同事件名互不冲突**）；
+#   · 挂 `develop` 是**更简单**的解：环境必然取自 `develop` 的 tip ⇒
+#     "从与 develop 一致的提交拉起"**自动成立**，而 `test/<slug>` 的
+#     "引用不会自己前进"（⇒ 用旧代码测新修复，且日志/状态/报告看不出区别）
+#     这一失效模式**整体消失**；
+#   · `test/<slug>` 是"以为不能用 CI"时代的遗物：它要求在每个环境分支上维持
+#     零提交 + 引用新鲜，维护成本换不到任何能力。
+#   ⚠️ 代价（如实写出）：**跑测只能测 `develop` 的 tip**，不能再测未合入的提交。
+#     本项目 `develop` 是工作主干且允许直推 ⇒ 接受该代价。
 #
 # 四条"为什么"：
 #   · 必须声明 `services: [vscode]` —— 那是走开发桶的**唯一**判据（头部硬规则 5）；
 #     去掉它就掉回构建桶（硬顶 160 核时/月）。
-#   · 分支键用**精确名**（`test/amd64-8`）而不是通配符 —— 机器规格按分支分派，
-#     分支上仍**零提交**（CODEBUDDY.md §2），配置全部集中在 `develop` 的这个文件中。
+#   · 事件名**只**声明在 `develop:` 键下：`"**"` 与本键都会匹配 develop，但
+#     `"**"` 没有声明 `api_trigger_bench` ⇒ **不会重复执行**
+#     （trigger-rule.md：多个键同时匹配时，只有**声明了该事件**的流水线才会跑）。
+#     ⚠️ 反例：若把 `push` 也搬进本键，同一个 push 会被两个键各触发一次 ⇒ 门禁跑两遍。
 #   · 不用 `branch.create` —— 它会为**每一个**新建分支拉起环境，副作用不可控。
 #   · 不用 `crontab` —— 本项目需求是"按需"，不是"按点"（定时不等人）。
 #
+# 将来加机器（如 arm64）：在**同一个 `develop:` 键**下再声明一个**独立事件名**
+#   （如 `api_trigger_bench_arm64`）+ 对应 `runner.tags` ⇒ **不需要新分支**。
+#   前置不变：先验证 `.ide/Dockerfile` 能在该架构上构建。
+#
 # ⚠️ 四条实测得到的硬约束（ADR-0025 §2.3~§2.5，改这段前必须读）：
 #   ① 环境**会**在 stages 跑完后自动释放，但有 ≈5 分钟延迟（一个连接检查周期）
-#      ⇒ 成本 ≈ cpus × (跑测时长 + 5 min)；想立刻停仍需人工关（头部硬规则 6.1）；
-#   ② `keepAliveTimeout` = **离线宽限期**（**不是**总时长），应设**小值**：
+#      ⇒ 成本 ≈ cpus × (跑测时长 + 5 min)；"想立刻停"才需要人工关（头部硬规则 6.1）；
+#   ② `keepAliveTimeout` = **离线宽限期**（**不是**总时长），应设**小值**（5m）：
 #      设大了（如 90m）环境就白活那么久——E1（20m→+20m）/E2（1m→+5m）已实测；
 #   ③ 单片内**输出间隔必须 < 10 分钟**（grammar.md §Job 的"无输出超时"），
 #      故下面起了一个每 60 s 打印时间戳的后台循环——它**不是**伪造 http/ssh 心跳，
 #      只是满足超时判据；
 #   ④ **产物外推必须在 `stages` 内完成** —— `endStages` 是**销毁前**钩子，
 #      而销毁时机不可控（实测 stages 结束后查它返回"没有查询到该 stage 信息"）。
-#
-# ⚠️ 目前只落地 **amd64-8** 一台机器：arm64 需先验证 `.ide/Dockerfile`
-#     （内含预置的模型与 llama-server）能在 arm64 上构建，**未验证前不得照抄本段**。
 # ============================================================================
-test/amd64-8:
+develop:
   api_trigger_bench:
     - name: bench-amd64-8
       runner:
@@ -421,57 +448,3 @@ test/amd64-8:
             echo " 跑测流程已结束。环境将在 keepAliveTimeout 到期后由平台释放；"
             echo " 若需立即停止计费，请到云原生开发页面手动关闭本环境。"
             echo "=================================================="
-
-
-# ============================================================================
-# 【探针段 · E2】验证 `keepAliveTimeout` 是不是"stages 跑完之后"的宽限期
-#
-# 判据（来自 E1 的 beforeEnd 日志，2026-09-25）：
-#   Maximum available: 18h / Offline recycling: 20m
-#   The user has been offline (not more than 20m) waiting for the user to connect.
-#   The user has been offline (more than 20m) and starts to release the workspace.
-# 计时基准 ≈ stages 收尾/首次连接检查（06:31:45），**不是**环境创建时刻（06:21:32）
-# ⇒ 若成立，则 keepAliveTimeout 应设**小值**，环境即可"跑完自动释放"。
-#
-# 本探针：stages 跑 2 分钟 + keepAliveTimeout: 1m
-#
-# ✅ **结果（2026-09-25 07:2x）**：假设成立，且比假设更精确——
-#   `Offline recycling: 1m`（声明生效）；计时基准 07:22:39 → 判定释放 07:27:39（**+5m**）；
-#   `endStages` 于 23:29:44Z 执行；总时长 **7.3 min**，`metricCoreHours: 0.12`。
-#   ⇒ **下界是一个检查周期（5 分钟）**：声明值小于它时按 5 分钟走。
-#   ⇒ 正式跑测段的 90m 已据此改为 **5m**（白活 90 分钟 ≈12 核时是纯浪费）。
-#
-#   · 若释放在 stages 结束后 ≈5 分钟 ⇒ 假设成立（已成立）
-#   · 若仍存活很久 ⇒ 假设不成立，维持"人工关闭为默认"
-#
-# ⚠️ 分支键用精确名 `test/keepalive-probe`：与 `test/amd64-8` 不重叠
-#    （多个 glob 同时命中会并行执行，见头部第 8 行）。
-# ============================================================================
-test/keepalive-probe:
-  api_trigger_keepalive_probe:
-    - name: keepalive-probe
-      runner:
-        cpus: 1
-      services:
-        - name: vscode
-          options:
-            keepAliveTimeout: 1m
-      docker:
-        image: python:3.12-bookworm
-      stages:
-        - name: probe-short
-          script: |
-            set -eu
-            echo "[probe2] start       $(date -u +%FT%TZ)"
-            i=0
-            while [ "$i" -lt 2 ]; do
-              echo "[probe2] t+${i}min   $(date -u +%FT%TZ)"
-              i=$((i + 1))
-              sleep 60
-            done
-            echo "[probe2] stages-done $(date -u +%FT%TZ)"
-      endStages:
-        - name: probe-end
-          script: |
-            set -eu
-            echo "[probe2][endStages]  $(date -u +%FT%TZ)"

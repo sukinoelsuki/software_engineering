@@ -59,11 +59,19 @@ make bench-verify-assets
 与镜像内预置的模型 / `llama-server` ⇒ 它**只在云原生开发环境里**跑。
 ⚠️ **开发额度不是"用不完"的**：组织本月开发用量 **2512.7 核时**已超免费额度 1600
 （实测见 [`../research/2026-09-25-quota-measurement-and-cost-model.md`](../research/2026-09-25-quota-measurement-and-cost-model.md)）
-⇒ **跑测前必读 §3.1 的成本纪律**。运行分支建议用 `test/<slug>`
-（见 [`.cnb.yml`](../../.cnb.yml) 头部与 [`CODEBUDDY.md`](../../CODEBUDDY.md) §2）。
+⇒ **跑测前必读 §3.1 的成本纪律**。跑测**直接跑在 `develop` 上**
+（[ADR-0028](../adr/0028-benchmark-runs-on-develop.md)；`test/<slug>` 那套已取消，
+见 [`.cnb.yml`](../../.cnb.yml) 头部与 [`CODEBUDDY.md`](../../CODEBUDDY.md) §3）。
 
 可覆盖的变量：`BENCH_DATA_ROOT`、`BENCH_TIERS`、`BENCH_REPEATS`、`BENCH_THREADS`、
 `BENCH_LABEL`、`BENCH_KEEP_DAYS`、`BENCH_MODEL_DIR`、`BENCH_ISOLATION`、`BENCH_DRY_RUN`。
+
+> ⚠️ **`BENCH_LABEL` 决定索引里的 `round_id`**（= `<日期>-<label>`），而 `round_id` 是**幂等键**：
+> **同 label 重跑会"原地替换"**同一天的那条索引与目录（语义上就是"同一轮"）。
+> - **验证性 / 对照性跑测请给独立 label**（如 `amd64-8-verify`）——否则它的读数会被后续同 label 的
+>   轮次**覆盖掉**：原型仍在数据分支的 git 历史里，但**不再出现在 `index.json` / `latest.md` 中**
+>   （2026-09-25 实测：两次 S×3 的读数就是这样被后来的完整一轮覆盖掉的，只能回 git 历史里翻）；
+> - 反过来，**发现坏数据时用同一个 label 重跑**正是"原地纠错"的手段（不必碰数据分支，E 类不变）。
 
 > `make bench-round` / `make bench-publish` 仍在，但它们是**子步骤**：
 > 单独跑会**绕过闸门**，只用于排障，不要用来产出可入库的数据。
@@ -79,7 +87,7 @@ make bench-verify-assets
 
 | 入口 | 怎么触发 | 规模 | 何时用 |
 | --- | --- | --- | --- |
-| `api_trigger_bench`（**自动**） | `cnb build start-build --repo <slug> --branch test/amd64-8 --event api_trigger_bench` | 默认三档 × R=10 | 需要一轮可入库的数据，且**不需要人全程在场** |
+| `api_trigger_bench`（**自动**） | `cnb build start-build --repo <slug> --branch develop --event api_trigger_bench` | 默认三档 × R=10 | 需要一轮可入库的数据，且**不需要人全程在场** |
 | `make bench`（人工） | 在 `vscode` 环境里执行 | 同上 | 日常开发、顺手跑 |
 | `make bench BENCH_TIERS=S BENCH_REPEATS=3` | 同上 | S × R=3 | 改完测量代码自检（约 3 分钟） |
 
@@ -90,23 +98,19 @@ make bench-verify-assets
 > （2026-09-25 实测：`sn=cnb-8g5-1k3avbsr4` 因此发出了一条 0% 的轮次）。
 > 判据由 `tests/unit/test_cnb_config.py::test_bench_pipelines_install_dev_dependencies_before_running` 钉住。
 
-**机器按分支名分派**：`.cnb.yml` 用**精确分支键**（`test/amd64-8`、`test/arm64-8`…）
-声明各自的 `runner.tags` / `runner.cpus` ⇒ **分支上仍零提交**，配置集中在 `develop`。
+**机器 / 架构按「事件名」分派**（[ADR-0028](../adr/0028-benchmark-runs-on-develop.md)，
+取代 ADR-0025 §2.2 的"按分支名分派"）：跑测事件挂在 **`develop:` 键**下，
+将来加机器（如 arm64）就在**同一个键**下再声明一个**独立事件名**（如 `api_trigger_bench_arm64`）
++ 对应的 `runner.tags` / `runner.cpus` —— **不需要新分支**（依据：`grammar.md`
+"分支键下是「事件名 → Pipeline」的映射，**不同事件名互不冲突**"）。
 
-> ⚠️ **触发前置（每次都要做，30 秒）**：`test/<slug>` **零提交** ⇒ 它的**引用不会自己前进**，
-> 必须先把引用快进到被测提交：
->
-> ```bash
-> git push origin HEAD:refs/heads/test/amd64-8      # 只动引用、不新增提交（ADR-0027）
-> git ls-remote origin refs/heads/test/amd64-8      # 核对：应与 git rev-parse HEAD 一致
-> ```
->
-> **不做这一步的后果是静默的**：环境从旧提交拉起 ⇒ **用旧代码测新修复**，
+> ✅ **不需要"触发前置"了**（2026-09-25 由 ADR-0028 消除）：环境必然取自 `develop` 的 tip
+> ⇒ "从与 `develop` 一致的提交拉起"**自动成立**。
+> ⚠️ 此前那一版要求"先把 `test/<slug>` 的引用快进到被测提交"（ADR-0027，**已作废**）：
+> 因为 `test/<slug>` 零提交 ⇒ 它的引用不会自己前进 ⇒ 忘了快进就会**用旧代码测新修复**，
 > 而日志、流水线状态、报告**全都看不出区别**（2026-09-25 实测踩到）。
-> ⚠️ 两个写命令的坑：① `"$SHA:refs/..."` 在 zsh 下会被当成参数修饰符（`$SHA:r`）
-> ⇒ 用 `HEAD:refs/...` 或 `${SHA}:refs/...`；② **不要把 `git push` 接进管道**
-> （`| tail` 让退出码变成 `tail` 的 ⇒ 失败被吞掉，后续动作照常执行）。
-> 详见 [ADR-0027](../adr/0027-test-branch-ref-must-track-the-commit-under-test.md)。
+> ⇒ 结论是**取消那类分支**，而不是把"记得快进"变成纪律（**能消除失效模式就不要管理它**）。
+> ⚠️ 代价：**跑测只能测 `develop` 的 tip**（未合入的改动要先合入；`develop` 允许直推）。
 
 **不再采用的触发**（前两条由 `tests/unit/test_cnb_config.py` 拦下）：
 
@@ -168,7 +172,7 @@ make bench-verify-assets
 | # | 步骤 | 判据 / 产物 |
 | --- | --- | --- |
 | ① | **决定**：需要一个新数据点吗？预计核时 = `cpus × 预计时长` | 写进最新一篇 devlog 的 §7（预算） |
-| ② | **拉起**：在 `test/<slug>` 上借环境（**先把引用快进到 `develop` 的 tip**，见 §3 的触发前置） | ⚠️ 这一刻计费时钟开始 |
+| ② | **拉起**：`--branch develop --event api_trigger_bench` 借环境（环境即 `develop` 的 tip，见 §3） | ⚠️ 这一刻计费时钟开始 |
 | ③ | **准备 + 跑测**：环境内 `make bench`，**一次跑完** | 四道闸门逐道 `[OK]` |
 | ④ | **校验 + 发布**：schema 校验 → `bench/data` | 发布成功 = 数据落地 |
 | ⑤ | **关闭**：发布成功**立即**关环境 | ⚠️ **"关闭"是流程的一步，不是收尾**；忘了关 = 直接损失 8 核时/小时 |

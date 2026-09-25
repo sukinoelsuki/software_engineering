@@ -252,26 +252,62 @@ _CODE_BRANCH_PATTERN_RE = re.compile(
 
 @pytest.mark.unit
 def test_publish_script_restricts_source_branches() -> None:
-    """发布脚本必须把来源分支限制在 `bench/nightly` 与 `test/*`，**主干不得入选**。
+    """发布脚本必须把来源分支限制在 `bench/nightly` 与 `develop`，**受保护分支不得入选**。
 
-    背景：2026-09-24 起跑测不再由 CI 触发，而是在 `test/<slug>` 借来的云原生开发
-    环境里人工触发（[ADR-0023](../../docs/adr/0023-ci-downgrade-to-manual-trigger.md)）。
-    白名单因此从"一个分支名"变成"一条正则"，而这正是**最容易被顺手放宽**的地方：
-    把它改成 `.*` 或加一条 `develop` 就能让数据从主干上推出去，而后果不是"多跑一次"，
-    是"发布的来源无法追溯"。
+    背景（2026-09-25 重写）：跑测**直接跑在 `develop` 上**
+    （[ADR-0028](../../docs/adr/0028-benchmark-runs-on-develop.md)）——环境必然取自
+    `develop` 的 tip，"引用陈旧 ⇒ 用旧代码测新修复"这一失效模式随之消失。
+    ⇒ 白名单从"`bench/nightly` + `test/*`"改为"`bench/nightly` + `develop`"。
 
-    判据不止看"文本里有 test/"：本用例把脚本里那条正则**取出来在 Python 里实跑**，
-    逐个候选分支验证放行/拒绝——否则 `^test/|develop` 这类的写法会**骗过**文本断言。
+    判据不止看"文本里有 develop"：本用例把脚本里那条正则**取出来在 Python 里实跑**，
+    逐个候选分支验证放行/拒绝——否则 `.*` 或 `^develop|.*` 这类的写法会**骗过**文本断言。
+    ⚠️ `main` / `master` **仍必须被拒**：受保护分支上"顺手发布数据"始终不允许。
     """
     match = _CODE_BRANCH_PATTERN_RE.search(PUBLISH_SH.read_text(encoding="utf-8"))
 
     assert match, "发布脚本必须声明来源分支白名单 `BENCH_CODE_BRANCH_PATTERN`"
     pattern = match.group(1)
 
-    assert re.search(pattern, "test/ci-quota-downgrade"), "`test/<slug>` 必须被放行"
+    assert re.search(pattern, "develop"), "`develop` 必须被放行（ADR-0028 的跑测分支）"
     assert re.search(pattern, "bench/nightly"), "长驻基准分支仍须被放行（历史数据来源）"
-    for branch in ("develop", "main", "master", "refs/heads/develop", "feature/x"):
-        assert not re.search(pattern, branch), f"主干/无关分支不得作为发布来源：{branch}"
+    for branch in (
+        "main",
+        "master",
+        "refs/heads/main",
+        "feature/x",
+        "develop2",
+        "notdevelop",
+    ):
+        assert not re.search(pattern, branch), f"受保护/无关分支不得作为发布来源：{branch}"
+
+
+@pytest.mark.unit
+def test_bench_pipeline_is_declared_on_develop_not_on_a_glob_key() -> None:
+    """跑测事件必须挂在 `develop:` 键下，**不得**挂在 `"**"` 等通配键下（ADR-0028）。
+
+    为什么这条要机器钉住：
+
+    * 挂在 `"**"` 下 ⇒ 任何分支上用该事件名触发都会跑到它，**进而是哪份代码被测变得不确定**；
+    * 挂在 `test/<slug>` 下（旧设计）⇒ 需要维持"零提交 + 引用新鲜"两条纪律，
+      而"引用不会自己前进"会**静默**导致"用旧代码测新修复"
+      （2026-09-25 实测踩到，见 [ADR-0027](../../docs/adr/0027-test-branch-ref-must-track-the-commit-under-test.md)）；
+    * 挂 `develop:` ⇒ 环境必然是 `develop` 的 tip，"从与 develop 一致的提交拉起"**自动成立**。
+    """
+    lines = _lines()
+    key = None
+    key_of_event: list[str] = []
+    for line in lines:
+        if line and line[0] not in " \t#" and line.rstrip().endswith(":"):
+            key = line.strip()
+        if line.startswith(f"  {_BENCH_EVENT}:"):
+            key_of_event.append(str(key))
+
+    assert key_of_event, f"配置里应存在事件 `{_BENCH_EVENT}`"
+    for found in key_of_event:
+        assert found == "develop:", (
+            f"跑测事件 `{_BENCH_EVENT}` 必须挂在 `develop:` 键下（ADR-0028），实际是 {found!r}；"
+            "挂在通配键或 test 分支键上分别会引入「被测代码不确定」与「引用陈旧」两类问题"
+        )
 
 
 @pytest.mark.unit

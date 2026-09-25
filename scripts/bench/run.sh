@@ -128,5 +128,9 @@ if [ "${BENCH_DRY_RUN}" = "1" ]; then
     exit 0
 fi
 log "=== 4. 发布到数据分支（唯一持久化出口）==="
-BENCH_ALLOW_LOCAL=1 bash scripts/bench/publish.sh
+# ⚠️ **故意不传 `BENCH_ALLOW_LOCAL=1`**（2026-09-25 修）：那个开关是给**本地演练**用的
+# 显式逃生门，而在此之前这里**无条件**打开它 ⇒ 来源分支白名单对 `make bench` **完全失效**
+# （是个假控制）。正常路径下 `CNB_BRANCH` 就是被测分支（ADR-0028 之后是 `develop`），
+# 命中白名单即可；真要本地演练，由人**显式**设 `BENCH_ALLOW_LOCAL=1`。
+bash scripts/bench/publish.sh
 log "完成。取数：git fetch origin bench/data && git show FETCH_HEAD:bench/latest.md"
