@@ -408,3 +408,17 @@ flowchart LR
   - ⚠️ **本文正文里的"33 条"/分组表为历史快照，逐字保留**；**当前条数与最新口径**以
     [`agent-command-gate.md`](../engineering/agent-command-gate.md) §8（第三批）与
     `.ide/agent-preferences.json` 的注释为准。
+- **2026-09-25（修订 · 设置源拆分后首个环境的落地核对）**：环境 `sn=cnb-hlo-1k3c9o8gu`（`develop@18d9ea5`）内，
+  `V6` **再次闭环**——stage `agent-permissions` = success / 0.3 s，两目标各打印
+  `[ok] 已合并 75 项设置（.ide/settings.json 68 + .ide/agent-preferences.json 7）`，
+  末行断言行通过；运行期读数（`C7`）为 **38 条黑名单**（与源文件实测 38 条一致）/ 12 类禁用
+  （不含 `custom`）/ `isAutoExecuteTerminal: true`；两个 User 目标的键集合完整
+  （WebIDE 86 键 = 我方 75 + 平台自有 11；Remote-SSH 75 键 = 与源逐键一致）。
+  ⇒ §7「复核时间点」第 2 条在**拆分后仍然成立**，且"33 → 38"已生效。
+  另：本轮实测到**存在第二个改写者**——客户端连接后约 7 秒（`21:02:49` → `21:02:56/57`，**晚于全部 stage**）
+  再次改写 code-server 的 `Machine` 与 `User` 设置；其语义是**合并**（我方 **74/75** 键原样保留），
+  唯一值变化为 `extensions.autoUpdate` 被规范化为该客户端合法的 `"off"`（源里写 `false`）
+  ⇒ 为 §10 的 **`U4` 添了一条实测证据**（平台侧改写的语义 = **合并**，不是整体覆盖）。
+  ⚠️ **改写主体仍未确认**（候选：平台 WebIDE 设置应用器 / code-server 启动期设置迁移）
+  ⇒ `U4` **保持"未验证"**，本条不得被写成"平台会/不会覆盖我方键"的结论。
+  细节见 devlog 0025 §5 第 8 条与 [`agent-command-gate.md`](../engineering/agent-command-gate.md) §6 边界 9。
