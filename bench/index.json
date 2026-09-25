@@ -375,23 +375,45 @@
       "date": "2026-09-25",
       "protocol": "bench-v2",
       "label": "amd64-8",
-      "signature": "bench-v2|ctx=4096|threads=8|max_tokens=2048|tiers=S|cpu=AMD EPYC 9K65 192-Core Processor",
+      "signature": "bench-v2|ctx=4096|threads=8|max_tokens=2048|tiers=S,M,L|cpu=AMD EPYC 9K65 192-Core Processor",
       "status": "complete",
       "isolation": "user",
-      "git_commit": "3cf05c7254d74cbb939402f0d3166519df1ddc24",
-      "core_hours": 0.351,
+      "git_commit": "427e48b9d33383bbe9552aec54d4cf697217e11c",
+      "core_hours": 5.099,
       "perf": {
         "S": {
-          "prefill_tok_per_s": 109.5,
-          "gen_tok_per_s": 26.5633,
-          "request_elapsed_s": 48.503,
-          "repeats": 3,
+          "prefill_tok_per_s": 107.58,
+          "gen_tok_per_s": 33.84,
+          "request_elapsed_s": 40.681,
+          "repeats": 10,
           "load_seconds": 1.25,
           "peak_memory_gib": 2.67
+        },
+        "M": {
+          "prefill_tok_per_s": 60.375,
+          "gen_tok_per_s": 20.99,
+          "request_elapsed_s": 54.0731,
+          "repeats": 10,
+          "load_seconds": 2.01,
+          "peak_memory_gib": 4.84
+        },
+        "L": {
+          "prefill_tok_per_s": 32.5483,
+          "gen_tok_per_s": 12.0733,
+          "request_elapsed_s": 119.2151,
+          "repeats": 10,
+          "load_seconds": 3.06,
+          "peak_memory_gib": 8.69
         }
       },
       "capability": {
         "S": {
+          "round_pass_rate": 0.6667
+        },
+        "M": {
+          "round_pass_rate": 0.6667
+        },
+        "L": {
           "round_pass_rate": 0.6667
         }
       },
