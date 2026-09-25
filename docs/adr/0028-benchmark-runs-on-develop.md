@@ -162,10 +162,12 @@ ADR-0025 §2.2 把机器规格**按分支名分派**：`.cnb.yml` 用精确分�
       `trigger.commit` = develop tip、走开发桶、独立 label 未覆盖现役条目）
 - [ ] **登记遗留远端分支**（D 类禁止删除）：`test/amd64-8`、`test/keepalive-probe`、`test/quota-probe`
       —— 是否在 `branch-status` 里标为"已停用"
-- [ ] **【附带发现·待裁决】数据分支的 `ci` 门禁必然报红**：`bench/data` 的 push 也命中 `"**"` 门禁，
-      而其 `verify` 阶段跑 `make check` ⇒ `format-check` 在数据分支上**必失败**
-      （模型产物**故意**不满足 ruff 格式，`publish.sh` 已写明该豁免）⇒ 每次发布都会留下一条红色构建
-      （实测 `sn=cnb-q2u-1k3bc29lt`：`verify` error @0.374 s，`metricCoreHours 0.04`）。
-      ⚠️ **既有问题，非本 ADR 引入**。候选处置：① 让门禁不在数据分支上跑
-      （glob 负向 `**/!(bench/data)` 或 stage 级 `if`）——**属门禁范围变更（F 类），须所有者确认**，
-      且必须用一次真实推送验证"其余分支覆盖未变"；② 接受噪声，在运行手册 §7 写明"数据分支的 `ci` 必红是预期"。
+- [x] ~~**【附带发现】数据分支的 `ci` 门禁必然报红**~~ ⇒ **已修（2026-09-25）**：
+      根因**不是** develop 的配置，而是**数据分支自己带着一份陈旧源码树 + 它自己的 `.cnb.yml`**
+      （首次创建该分支时脚本用的 `git worktree add --detach <dir>` **未指定 commit ⇒ 取当前 HEAD**）
+      ⇒ 平台对该分支 push 事件读的是**该分支自身**的配置 ⇒ 命中其中的 `"**"` 门禁
+      ⇒ `format-check` 在数据分支上必失败（模型产物故意不满足格式）。
+      修法：`publish.sh` 发布时**清掉 `bench/` 以外的全部文件**（数据分支从此**没有 `.cnb.yml`**
+      ⇒ 其 push **不再产出任何流水线**）。⚠️ 这纠正了我先前的两个候选方案
+      （改 glob/加 stage `if`）——它们都改在 `develop` 上，**管不到**这条分支。
+      判据由 `tests/unit/test_cnb_config.py::test_publish_script_strips_non_data_files_from_the_data_branch` 钉住。

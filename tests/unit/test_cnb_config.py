@@ -362,6 +362,29 @@ def test_publish_script_merges_instead_of_replacing_published_history() -> None:
 
 
 @pytest.mark.unit
+def test_publish_script_strips_non_data_files_from_the_data_branch() -> None:
+    """数据分支必须**只含数据**：发布脚本要清掉历史遗留的源码树副本。
+
+    背景（2026-09-25 修的缺陷）：数据分支首次创建时，脚本写的是
+    `git worktree add --detach <dir>`（**未指定 commit ⇒ 取当前 HEAD**）⇒ **完整源码树**
+    被一起提交进数据分支，此后该分支长期携带**陈旧源码 + 它自己的 `.cnb.yml`**；
+    而平台对 push 事件读的是**该分支自身**的配置 ⇒ 命中其中的 `"**"` 门禁
+    ⇒ `make check` 的 `format-check` 在数据分支上**必失败**（模型产物**故意**不满足格式）
+    ⇒ **每次发布都留下一条红色构建**并白烧一次 1 核环境
+    （实测 `sn=cnb-q2u-1k3bc29lt`：`verify` 报错 0.374 s，`metricCoreHours` 0.04）。
+
+    ⚠️ **改 `develop` 的 `.cnb.yml` 管不到它**——这正是本条必须由机器钉住的原因：
+    缺陷的载体在**数据分支自己**身上，而唯一能写数据分支的就是这个脚本。
+    """
+    text = PUBLISH_SH.read_text(encoding="utf-8")
+
+    assert "ls-files -z" in text and "rm -q -f" in text, (
+        "发布脚本必须清理数据分支上 `bench/` 以外的文件：否则数据分支会带着自己的 `.cnb.yml`，"
+        "其 push 事件会命中一条**必然失败**的门禁流水线（每次发布留一条红灯 + 一次 1 核环境）"
+    )
+
+
+@pytest.mark.unit
 def test_publish_script_whitelists_round_dir_names() -> None:
     """轮次目录名进入路径构造 ⇒ 必须白名单校验（防目录穿越）。
 

@@ -380,6 +380,7 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 | 定时任务完全不触发 | 分支名/权限/负责人变更 | **已不适用**（2026-09-24 起不再有定时任务，见 ADR-0023）；保留原文作为历史 |
 | `make bench` 报 `[gate ...][FAIL]` | 该轮产出不满足四道闸门之一 | **不要放行**。按闸门号对照 §2 的表定位：① 有残留进程或某次重复被丢弃；② 计时行数≠3 或 token<32；③ 索引里混进单次采样；④ schema 校验不过。修的是**原因**，不是闸门 |
 | **能力通过率恒为 0%**，而性能、闸门、构建状态全正常 | 缺 dev 依赖：评测要跑 `mypy --strict`，而 `mypy` 只在 `[project.optional-dependencies].dev` 里，**只有 `make setup` 会装**。症状是每条判定 `mypy_rc=1` / `No module named mypy`（在 `daily/<轮次 id>/capability.json` 里可逐条核对） | 跑测前先 `make setup`（自动入口已固化为 `prepare` 阶段）。⚠️ **不要**把 0% 当作"模型能力"写进任何结论 |
+| **每次发布后多出一条红色构建**（`event=push`、`sourceRef=bench/data`，`verify` 阶段失败在 `format-check`） | 数据分支上**残留着一份陈旧源码树 + 它自己的 `.cnb.yml`**（首次创建该分支时脚本用的 `git worktree add --detach <dir>` **未指定 commit ⇒ 取当前 HEAD**）⇒ 平台对该分支 push 事件读的是**该分支自身**的配置，其中的 `"**"` 门禁跑 `make check`，而模型产物**故意**不满足 ruff 格式 ⇒ 必失败（实测 `sn=cnb-q2u-1k3bc29lt`，0.04 核时） | **已修（2026-09-25）**：`publish.sh` 发布时清掉 `bench/` 以外的全部文件 ⇒ 数据分支没有 `.cnb.yml` ⇒ 不再产出任何流水线。⚠️ **改 `develop` 的 `.cnb.yml` 管不到这一条**（它读的是数据分支自己的配置），排查时别往错方向改 |
 
 ## 8. 保留期与体积
 

@@ -130,6 +130,32 @@ PYTHONPATH="${PWD}/src" uv run python -m agent_sec_perf.bench.rounds \
 # 改写——那等于篡改证据；产物原文已另有 artifacts/*.md 归档。
 find "${WORKTREE}/${DATA_SUBDIR}" -type d -name work -prune -exec rm -rf {} +
 
+# ---------------------------------------------------------------------------
+# 3.5 让数据分支**只含数据**：清掉历史遗留的源码树副本
+#
+# 【2026-09-25 新增，修的是一条**每次发布都点亮**的红灯】
+# 数据分支是在"它还不存在"时由本脚本的早期版本创建的，而那条路径写的是
+# `git worktree add --detach <dir>`（**未指定 commit ⇒ 取当前 HEAD**）⇒ 工作副本里
+# 带着**完整源码树**，于是被一起提交进了数据分支。此后它长期携带一份**陈旧源码 +
+# 它自己的 `.cnb.yml`**，而平台对该分支 `push` 事件读的是**该分支自身的**配置
+# ⇒ 命中其中的 `"**"` 门禁 ⇒ 跑 `make check` ⇒ `format-check` 在数据分支上**必然失败**
+# （模型产物**故意**不满足 ruff 格式，见上文 §3 的说明）
+# ⇒ **每次发布都留下一条红色构建**，并白烧一次 1 核环境
+# （实测 `sn=cnb-q2u-1k3bc29lt`：`verify` 报错 0.374 s，`metricCoreHours` 0.04）。
+# ⚠️ 改 `develop` 的 `.cnb.yml` **管不到这条**——它读的是数据分支自己那份。
+#
+# ⇒ 清掉非 `${DATA_SUBDIR}/` 的一切：数据分支上**没有 `.cnb.yml`** ⇒ 它的 push
+#    **不会**再产出任何流水线（既不红也不花钱）。
+# ⚠️ 只改该分支的**工作树内容**（历史里仍有旧副本），**不触碰任何数据文件**；
+#    文件列表取自 git 索引（`ls-files -z`，NUL 分隔 ⇒ 中文路径安全）。
+# ---------------------------------------------------------------------------
+log "清理数据分支上遗留的非数据文件（使其只含 ${DATA_SUBDIR}/）"
+# `grep -v` 在"一个都不匹配"时返回 1 ⇒ 用 `|| true` 兜住（pipefail 下否则会中止）
+git -C "${WORKTREE}" ls-files -z \
+    | grep -zvE "^${DATA_SUBDIR}/" \
+    | xargs -0 -r git -C "${WORKTREE}" rm -q -f -- \
+    || true
+
 git -C "${WORKTREE}" add "${DATA_SUBDIR}"
 if git -C "${WORKTREE}" diff --cached --quiet; then
     log "没有新的数据变更，跳过提交"
