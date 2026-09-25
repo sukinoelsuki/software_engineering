@@ -1,0 +1,52 @@
+{
+  "perf": {
+    "S": {
+      "repeats": 3,
+      "prefill_tok_per_s": {
+        "n": 3,
+        "median": 120.3767,
+        "min": 119.8733,
+        "max": 121.0733,
+        "spread_pct": 1.0,
+        "values": [
+          119.8733,
+          121.0733,
+          120.3767
+        ]
+      },
+      "gen_tok_per_s": {
+        "n": 3,
+        "median": 35.41,
+        "min": 35.0433,
+        "max": 35.7167,
+        "spread_pct": 1.9,
+        "values": [
+          35.7167,
+          35.41,
+          35.0433
+        ]
+      },
+      "request_elapsed_s": {
+        "n": 3,
+        "median": 38.1632,
+        "min": 38.1397,
+        "max": 38.3722,
+        "spread_pct": 0.61,
+        "values": [
+          38.1397,
+          38.1632,
+          38.3722
+        ]
+      },
+      "load_seconds": 1.25,
+      "load_spread_pct": 0.35,
+      "model_load_seconds_log": null,
+      "peak_memory_gib": 2.67,
+      "valid_prefill_repeats": 3,
+      "server": {
+        "n_slots": 1,
+        "n_ctx_slot": 4096
+      }
+    }
+  }
+}

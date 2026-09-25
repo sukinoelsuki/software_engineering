@@ -445,6 +445,33 @@
         }
       },
       "report": "daily/2026-09-25-devkey-check/report.md"
+    },
+    {
+      "round_id": "2026-09-25-datafix-check",
+      "date": "2026-09-25",
+      "protocol": "bench-v2",
+      "label": "datafix-check",
+      "signature": "bench-v2|ctx=4096|threads=8|max_tokens=2048|tiers=S|cpu=AMD EPYC 9K65 192-Core Processor",
+      "status": "complete",
+      "isolation": "user",
+      "git_commit": "a222baaaf3bca1e95ecc60ad8aed751c6e53e8ed",
+      "core_hours": 0.283,
+      "perf": {
+        "S": {
+          "prefill_tok_per_s": 120.3767,
+          "gen_tok_per_s": 35.41,
+          "request_elapsed_s": 38.1632,
+          "repeats": 3,
+          "load_seconds": 1.25,
+          "peak_memory_gib": 2.67
+        }
+      },
+      "capability": {
+        "S": {
+          "round_pass_rate": 0.6667
+        }
+      },
+      "report": "daily/2026-09-25-datafix-check/report.md"
     }
   ]
 }
