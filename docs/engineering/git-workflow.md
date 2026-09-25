@@ -117,6 +117,7 @@
 | --- | --- |
 | 用途 | 从与 `develop` 一致的提交拉起一台云原生开发环境，在里面跑 `make bench` |
 | 提交 | ❌ **绝不允许**（不 `add`、不 `commit`、不 `push`）——它不是工作分支，用完即弃 |
+| **引用** | ⚠️ **触发前必须快进到被测提交**：`git push origin HEAD:refs/heads/test/<slug>`（`HEAD` = `develop` 的 tip）——**只动引用、不新增提交**；见 [ADR-0027](../adr/0027-test-branch-ref-must-track-the-commit-under-test.md) |
 | 数据出口 | 只有 `bench/data`（经 `make bench` → `scripts/bench/publish.sh`）；大文件走制品库 |
 | 环境来源 | 必须是**与 `develop` 一致**的提交 ⇒ 命中镜像缓存 ⇒ 不额外消耗构建桶 |
 | 推论 | **`.ide/Dockerfile` 不要频繁改**：每改一次，所有环境下次拉起都要重建镜像 |

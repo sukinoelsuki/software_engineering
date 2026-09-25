@@ -93,6 +93,21 @@ make bench-verify-assets
 **机器按分支名分派**：`.cnb.yml` 用**精确分支键**（`test/amd64-8`、`test/arm64-8`…）
 声明各自的 `runner.tags` / `runner.cpus` ⇒ **分支上仍零提交**，配置集中在 `develop`。
 
+> ⚠️ **触发前置（每次都要做，30 秒）**：`test/<slug>` **零提交** ⇒ 它的**引用不会自己前进**，
+> 必须先把引用快进到被测提交：
+>
+> ```bash
+> git push origin HEAD:refs/heads/test/amd64-8      # 只动引用、不新增提交（ADR-0027）
+> git ls-remote origin refs/heads/test/amd64-8      # 核对：应与 git rev-parse HEAD 一致
+> ```
+>
+> **不做这一步的后果是静默的**：环境从旧提交拉起 ⇒ **用旧代码测新修复**，
+> 而日志、流水线状态、报告**全都看不出区别**（2026-09-25 实测踩到）。
+> ⚠️ 两个写命令的坑：① `"$SHA:refs/..."` 在 zsh 下会被当成参数修饰符（`$SHA:r`）
+> ⇒ 用 `HEAD:refs/...` 或 `${SHA}:refs/...`；② **不要把 `git push` 接进管道**
+> （`| tail` 让退出码变成 `tail` 的 ⇒ 失败被吞掉，后续动作照常执行）。
+> 详见 [ADR-0027](../adr/0027-test-branch-ref-must-track-the-commit-under-test.md)。
+
 **不再采用的触发**（前两条由 `tests/unit/test_cnb_config.py` 拦下）：
 
 - `crontab` 定时 —— 需求是"**按需**"而非"按点"（定时不等人、不看当天有没有别的事）。
@@ -124,11 +139,15 @@ make bench-verify-assets
 > 一根夜轮 ≈6.1~7.3 核时，而**环境空转一天（8 h）= 64 核时 ≈ 9 根夜轮**
 > ⇒ 成本的第一来源是**环境活着**，不是跑测次数。
 >
-> ⚠️ **2026-09-25 加重一条（实测）**：环境**不会跑完自毁** ——
-> stages 结束不销毁、`keepAliveTimeout` 到期也不回收、流水线内
-> `cnb workspace workspace-stop` 因缺**账号级** `account-engage:rw` 被 403 拒绝
-> ⇒ **成本上界 = `cpus` × 到人工关闭的时长**。
-> 详见 [ADR-0025 §2.4](../adr/0025-benchmark-automation-moves-to-dev-bucket.md)。
+> ✅ **2026-09-25 更正（E2/E3 + 当日 4 次实测）**：环境**会**在 stages 跑完后**自动释放**，
+> 延迟 = `max(keepAliveTimeout, 一个 5 分钟检查周期)`（平台每 5 分钟做一次连接检查）
+> ⇒ **成本 ≈ `cpus` × (跑测时长 + ≈5 min)**，**不是**"到人工关闭为止"。
+> ⚠️ 本段此前写的是"环境不会跑完自毁、成本上界 = `cpus` × 到人工关闭的时长"
+> ——那是 E1 阶段的**不完整观测**（据"到期不回收"判定），**已被推翻**；
+> 流水线内 `cnb workspace workspace-stop` 仍因缺**账号级** `account-engage:rw` 被 403 拒绝，
+> 但那只影响"**想立刻停**"这一场景（人工关闭 / 账号级令牌均属可选）。
+> 详见 [ADR-0025 §2.3/§2.4](../adr/0025-benchmark-automation-moves-to-dev-bucket.md) 与
+> [`../research/2026-09-25-cnb-platform-behavior-facts.md`](../research/2026-09-25-cnb-platform-behavior-facts.md) §3.2。
 >
 > 📌 **额度口径更正**（[ADR-0024 §1.2](../adr/0024-quota-discipline-and-cost-model.md) 的表述有误）：
 > 该处写"开发桶 2512.7 / 1600 = **已超额 157%**"，是拿 `used` 比 `free`。
@@ -149,7 +168,7 @@ make bench-verify-assets
 | # | 步骤 | 判据 / 产物 |
 | --- | --- | --- |
 | ① | **决定**：需要一个新数据点吗？预计核时 = `cpus × 预计时长` | 写进最新一篇 devlog 的 §7（预算） |
-| ② | **拉起**：在 `test/<slug>` 上借环境（从与 `develop` 一致的提交起） | ⚠️ 这一刻计费时钟开始 |
+| ② | **拉起**：在 `test/<slug>` 上借环境（**先把引用快进到 `develop` 的 tip**，见 §3 的触发前置） | ⚠️ 这一刻计费时钟开始 |
 | ③ | **准备 + 跑测**：环境内 `make bench`，**一次跑完** | 四道闸门逐道 `[OK]` |
 | ④ | **校验 + 发布**：schema 校验 → `bench/data` | 发布成功 = 数据落地 |
 | ⑤ | **关闭**：发布成功**立即**关环境 | ⚠️ **"关闭"是流程的一步，不是收尾**；忘了关 = 直接损失 8 核时/小时 |
@@ -249,10 +268,10 @@ L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM。
 | **单片墙钟上限** | **≤ 60 分钟** | 远小于"不过夜"的 8 h 阈值，且落在 Job 默认超时 2 h 内 |
 | 超过上限 | 该片**作废**，按外置进度**重跑**（幂等），不做"续着跑" | 避免半截状态 |
 | **无输出超时** | 片内输出间隔 **< 10 分钟** | grammar §Job timeout；**与 `keepAliveTimeout` 是两个独立的 10 分钟** |
-| 保活 | `services.vscode.options.keepAliveTimeout`（支持 `ms/s/m/h`） | 把无人值守的存活下限从 10 分钟抬高；⚠️ **不得**当"跑完自动结束"（实测到期不回收） |
+| 保活 | `services.vscode.options.keepAliveTimeout`（支持 `ms/s/m/h`） | **离线宽限期**（不是总时长）：失效即"离线"，下一个 5 分钟检查点释放；**设小值**（`5m`）⇒ 空转 ≈5 分钟（E2 1 核 / E3 8 核 / 2026-09-25 多次实测一致） |
 | **产物外推点** | **每片最后一步，在 `stages` 内完成** | ⚠️ **不得**用 `endStages` 兜底：它是**销毁前**钩子，销毁时机不可控 |
 | 进度外置 | `bench/data`（或制品库），重启后能续跑 | 环境随时可能消失 |
-| **关闭** | **人工关闭**（默认）；账号级令牌自毁属 C 类、待裁决 | 环境不会自毁 ⇒ 成本上界 = `cpus` × 到关闭的时长 |
+| **关闭** | **默认无需干预**：stages 跑完后 ≈5 分钟内由平台**自动释放**；"想立刻停"才人工关闭（账号级令牌自毁属 C 类、待裁决） | 实测：实际释放 = 基准 + `max(声明值, 一个 5 分钟检查周期)` ⇒ 成本 ≈ `cpus` × (跑测时长 + ≈5 min) |
 | ⛔ 禁止 | 任何"定时重启保数据""模拟心跳保活" | 用脆弱手段对抗平台机制，属已知反模式 |
 
 **环境回收的三条平台机制**（[workspace-recycling.md](https://docs.cnb.cool/zh/workspaces/workspace-recycling.md)）：
