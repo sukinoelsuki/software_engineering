@@ -269,6 +269,7 @@ Missing required scopes: account-engage:rw
 | ~~V4~~ | ~~8 核下的释放延迟是否与 1 核一致~~ | ✅ **已解决**（E3：8 核同样 +5m） |
 | V5 | 离线计时基准的精确定义（`beforeEnd` 起点 or 末次连接） | E1/E2 的两个基准对不齐 |
 | V6 | 备份在有大量未提交产物时的行为与体积上限 | §3.5 的风险边界 |
+| V7 | **同时存在的容器数上限**（跨仓库、按人/组织）是多少；撞上时是排队还是失败 | 多会话并行与跑测分片共享同一份额度 ⇒ 决定并行度上限（见 §9） |
 
 ---
 
@@ -315,3 +316,47 @@ cnb build get-build-stage --repo <slug> --sn <sn> \
 
 **读日志的正确姿势**：关键证据全在 `beforeEnd`（配置与离线判定）与 `end`（释放动作）两个 stage，
 **不在**你自己写的 stage 里。
+
+---
+
+## 9. **同时存在的容器数上限**：官方未公布，只有下界与所有者观察（2026-09-25 核实）
+
+**为什么单独记一条**：多会话并行（`CODEBUDDY.md` §10）、多条 `api_trigger_*` 跑测事件（`ADR-0028`）、
+以及同组织**其它仓库**同时在用的环境，**共享同一份并发额度**。没有这个数字，
+"并行度不超过冲突控制能力"就缺一条硬约束；而它**不在任何官方文档里**，容易被当成"可以随便开"。
+
+### 9.1 核实结论（按证据等级排列）
+
+| # | 结论 | 证据等级 | 来源 / 证据 |
+| --- | --- | --- | --- |
+| 1 | **官方文档未公布**任何"同时运行的容器 / 环境 / 流水线数量上限" | ✅ 已核实 | 逐一核对 6 页（访问 2026-09-25）：`faq.md`、`pricing.md`、`build/build-node.md`、`build/grammar.md`、`workspaces/intro.md`、`workspaces/workspace-vs-build.md`。grammar 里仅有的数量上限是**单流水线 ≤32 个数据卷**、`include` ≤64 个配置文件，与并发无关 |
+| 2 | **Open API 同样没有**：`swagger.json`（1.1 MB）全文无 `concurrent` / `parallel` / `maxRunning` 字段；`cnb charge get-quota` 只返回核时与存储额度，无并发项 | ✅ 已核实 | `https://api.cnb.cool/swagger.json`（2026-09-25 下载后全文检索）；本机 `cnb charge get-quota --slug <org>` 实测仅返回 `ci_in_sec / dev_in_sec / *_gpu_in_sec / *_in_byte` |
+| 3 | `cnb workspace list-workspaces --status running` 能列出"**我的**"在跑环境（**跨仓库**），但响应里**没有上限字段** | ✅ 已核实 | 本机 CLI 1.15.36（权限 `account-engage:r`）：当时 `total: 2`，分属 `compute-matrix` 与 `Native-Intelligent-Systems` 两个仓库 ⇒ **跨仓库并发是真实使用形态** |
+| 4 | **实测下界 = 4**：同一仓库 `develop` 上 4 条 `api_trigger`（各带 `services: [vscode]`）**真并发执行**（4 个 sn 同时处于真正烧 CPU 的 stage-3），不是排队 | ✅ 实测（他人仓库） | 参考实现 compute-matrix `docs/platform-facts.md` §11（2026-09-25） |
+| 5 | **所有者观察：跨仓库、按人 / 组织的上限 ≈ 6 个**同时存在的容器 | ⚠️ **未实测** | 所有者 2026-09-25 口头观察（"好像是 6 个"）。**在实测确认前只能当"疑似上限"**，不得写进任何依赖它的机制 |
+| 6 | 撞上限后的表现（第 N+1 个是**排队 pending**、**直接失败**、还是报错文案） | ❌ 未验证 | 无任何来源提及；见 §7 V7 |
+
+### 9.2 对本仓库的设计约束（在 9.1 基础上推导，非官方口径）
+
+| 场景 | 约束 |
+| --- | --- |
+| 多会话并行（`CODEBUDDY.md` §10） | 同组织内"会话环境 + 跑测环境 + 其它仓库环境"**共享同一份额度** ⇒ 同时存在的环境数按 **≤4**（已实测下界）规划，**不要按 6 排满** |
+| 跑测分片（`ADR-0028`） | 分片数 = 同时拉起的环境数 ⇒ **≤4**；将来新增 `api_trigger_bench_arm64` 等事件同样计入同一上限 |
+| 与 §3 的联动 | 每个环境还有 18 h 上限、`keepAliveTimeout` ≥5m 的离线宽限期 ⇒ "并发 × 时长"共同决定核时消耗（§1），**并发上限只限制同时存在数，不减少单环境成本** |
+
+### 9.3 待实测探针（§7 V7；成本 ≈ 1 核 × 5 分钟 × N ≈ 0.6 核时）
+
+```bash
+# 用 CLI 直接拉起 N 个 1 核工作区（跨仓库也可，验证"跨仓库共享"），逐个记录失败点：
+for i in 1 2 3 4 5 6 7; do
+  cnb workspace start-workspace --repo <slug> --branch develop ; echo "[$i] $?"
+done
+cnb workspace list-workspaces --status running        # 数 running 有几个
+# 观察：第几个开始失败 / 排队，错误文案是什么（这是 V7 的另一半）
+# 收尾（务必，别白烧核时）：
+cnb workspace workspace-stop --sn <sn>
+```
+
+> 探针结论回来后：把 9.1 #5/#6 与 §7 V7 的状态改掉（"所有者观察"→"实测"），并在
+> `docs/devlog/` 当前篇记一笔（含命令、输出、核时消耗）。**在此之间，任何文档不得把
+> "6 个"写成机制或保证。**
