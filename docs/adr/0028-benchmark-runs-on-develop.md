@@ -139,8 +139,8 @@ ADR-0025 §2.2 把机器规格**按分支名分派**：`.cnb.yml` 用精确分�
 | --- | --- | --- | --- |
 | `V1` | 跑测事件**必须**挂在 `develop:` 键下 | `tests/unit/test_cnb_config.py::test_bench_pipeline_is_declared_on_develop_not_on_a_glob_key` | ✅ 落地 |
 | `V2` | 来源分支白名单放行 `develop`、仍拒 `main`/`master` | `tests/unit/test_cnb_config.py::test_publish_script_restricts_source_branches`（**已按本 ADR 重写**） | ✅ 落地 |
-| `V3` | 触发 `--branch develop --event api_trigger_bench`：① 跑测流水线起来；② **门禁没有被重复触发**（同一次触发只出现一条流水线）；③ 该轮 `env.json.trigger.branch == develop` | `cnb build start-build` + `get-build-logs --sn` + 数据分支的 `env.json` | ⏳ 本 ADR 落地后实测 |
-| `V4` | 环境取自 `develop` 的 tip | 该轮 `env.json.trigger.commit` == `git rev-parse develop` | ⏳ 同上 |
+| `V3` | 触发 `--branch develop --event api_trigger_bench`：① 跑测流水线起来；② **门禁没有被重复触发**（同一次触发只出现一条流水线）；③ 该轮 `env.json.trigger.branch == develop` | `cnb build start-build` + `get-build-logs --sn` + 数据分支的 `env.json` | ✅ **已实测**（`sn=cnb-1oj-1k3bbs9na`：**只有 1 条流水线**；`trigger.branch=develop`；走开发桶；独立 label `devkey-check` ⇒ 索引 10 轮且现役条目未被覆盖。详见 devlog 0024 §4.7） |
+| `V4` | 环境取自 `develop` 的 tip | 该轮 `env.json.trigger.commit` == `git rev-parse develop` | ✅ `trigger.commit=7fa91587…`（= 当时 `develop` 的 tip）；**无需任何"快进引用"步骤** |
 | `V5` | 不再需要"触发前快进引用" | 运行手册 §3 已删除该步骤（ADR-0027 的 `V1` 随之失效） | ✅ 文档已改 |
 | `V6` | 白名单**不再是假控制** | `run.sh` 不再无条件设 `BENCH_ALLOW_LOCAL=1`（此前它让白名单对 `make bench` 完全失效） | ✅ 落地 |
 
@@ -158,5 +158,14 @@ ADR-0025 §2.2 把机器规格**按分支名分派**：`.cnb.yml` 用精确分�
 - [x] `.cnb.yml`：跑测事件从 `test/amd64-8:` 搬到 `develop:`；删掉已完成的探针段
 - [x] `publish.sh` 白名单改为 `bench/nightly` + `develop`；`run.sh` 删掉 `BENCH_ALLOW_LOCAL=1` 的**无条件**打开
 - [x] 机器检查 `V1`/`V2` + 规则联动（`CODEBUDDY.md`/`AGENTS.md`/`.codebuddy/rules/`/`git-workflow.md`/运行手册）
-- [ ] **`V3`/`V4` 实测**（触发一次 `--branch develop`，并确认门禁未被重复触发）
-- [ ] 登记遗留远端分支：`test/amd64-8`、`test/keepalive-probe`、`test/quota-probe`（D 类禁止删除）
+- [x] **`V3`/`V4` 实测**（`sn=cnb-1oj-1k3bbs9na`：只有 1 条流水线、`trigger.branch=develop`、
+      `trigger.commit` = develop tip、走开发桶、独立 label 未覆盖现役条目）
+- [ ] **登记遗留远端分支**（D 类禁止删除）：`test/amd64-8`、`test/keepalive-probe`、`test/quota-probe`
+      —— 是否在 `branch-status` 里标为"已停用"
+- [ ] **【附带发现·待裁决】数据分支的 `ci` 门禁必然报红**：`bench/data` 的 push 也命中 `"**"` 门禁，
+      而其 `verify` 阶段跑 `make check` ⇒ `format-check` 在数据分支上**必失败**
+      （模型产物**故意**不满足 ruff 格式，`publish.sh` 已写明该豁免）⇒ 每次发布都会留下一条红色构建
+      （实测 `sn=cnb-q2u-1k3bc29lt`：`verify` error @0.374 s，`metricCoreHours 0.04`）。
+      ⚠️ **既有问题，非本 ADR 引入**。候选处置：① 让门禁不在数据分支上跑
+      （glob 负向 `**/!(bench/data)` 或 stage 级 `if`）——**属门禁范围变更（F 类），须所有者确认**，
+      且必须用一次真实推送验证"其余分支覆盖未变"；② 接受噪声，在运行手册 §7 写明"数据分支的 `ci` 必红是预期"。
