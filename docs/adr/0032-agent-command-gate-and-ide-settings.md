@@ -393,3 +393,18 @@ flowchart LR
   `Loaded 12 disabled security categories`（不含 `custom`）、`isAutoExecuteTerminal: true`；
   两次命中探针均判 `source=safety_rule_ask, allowed=true, needConfirm=true` 且经 `user_confirmed`
   ⇒ §7「复核时间点」第 2 条已完成。
+- **2026-09-25（修订 · 设置源拆分与黑名单补漏）**：**设置源拆分为两份**，并**补 5 条窄口径黑名单**。
+  - **拆分（§7 的"是否移除 COPY"由此结案，结论 = 不移除、改为拆分）**：`codingcopilot.*` 从
+    `.ide/settings.json`（**在 `build.by` 里** ⇒ 改它即触发整机重建）移入新文件
+    `.ide/agent-preferences.json`（**不进 `build.by`**、**不被 COPY**）。脚本改为**按序合并两源**；
+    新增两条机器可判定的不变式（"运行期偏好不得成为构建输入" / "守卫键只出现在运行期那份"），
+    由 `tests/unit/test_apply_ide_settings.py`（17 → **22 条**）钉住。
+    ⇒ 收益 = "调黑名单不再重建镜像"（此前每次约 20 min，平台下发 `--no-cache`）**且**保留镜像级兜底；
+    本 ADR §5.6 的 `N-7`、§6 的负面后果**均不受影响**（拆分只动"配置放哪、何时重建"，不动拦截范围）。
+  - **补漏（只收紧、不放宽）**：`truncate`/`shred` 写块设备、`rm -rf /var/lib/<DB>`（「删库」的文件层路径）、
+    `git push --mirror`、`git checkout .`、`git stash -u/-a`。**刻意不做**两件：① **不放宽** `git rebase`
+    （文本层无法区分"已推送 / 未推送"）；② 不为非根级 `rm -rf` 加通则（会误伤 `rm -rf /usr/local/…`
+    一类日常清理）。"把红线文本当数据"导致的误触发**接受**，规避手段写入 `agent-command-gate.md` 的 `D9`。
+  - ⚠️ **本文正文里的"33 条"/分组表为历史快照，逐字保留**；**当前条数与最新口径**以
+    [`agent-command-gate.md`](../engineering/agent-command-gate.md) §8（第三批）与
+    `.ide/agent-preferences.json` 的注释为准。

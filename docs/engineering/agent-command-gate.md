@@ -9,16 +9,21 @@
 > 分工：**本文不复述决策理由、不复述威胁分析、不复述 A~F 分级**——出现"必须 / 禁止 + 具体条款"时
 > 一律指向上面三处（同 [ADR-0017](../adr/0017-project-level-agent-skills.md) §5.1 的 `W1` 写作要求）。
 
-- **状态**：已落地（`ec8791d`，2026-09-25）
-- **绑定版本**：扩展 `tencent-cloud.coding-copilot-4.12.38765564`（⚠️ **升级后须复跑本文 §4 的 `C1`/`C2`**）
+- **状态**：已落地（`ec8791d`，2026-09-25；设置源拆分为两份见 `eb02ac6` 之后的一批，2026-09-25）
+- **绑定版本**：扩展 `tencent-cloud.coding-copilot-4.12.38765564`（⚠️ **升级后须复跑本文 §4 的 `C1`/`C2`/`C7`**）
+- **设置源（两个）**：`.ide/agent-preferences.json`（运行期偏好 `codingcopilot.*`，**常变**，**不在** `build.by`）
+  + `.ide/settings.json`（镜像级预设，**慢变**，在 `build.by` 里）—— 见 §1 读法 5
 
 ---
 
 ## 0. 一句话
 
-**`.ide/settings.json` 不会自动生效。** 让它生效的是 `.cnb.yml` 的 `vscode` 事件首个 stage
+**仓库里的设置源不会自动生效。** 让它生效的是 `.cnb.yml` 的 `vscode` 事件首个 stage
 `agent-permissions`，它在**环境启动后**把设置**合并**进**运行中的** User 设置并**断言**。
-⇒ **两个文件是一对**：删掉任何一个，闸门都会**静默退回**扩展默认档（表现是"配置看着是对的、运行时照样弹确认"）。
+⇒ **设置源与那个 stage 是一对**：删掉任何一个，闸门都会**静默退回**扩展默认档（表现是"配置看着是对的、运行时照样弹确认"）。
+
+设置源有**两个**（2026-09-25 拆分）：`.ide/agent-preferences.json`（`codingcopilot.*`，**常变**）与
+`.ide/settings.json`（镜像级预设，**慢变**）。拆分的唯一目的与代价见 §1 读法 5。
 
 ---
 
@@ -27,20 +32,24 @@
 ```mermaid
 flowchart TD
     subgraph 仓库["仓库（版本管理）"]
-        S[".ide/settings.json<br/>JSONC（含 // 注释）"]
+        S1[".ide/settings.json<br/>镜像级预设（慢变）<br/>在 .cnb.yml 的 build.by 里"]
+        S2[".ide/agent-preferences.json<br/>运行期偏好 codingcopilot.*（常变）<br/>⚠️ 不在 build.by 里"]
         CNB[".cnb.yml<br/>vscode 事件 · 首个 stage<br/>name: agent-permissions"]
         MK["Makefile<br/>apply-ide-settings"]
         PY["scripts/apply_ide_settings.py<br/>（纯标准库）"]
-        T1["tests/unit/test_apply_ide_settings.py<br/>17 条：钉住文件与 stage 成对存在"]
+        T1["tests/unit/test_apply_ide_settings.py<br/>22 条：成对存在 + 拆分不变式"]
     end
 
-    S -->|构建期 COPY| IMG["镜像 Machine 级设置<br/>❌ application scope ⇒ 这六键不生效<br/>（主题 / 字体 / 缩进仍有效）"]
-    S -.->|❌ 同样不生效| VSC[".vscode/settings.json<br/>（仓库级）"]
+    S1 -->|构建期 COPY| IMG["镜像 Machine 级设置<br/>❌ application scope ⇒ codingcopilot.* 不生效<br/>（主题 / 字体 / 缩进仍有效）"]
+    S1 -.->|❌ 同样不生效| VSC[".vscode/settings.json<br/>（仓库级）"]
+    S2 -.->|❌ 不进构建输入<br/>⇒ 不触发镜像重建| IMG
 
     CNB -->|环境启动后执行| MK
     MK --> PY
+    S1 -->|源 1| PY
+    S2 -->|源 2（覆盖源 1）| PY
     PY -->|1 JSONC → 严格 JSON| P1["load_json_object"]
-    PY -->|2 覆盖式合并<br/>保留平台键 · 剔除 // 注释键| P2["merge_settings"]
+    PY -->|2 按序覆盖式合并<br/>保留平台键 · 剔除 // 注释键| P2["load_sources / merge_settings"]
     PY -->|3 原子写 + chmod 0644| P3["write_object_atomic"]
     P3 --> U1["/root/.local/share/code-server/User/settings.json"]
     P3 --> U2["/root/.vscode-server/data/User/settings.json"]
@@ -55,8 +64,9 @@ flowchart TD
 | --- | --- | --- |
 | 1 | **只有"环境启动后"这一步有效** | 构建期 COPY 与仓库级设置都因 `scope = application` 而无效；且平台**启动时会覆盖** User 设置 ⇒ 构建期写进去的会被抹掉 |
 | 2 | **两个 User 目标都要写** | WebIDE（code-server）与 VS Code Desktop（Remote-SSH）是两个**独立客户端**、两份 User 设置。只写一个 ⇒ 另一个静默不生效（`D5`） |
-| 3 | **合并是覆盖式、且只覆盖源里出现的键** | 平台自己写的键（`yaml.schemas` / `cnb-welcome.locale` 等）必须保留；`yaml.schemas` 是**反例**——它会**被本文件覆盖**，所以平台自带的 schema 条目必须**在本文件里补齐**（见 `.ide/settings.json` 的注释） |
-| 4 | **断言是"缺一即不算落地"，不是"越多越好"** | 尤其 `custom` 类别不得被禁用——否则 33 条黑名单**静默失效**（后果最隐蔽的一种改坏） |
+| 3 | **合并是覆盖式、且只覆盖源里出现的键** | 平台自己写的键（`yaml.schemas` / `cnb-welcome.locale` 等）必须保留；`yaml.schemas` 是**反例**——它**会被源里的同名键覆盖**，所以平台自带的 schema 条目必须在 `.ide/settings.json` 里补齐（见该文件注释） |
+| 4 | **断言是"缺一即不算落地"，不是"越多越好"** | 尤其 `custom` 类别不得被禁用——否则 38 条黑名单**静默失效**（后果最隐蔽的一种改坏） |
+| 5 | **两个源"谁进 `build.by`"决定了改动代价** | `.ide/settings.json` 在 `build.by` 里 ⇒ 改它换掉镜像输入哈希、触发整机重建（约 20 min，`--no-cache`）；`.ide/agent-preferences.json` **不在**其中 ⇒ **调黑名单不必重建**。拆分的唯一目的就是把常变的 `codingcopilot.*` 移出构建输入；判据是 `test_runtime_preferences_file_is_not_a_build_input`（机制出处：`../research/2026-09-25-cnb-platform-behavior-facts.md` 的"镜像缓存看日志才知"一条） |
 
 ---
 
@@ -64,15 +74,19 @@ flowchart TD
 
 | 载体 | 缺了它会发生什么 | 谁钉住它 |
 | --- | --- | --- |
-| `.ide/settings.json` 的 `codingcopilot.*` 段 | 无设置可合并 ⇒ 断言失败（**红**，属 fail-secure） | `test_repo_settings_file_satisfies_every_guard` |
+| `.ide/agent-preferences.json` 的 `codingcopilot.*` 段 | 无设置可合并 ⇒ 断言失败（**红**，属 fail-secure） | `test_runtime_preferences_file_satisfies_every_guard` |
 | `.cnb.yml` 的 `agent-permissions` stage | 设置**不写入运行中的 User 设置** ⇒ 退回扩展默认档，**日志全绿、行为不变**（静默！） | `test_vscode_event_applies_settings_at_environment_start` |
 | `Makefile` 的 `apply-ide-settings` 目标 | stage 调不到脚本 ⇒ 启动期报错（**红**） | `test_makefile_exposes_the_apply_target` |
+| `.ide/agent-preferences.json` 被塞进 `build.by`（或被 COPY） | 它就成了**构建输入** ⇒ 调黑名单重新变成"整机重建"，**没有任何别的信号**会提示（代价无声回归） | `test_runtime_preferences_file_is_not_a_build_input` |
+| `codingcopilot.*` 被写回 `.ide/settings.json` | 同上（镜像级那份**在 `build.by` 里** ⇒ 改它即重建） | `test_guard_keys_live_only_in_the_runtime_preferences_file` |
 
-> **不变式（硬性）**：
+> **两条不变式（硬性）**：
 >
-> > **只要仓库里存在 Agent 权限配置（`.ide/settings.json` 的 `codingcopilot.*`），
-> > 就必须存在"环境启动后把它写进运行中的 User 设置并断言"的机制。
-> > 二者成对存在，缺一即静默失效。**
+> > ① **只要仓库里存在 Agent 权限配置（`.ide/agent-preferences.json` 的 `codingcopilot.*`），
+> > 就必须存在"环境启动后把它写进运行中的 User 设置并断言"的机制。二者成对存在，缺一即静默失效。**
+> >
+> > ② **它不是构建输入**：运行期偏好**不得**进 `build.by`、**不得**被 COPY —— 否则"调黑名单要重建整机"
+> > 这个代价会悄悄回来（2026-09-25 拆分的第二条不变式，目的只有这一个）。
 >
 > 与 [`security-scan-gate-config.md`](security-scan-gate-config.md) §5.1 的 bandit 不变式同族
 > （"配置不得存在，除非被两处同时引用"）：**唯一根因都不是"配错了某一条"，
@@ -92,21 +106,28 @@ make apply-ide-settings
 **成功判据**（逐行）：
 
 ```text
-[ok] 已合并 <N> 项设置 → /root/.local/share/code-server/User/settings.json（原有 <M> 项保留）
-[ok] 已合并 <N> 项设置 → /root/.vscode-server/data/User/settings.json（原有 <M> 项保留）
+[ok] 已合并 75 项设置（.ide/settings.json 68 + .ide/agent-preferences.json 7）→ /root/.local/share/code-server/User/settings.json（原有 <M> 项保留）
+[ok] 已合并 75 项设置（.ide/settings.json 68 + .ide/agent-preferences.json 7）→ /root/.vscode-server/data/User/settings.json（原有 <M> 项保留）
 [ok] Agent 权限已落地（autoRun / autoRunMode / safeDeleteEnabled / 黑名单 / 类别 均核对通过）
 ```
+
+> 括号里的 `68 + 7` 是**各源的有效键数**（注释键不计），数字随源文件变化；
+> 上例为 2026-09-25 拆分后的实测输出。
 
 - 退出码 **0** = 全部断言通过；
 - 出现 `[fatal] …` ⇒ 退出码**非零**，且**逐项**打印哪个键不符（这是刻意的：**不降级为警告**）。
 
 ### 3.2 改设置文件时
 
-1. 改 `.ide/settings.json`（JSONC，可写注释；**注释键**指以 `//` 开头的键，**不会**写进目标）；
+0. **先判断改哪一份**：`codingcopilot.*`（尤其黑名单）⇒ `.ide/agent-preferences.json`；
+   外观 / 语言 / 编辑器等 ⇒ `.ide/settings.json`。⚠️ 放错文件的症状是"下次拉起环境多等约 20 min 重建镜像"，
+   而 `codingcopilot.*` 放回镜像级那份会被 `test_guard_keys_live_only_in_the_runtime_preferences_file` 直接判红；
+1. 两文件都是 JSONC（可写注释；**注释键**指以 `//` 开头的键，**不会**写进目标）；
 2. 若改的是**断言覆盖的五项**（`autoRun` / `autoRunMode` / `safeDeleteEnabled` /
    黑名单 / `disabledSecurityCategories`），确认脚本的 `GUARD_*` 常量与设置**仍一致**；
-3. 跑 `uv run pytest tests/unit/test_apply_ide_settings.py -q`；
-4. ⚠️ **若同时改的是黑名单**：确认红线判据仍然来自 `git-workflow.md` §4（**不得**在此发明新的红线）。
+3. 跑 `uv run pytest tests/unit/test_apply_ide_settings.py -q`（**22 条**，含两条拆分不变式）；
+4. ⚠️ **若改的是黑名单**：确认红线判据仍然来自 `git-workflow.md` §4（**不得**在此发明新的红线），
+   并按 §5 `D8` 第 4 步重跑一遍日常命令（零误伤）。
 
 ### 3.3 定位目标文件（`D5` 用得到）
 
@@ -123,17 +144,18 @@ make apply-ide-settings
 | --- | --- | --- | --- |
 | **C1** | 六键的 `scope = application`（**根因自证**） | 读 `~/.local/share/code-server/extensions/tencent-cloud.coding-copilot-*/package.json` 的 `contributes.configuration.properties` | `autoRun`/`safeDeleteEnabled`/`safeDeleteBulkThreshold`/`customBlacklistCommands`/`disabledSecurityCategories`/`autoAcceptWebSearch` 均 `"scope": "application"`；`autoRunMode` **未声明** |
 | **C2** | **判定顺序**：黑名单命中不被 autoRun 吃掉 | 读同扩展 `out/extension/index.js` 的 `resolvePermissionDecision` | `checkSafetyRules(…)` 在 permission 规则求值**之前**；命中 ⇒ `needUserConfirm=True`（`source="safety_rule_ask"`），即**弹确认**（非直接拒绝） |
-| **C3** | 单测全绿（**17 条**） | `uv run pytest tests/unit/test_apply_ide_settings.py -q` | `17 passed`；⚠️ 它**不覆盖**"环境里真的生效"（那是 `C4`/`C5`） |
+| **C3** | 单测全绿（**22 条**） | `uv run pytest tests/unit/test_apply_ide_settings.py -q` | `22 passed`；⚠️ 它**不覆盖**"环境里真的生效"（那是 `C4`/`C5`/`C7`） |
 | **C4** | 环境里真的写进去了 | 环境内 `make apply-ide-settings` | 退出码 0 + 三行 `[ok]`（§3.1） |
 | **C5** | 黑名单**行为**正确（**人工，不可 CI**） | 会话内触发一次命中命令（如 `git push --force`） | **弹确认**，既不静默执行、也不直接拒绝 |
 | **C6** | 双容器风险的结构前提 | 核对 `.ide/Dockerfile` 是否**自装 code-server**（单容器） | 自带 ⇒ `D4` 前提成立；镜像形态变化时须重核 |
-| **C7** | **运行中的会话确实加载了新档位**（而非"只脚本合并通过"） | 环境内读扩展日志：`grep -E '\[SecurityCheck\] Loaded\|\[AutoRun\] context' ~/.local/share/code-server/logs/*/exthost1/Tencent-Cloud.coding-copilot/*.log \| tail -3` | 出现 `Loaded 33 custom blacklist commands`、`Loaded 12 disabled security categories: …`（**其中不含 `custom`**）、`isAutoExecuteTerminal: true` 三项 |
+| **C7** | **运行中的会话确实加载了新档位**（而非"只脚本合并通过"） | 环境内读扩展日志：`grep -E '\[SecurityCheck\] Loaded\|\[AutoRun\] context' ~/.local/share/code-server/logs/*/exthost1/Tencent-Cloud.coding-copilot/*.log \| tail -3` | 出现 `Loaded <N> custom blacklist commands`（`N` = 源文件里的条数，2026-09-25 为 **38**）、`Loaded 12 disabled security categories: …`（**其中不含 `custom`**）、`isAutoExecuteTerminal: true` 三项 |
 
 > **`C1` / `C2` / `C7` 与"命令链切分口径"都绑定扩展版本**：结论只在 `4.12.38765564` 上成立。
 > **扩展升级后必须复跑**——否则本文与 ADR-0032 §7 的 `V1`/`V2` 即为过期声明。
 >
 > **`C7` 实测（2026-09-25，`sn=cnb-174-1k3c5dnng`）**：33 条黑名单 / 12 类禁用（不含 `custom`）/
 > `isAutoExecuteTerminal: true` 三项齐备 ⇒ 运行中的会话确实用了新偏好（首版"只验到脚本合并"的缺口由此闭环）。
+> **同日补齐到 38 条**（新增 5 条，见 §8 第三批）⇒ 下次拉起环境后该行应为 `Loaded 38 …`。
 
 ---
 
@@ -202,17 +224,27 @@ make apply-ide-settings
 | 是不是**直接拒绝**了？ | `V2`/`C2` 的结论是"命中 ⇒ **弹确认**（`ask`）"。若表现是拒绝，说明有**别的**机制在拦（例如 hook 的 `deny`），**不是**本机制 |
 | 命中的是哪一段命令？ | 黑名单按 `\|\|`、`&&`、`&`、`;`、换行**切分后逐条匹配**——只匹配**切分后的单条命令**，不是整行。⚠️ **单 `\|` 不是切分符**（2026-09-25 更正：出处为扩展源码 `splitCommandChain` + 实机探针；**按错的旧口径会把 `base64 … \| sh` 那条误判为"永不命中的死条"**） |
 | 大小写 | 黑名单**大小写敏感**（无 `i` 标志）⇒ `RM -RF /` 与 `rm -rf /` 走的是**不同**判定 |
-| 正则是否退化 | 跑 `C3` 的 `test_repo_blacklist_patterns_are_valid_regex` 确认没有写坏 |
+| 正则是否退化 | 跑 `C3` 的 `test_runtime_blacklist_patterns_are_valid_regex` 确认没有写坏 |
 
 ### `D8` 想改一条黑名单
 
 | 步骤 | 判据 |
 | --- | --- |
+| 0. 改哪个文件？ | 黑名单在 `.ide/agent-preferences.json`（**不在** `build.by` 里 ⇒ **不必**重建镜像）。⚠️ 别写进 `.ide/settings.json` |
 | 1. 这条对应哪条红线？ | 必须能在 `git-workflow.md` §4 / `SECURITY.md` 里找到出处；**找不到出处就不要加**（否则黑名单会成为第二个真源） |
 | 2. 是不是**误报源**？ | 参考实现实测 `curl … \| sh` 是最大误报源，**故意不拦**——新增前先想"它会不会在正常安装时触发" |
-| 3. 正则是否合法？ | 跑 `C3` 的 `test_repo_blacklist_patterns_are_valid_regex` |
+| 3. 正则是否合法？ | 跑 `C3` 的 `test_runtime_blacklist_patterns_are_valid_regex` |
 | 4. 日常命令是否被误伤？ | 在会话里跑几条常用命令（`make check`、`git status`、`uv run pytest`），确认**零触发** |
 | 5. 修改了红线判据本身？ | 那是 **`F` 类**（改规则）⇒ **须事先确认**，且应新增 ADR（ADR 只增不改） |
+
+### `D9` 提交/检索命令**没执行危险动作**却被判命中
+
+| 项 | 说明 |
+| --- | --- |
+| 现象 | `git commit -m "… rm -rf / …"`、`grep -rn "git push --force" docs/` 之类被要求确认 |
+| 原因 | 黑名单是**文本匹配**，不区分"要执行的命令"与"命令里引用的文本"（`D7` 的「命中的是哪一段」） |
+| 判据 | 看日志里的 `reason: security.customBlacklist (pattern=…)`——命中段落的哪一条 |
+| 处置 | **刻意接受**（要语义解析就超出提醒层能力了）。写这类文本时改用 `git commit -F <消息文件>`：2026-09-25 实测，第一版把探针命令原文写进 `-m`，那条 `git commit` 自身被拦且因无人应答超时，改 `-F` 即通过 |
 
 ---
 
@@ -226,6 +258,8 @@ make apply-ide-settings
 | 4 | **`D4`（双容器）无法自检** | 靠"单容器镜像"这一**结构前提**规避，不靠检测 |
 | 5 | **`C1` / `C2` / `C7` 与切分口径绑定扩展版本** | 扩展升级后这些结论**即过期**；须复跑（§4 末注）。⚠️ 切分口径已实测为 `\|\|` / `&&` / `&` / `;` / 换行（**不含单 `\|`**），旧表述的更正见 §8 |
 | 6 | **`agent-permissions` 是 `vscode` 事件的 stage** | 它只在**开发环境**（`services: [vscode]`）里跑 ⇒ 构建型流水线（`push` / `pr` 门禁）**不会**、**也不需要**执行它 |
+| 7 | **"把红线文本当数据"同样会触发**（`D9`） | 黑名单是**文本匹配** ⇒ 提交信息 / `grep` 里出现红线原文也会弹确认。**刻意接受**（要区分"执行"与"引用"需要语义解析，超出提醒层能力）；写这类文本用 `git commit -F <消息文件>` |
+| 8 | **拆分不改变"有没有兜底"** | 镜像级那份**仍在** COPY（平台约定"设置必须 COPY 进镜像"未被推翻，见 `.ide/Dockerfile` 头部）；拆出去的只是**常变**的部分。`codingcopilot.*` 历来只能靠 stage 落地，拆分不影响这一点 |
 
 ---
 
@@ -240,7 +274,7 @@ make apply-ide-settings
 | 成员自动执行（`enabledAutoRun`，**与本机制不同靶**） | [ADR-0018](../adr/0018-agent-team-collaboration-mechanism.md)、[`agent-teams.md`](agent-teams.md) §1 |
 | 同类问题家族（"配置写了但没生效"） | [`security-scan-gate-config.md`](security-scan-gate-config.md) |
 | CNB 平台行为事实（`services: [vscode]` 的分桶判据等） | [`../research/2026-09-25-cnb-platform-behavior-facts.md`](../research/2026-09-25-cnb-platform-behavior-facts.md) |
-| 机器检查 | `tests/unit/test_apply_ide_settings.py`（**17 条** = 14 个用例函数） |
+| 机器检查 | `tests/unit/test_apply_ide_settings.py`（**22 条**：成对存在不变式 + 两条拆分不变式） |
 
 ---
 
@@ -256,3 +290,12 @@ make apply-ide-settings
   同步位置：§4 新增 `C7`、§5 `D7`、§6 边界 5、[ADR-0032](../adr/0032-agent-command-gate-and-ide-settings.md) §11 修订记录。
   ⚠️ **`.ide/settings.json` 第 175 行的同款注释仍是旧口径**——改它会触发镜像重建（约 20 min，
   且平台下发 `--no-cache`、需重下 11.8 GB 资产），故留待与下一次镜像改动**合并**修正。
+- **2026-09-25（第三批 · 同一次镜像改动内）**：**设置源拆分为两份** + **黑名单补漏 5 条**（33 → 38）。
+  - 拆分：`.ide/agent-preferences.json`（`codingcopilot.*`，**不在** `build.by`，改它**不重建镜像**）
+    + `.ide/settings.json`（镜像级预设，仍在 `build.by`）。脚本改为**按序合并两个源**
+    （缺任一个即非空断言失败，fail-secure）；新增两条拆分不变式（§2）。
+  - 补漏（只补**窄口径**，不放宽任何既有条目）：`truncate`/`shred` 写块设备、`rm -rf /var/lib/<DB>`
+    （「删库」的文件层路径）、`git push --mirror`、`git checkout .`（与已覆盖的 `git checkout -- .` 同义）、
+    `git stash -u/-a`（带旗标但不带路径）。
+  - 验证：90 条用例离线复算 **0 偏差**（日常 46 条零误报、红线全命中、12 条已知改写仍绕过——**不声称穷尽**）。
+  - ⚠️ 上述第 175 行的旧口径注释已随本批**一并修正**（该注释所在的整段已移出 `.ide/settings.json`）。

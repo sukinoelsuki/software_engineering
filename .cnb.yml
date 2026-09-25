@@ -229,10 +229,15 @@
   #   - 镜像由 .ide/Dockerfile 构建；首次约 5~15 分钟，之后推送至制品库复用。
   #   - build.by 必须声明构建期用到的其它文件（.ide/settings.json），
   #     否则构建报错 —— 这是 CNB 的硬性约束。
+  #     ⚠️ 2026-09-25 设置源拆分后，**只有** `.ide/settings.json`（镜像级预设，慢变）进本列表；
+  #     运行期偏好 `.ide/agent-preferences.json`（`codingcopilot.*`，常变）**不得**进来 ——
+  #     进来就变成构建输入 ⇒ 调一次黑名单就要重建一次镜像（约 20 min）。
+  #     判据：tests/unit/test_apply_ide_settings.py 的 test_runtime_preferences_file_is_not_a_build_input。
   #   - image 为构建失败时的回退镜像。
   #   - services [vscode, docker]：分别启用 VS Code 服务与容器内 docker 命令。
-  #   - 该事件下的 stages 会在开发环境启动后自动执行（含把 Agent 权限设置合并进
-  #     运行中的 User 设置——见首段 stage 的注释；其余为环境自检输出）。
+  #   - 该事件下的 stages 会在开发环境启动后自动执行（含把**两个**设置源——镜像级预设
+  #     `.ide/settings.json` 与运行期偏好 `.ide/agent-preferences.json`——按序合并进
+  #     运行中的 User 设置；见首段 stage 的注释；其余为环境自检输出）。
   #   - ⚠️ 本事件走的是**云原生开发**额度（1600 核时/月），**不是**云原生构建额度
   #     （160 核时/月）；两者是官方计费表里分列的独立计费项。见
   #     docs/research/2026-09-24-ci-consumption-summary.md §4.4。
@@ -279,6 +284,10 @@
         #      code-server 不在同一容器，这一步会"**永远绿、永远不生效**"
         #      （参考实现的血泪教训：compute-matrix docs/platform-facts.md §10.2）
         #      ⇒ 脚本会断言目标目录存在，让这种失败**变红**而不是静默。
+  #   - ⚠️ 2026-09-25 起设置源是**两个**（本 stage 调用的脚本默认按序合并、后者覆盖前者）：
+  #       `.ide/settings.json`（镜像级预设，**在 build.by 里**）
+  #     + `.ide/agent-preferences.json`（运行期偏好 `codingcopilot.*`，**不在 build.by 里**）
+  #     ⇒ 单独成文件是**刻意**的：调黑名单不再触发镜像重建。缺任一个都属**红**（fail-secure）。
         #   ⚠️ 本段的 `script:` 由 `/bin/sh`（dash）执行 ⇒ 只用 POSIX sh 语法 + `set -eu`，
         #      不要写 `pipefail` / `[[ ]]` / 数组（写错会让 step 以退出码 2 秒失败）。
         - name: agent-permissions

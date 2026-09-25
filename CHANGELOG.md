@@ -24,6 +24,11 @@
   平台在环境启动时会覆盖 `User/settings.json`，故另设**环境启动期 stage `agent-permissions`** 在环境启动后
   把偏好合并进运行中的 User 设置并断言生效（机制见
   [`docs/engineering/agent-command-gate.md`](docs/engineering/agent-command-gate.md)）。
+  同日**拆分设置源并补齐黑名单**：`codingcopilot.*` 从 `.ide/settings.json`（镜像构建输入）移到
+  `.ide/agent-preferences.json`（**不进** `build.by`）⇒ 以后**调黑名单不再触发整机镜像重建**；
+  黑名单由 33 条补到 **38 条**（新增 `truncate`/`shred` 写块设备、`rm -rf /var/lib/<DB>`、
+  `git push --mirror`、`git checkout .`、`git stash -u/-a` 五条窄口径规则，**不放宽**任何既有条目）；
+  行为口径仍以 [`docs/engineering/agent-command-gate.md`](docs/engineering/agent-command-gate.md) 为准。
 - 新增**多会话并发纪律**：同一工作区同时跑多个会话时，提交与推送**只含本会话形成的内容**
   （[`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §6 的规则 M-1~M-9，
   含**推送前归属核对**与**推送被拒时的唯一合法路径**；

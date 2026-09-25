@@ -6,6 +6,9 @@
 #   .ide/settings.json   —— VS Code 设置，必须由本文件 COPY 进镜像
 #   同时必须在 .cnb.yml 的 vscode 事件中用 build.by 声明 settings.json，
 #   否则构建会报错（构建期依赖必须显式声明）。
+#   ⚠️ 2026-09-25 设置源拆分：只有 `.ide/settings.json`（镜像级预设）走 COPY 与 build.by；
+#     运行期偏好 `.ide/agent-preferences.json`（`codingcopilot.*`）**不 COPY、不进 build.by** ——
+#     它是为"调黑名单不必重建镜像"单独拆出来的（判据见 tests/unit/test_apply_ide_settings.py）。
 #
 # 【基础镜像选择理由】
 #   python:3.12-bookworm = Debian 12 + Python 3.12，与 CNB 默认环境同为 Debian 12；
@@ -285,7 +288,9 @@ ENV PATH="/opt/llama.cpp/build/bin:${PATH}"
 #    **`scope = application`** ⇒ **只能写在 User 级**，且平台会在环境启动时覆盖
 #    `User/settings.json`（把本 COPY 写进去的键抹掉）⇒ 它们**不由本文件生效**，
 #    而是由 `.cnb.yml` 的 `vscode` 事件首个 stage `agent-permissions` 在环境启动后
-#    调用 `make apply-ide-settings` 合并 + 断言。详见 `.ide/settings.json` 头部注释。
+#    调用 `make apply-ide-settings` 合并 + 断言。详见 `.ide/agent-preferences.json` 头部注释。
+#    ⚠️ 2026-09-25 拆分：`codingcopilot.*` 已**移出**本文件 COPY 的那份，改它们**不再需要重建镜像**；
+#    本段的 COPY 自此只承载镜像级预设（主题 / 字体 / 缩进 …）。
 # ---------------------------------------------------------------------------
 COPY .ide/settings.json /root/.local/share/code-server/Machine/settings.json
 COPY .ide/settings.json /root/.local/share/code-server/User/settings.json

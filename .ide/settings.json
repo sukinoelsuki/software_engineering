@@ -152,123 +152,13 @@
   // 单人单作者仓库用内置 Source Control（含 Source Control Graph）+ Git Graph 已足够。
 
   // --------------------------------------------------------------------------
-  // CodeBuddy Agent 命令执行权限（默认全自动 + 少数「不可逆」操作仍需确认）
+  // CodeBuddy Agent 命令执行权限（`codingcopilot.*`）
   //
-  // ⚠️【本文件不会自动生效】——原因与正确做法（2026-09-25 实测）：
-  //   1. 本段各键的 `scope = application`（本环境读扩展 package.json 自证）
-  //      ⇒ **只能写在 User 级**；仓库级 `.vscode/settings.json` 与镜像里 Machine 级的那份
-  //      **都不生效**（`.ide/Dockerfile` 第 8 阶段那四条 COPY 因此只对 window/machine 级
-  //      设置有效，例如主题、字体、缩进）。
-  //   2. 平台会在环境启动时用自己的一份覆盖 `User/settings.json`
-  //      ⇒ 构建期 COPY 进去的键**会被抹掉**——这就是"配置看起来是对的、运行时照样弹确认"的根因。
-  //   3. ⇒ 真正让它生效的是 **`.cnb.yml` 的 `vscode` 事件首个 stage `agent-permissions`**：
-  //      环境启动后调用 `make apply-ide-settings`（= `scripts/apply_ide_settings.py`）
-  //      把本文件**合并**进运行中的 User 设置，并**断言**已落地（任一项不符即非零退出）。
-  //      手工复跑：`make apply-ide-settings`。
-  //   ⚠️ 两者是一对：**改了本文件要确认那个 stage 还在**；删掉它，本文件就退回"不起作用"。
-  //
-  // 生效后的行为（依据同版本扩展产物源码实测）：
-  //   · 判定顺序：SafetyRule（命中自定义黑名单）**先于** PermissionRule 的 autoRun 放行
-  //     （`resolvePermissionDecision`）⇒ 黑名单命中的命令不会被自动执行吃掉，仍弹确认；
-  //   · 黑名单命中 = `riskLevel: high` ⇒ 弹确认（ask），**不是**直接拒绝；
-  //   · 黑名单大小写敏感（`new RegExp(entry)` 无 i 标志），匹配对像是按
-  //     `|`、`||`、`&&`、`&`、`;`、换行切分后的每条命令。
+  // ⚠️ 本段已**移出本文件**（2026-09-25 拆分）：它们现在放在**运行期偏好文件**里。
+  //    理由：本文件是**镜像构建输入**（Dockerfile COPY + `.cnb.yml` 的 `build.by`）
+  //    ⇒ 改它一次就要整机重建（约 20 min）；而 `codingcopilot.*`（尤其黑名单）要经常调。
+  //    生效路径 / 复跑命令 / 故障判据：docs/engineering/agent-command-gate.md
   // --------------------------------------------------------------------------
-
-  // 1) 默认全自动：命令 / MCP / 文件写入一律不再弹确认
-  "codingcopilot.autoRun": true,
-  // `autoRunMode` 在 4.12.38765564 的 package.json 里**未声明**（扩展内部读的是
-  // `chat.autoRunMode`）；写上无害且与参考实现一致，断言它以防将来版本改变语义。
-  "codingcopilot.autoRunMode": "runEverything",
-  "codingcopilot.autoAcceptWebSearch": true,
-
-  // 2) 唯一保留的自动化硬红线：**删库**（阈值默认 500 → 收紧到 200）
-  //    删除先入回收站，批量删除达阈值仍需确认；它与下面「禁用的类别」是两件事，
-  //    关掉 `fileDelete` **不影响**本条（回收站是独立机制）。
-  "codingcopilot.safeDeleteEnabled": true,
-  "codingcopilot.safeDeleteBulkThreshold": 200,
-
-  // 3) 关闭的内置安全类别：**全关，只留 custom**（对齐参考实现 compute-matrix 的口径）
-  //    理由：内置类别是**文本启发式**，误报来源多（典型：`(curl|wget).*\|(sh|bash|python)`
-  //    命中即判 injection 高危），而它们**不是**安全边界、只是提示。全关之后
-  //    「**拦截范围 = 下面明确列出的内容**」，行为可预测、可评审。
-  //    ⇒ 代价如实登记：关掉 `injection` 后，下载即执行的命令不再被拦（已知风险）；
-  //      要恢复防注入，把 `"injection"` 从本数组删掉即可（一行改动）。
-  //    ⇒ 本数组**不得**加回 `"custom"`：那会让第 4 项黑名单**静默失效**
-  //      （`scripts/apply_ide_settings.py` 对此有断言，改了会红）。
-  "codingcopilot.disabledSecurityCategories": [
-    "diskOps",
-    "windowsSystem",
-    "network",
-    "systemServices",
-    "userManagement",
-    "fileDelete",
-    "permissions",
-    "processControl",
-    "gitOps",
-    "injection",
-    "scriptExec",
-    "powershell"
-  ],
-
-  // 4) 需要人工确认的命令（自定义黑名单：元素为正则，命中即弹确认，**不是**直接拒绝）
-  //    关掉上述 12 类之后，这里是**唯一**还会拦命令的闸门 ⇒ 每条都要能说清"为什么它不可逆"。
-  //    ⚠️ 这是**提醒层**而非安全边界：`r''m`、变量展开、`python -c "shutil.rmtree('/')"`
-  //       等改写方式可以绕过；真正的红线判据是 SECURITY.md 与
-  //       docs/engineering/git-workflow.md §4 的 A~F 分级。
-  "codingcopilot.customBlacklistCommands": [
-    // —— A. 文件系统 / 磁盘（不可逆）——
-    // 删除根目录、家目录、当前目录、通配符或仓库本体
-    "\\brm\\s+(?:-[a-zA-Z]+\\s+)*-(?:[rR]f?|f?[rR])\\s+(?:/|/\\*|~|\\$HOME|\\.\\.?/?|\\*|/workspace/?(?:\\*)?)(?:\\s|$)",
-    "\\brm\\b[^\\n]*--no-preserve-root",
-    "\\brm\\b[^\\n]*\\.git\\b",
-    // 在根 / 家目录上做破坏性 find（`find … -exec rm` / `-delete`）
-    "\\bfind\\s+(?:/|~|\\$HOME)[^\\n]*-(?:delete|exec|execdir)\\b",
-    "\\bdd\\b[^\\n]*\\bof=/dev/",
-    "\\bmkfs(?:\\.[a-z0-9]+)?\\b",
-    "\\b(?:fdisk|parted|cfdisk|sfdisk|wipefs)\\b",
-    ">\\s*/dev/(?:sd|hd|nvme|vd|mmcblk)",
-    "\\bchmod\\s+(?:-R\\s+)?777\\s+/",
-    "\\b(?:kill|killall|pkill|taskkill)\\b[^\\n]*\\b(?:1|init|systemd|kernel)\\b",
-
-    // —— B. 数据库（「删库」）——
-    "\\b(?:DROP|drop)\\s+(?:DATABASE|database|SCHEMA|schema|TABLE|table)\\b",
-    "\\bdropdb\\b",
-    "\\bmysqladmin\\b[^\\n]*\\bdrop\\b",
-    "\\b(?:FLUSHALL|flushall|FLUSHDB|flushdb)\\b",
-
-    // —— C. 宿主（会把环境本身弄没）——
-    "\\b(?:shutdown|reboot|poweroff|halt)\\b",
-    ":\\(\\)\\s*\\{",
-
-    // —— D. Git / 仓库：项目 D 类红线（改写已推送历史 / 强推 / 删远端分支）——
-    //    原本由内置 `gitOps` 类别承担，该类别已关闭 ⇒ 在此逐条补回（日常 git 操作零摩擦）。
-    "\\bgit\\s+push\\b[^\\n]*--force",
-    "\\bgit\\s+push\\b[^\\n]*\\s-f(?:\\s|$)",
-    "\\bgit\\s+push\\b[^\\n]*--delete\\b",
-    "\\bgit\\s+push\\b[^\\n]*\\s:\\S+",
-    // `rebase` 用负向先行断言排掉 `--abort/--continue/--skip/--quit`：这些是**中止/收尾**，不改写历史
-    "\\bgit\\s+reset\\s+--hard\\b",
-    "\\bgit\\s+rebase\\b(?![^\\n]*--(?:abort|continue|skip|quit)\\b)",
-    "\\bgit\\s+reflog\\s+expire\\b",
-    "\\bgit\\s+filter-(?:branch|repo)\\b",
-    // 清空工作树的三种写法（含多会话纪律里"不带路径的 stash 会收走他人改动"）
-    "\\bgit\\s+clean\\b[^\\n]*-[a-zA-Z]*[fFdDxX]",
-    "\\bgit\\s+restore\\b[^\\n]*\\s\\.\\s*$",
-    "\\bgit\\s+checkout\\b[^\\n]*(?:-f\\b|--force\\b|--\\s+\\.\\s*$)",
-    "\\bgit\\s+stash\\s*$",
-    "\\bgit\\s+stash\\s+(?:drop|clear)\\b",
-    // B 类：写 main 需事先批准
-    "\\bgit\\s+push\\b[^\\n]*\\b(?:main|master)\\b",
-    // E 类：bench/data 只由跑测脚本写，人手不得直接提交
-    "\\bgit\\s+push\\b[^\\n]*\\bbench/data\\b",
-    // 禁止用 --no-verify 跳过 pre-commit / commit-msg 门禁
-    "\\bgit\\s+commit\\b[^\\n]*--no-verify",
-
-    // —— E. 混淆执行（injection 类别已关，只补最没有正当用途的一种）——
-    //    注：**故意不拦** `curl … | sh` 这类安装惯用法 —— 它是参考实现实测到的最大误报源。
-    "\\bbase64\\b[^\\n]*(?:-d|--decode)[^\\n]*\\|"
-  ],
 
   // --------------------------------------------------------------------------
   // Docker（配合 .cnb.yml 中的 services: [docker] 使用）

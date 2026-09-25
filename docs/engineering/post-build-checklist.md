@@ -111,6 +111,13 @@ code-server --list-extensions   # 核对扩展是否真的装上了（见下方�
 > 一旦写错，表现为"设置静默不生效"而不是报错，很容易被忽略。
 > 因此每次改动该文件后，都必须销毁并重启环境，确认主题与关键设置确实生效
 > （相关待验证项：V-4）。
+>
+> **2026-09-25 追加（设置源拆分后）**：上述口径针对 `.ide/settings.json`（**镜像级预设**）。
+> 同日新拆出的 `.ide/agent-preferences.json`（运行期偏好 `codingcopilot.*`）也加入了
+> `check-json` 的例外，但它的合法性**另有**两道保障：`tests/unit/test_apply_ide_settings.py` 的
+> `strip_jsonc` 用例、以及**启动期 stage 的断言**（写坏 ⇒ stage 非空退出 ⇒ **红**，不是静默）。
+> ⚠️ 另外：**改 `.ide/agent-preferences.json` 不需要重建镜像**（它不在 `build.by` 里）——
+> 上段"改动该文件后必须销毁并重启环境"的旧口径**现在只对 `.ide/settings.json` 成立**。
 
 > **关于 `cnb-cli` 与官方 CNB Skill（[ADR-0016](../adr/0016-cnb-platform-integration-and-remote-write-authorization.md) 接入后必查）**：
 > 这两项是**镜像内新增的第三方代码**，其"没装上"**不阻断构建**（与扩展同类）

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 `.ide/settings.json` 合并进运行中的 code-server User 设置，并断言 Agent 权限已落地。
+"""把 `.ide/` 下的设置源合并进运行中的 code-server User 设置，并断言 Agent 权限已落地。
 
 为什么必须有这一步（2026-09-25 实测；参考同平台 compute-matrix 的同类机制）：
 
@@ -27,13 +27,21 @@
 - 以 `//` 开头的键是给人看的注释键，**不写入**目标。
 
 用法：
-    python3 scripts/apply_ide_settings.py [source] [--target PATH]...
-默认：**两个客户端的 User 级设置都写**（与 `.ide/Dockerfile` 旧 COPY 的覆盖面对齐）：
+    python3 scripts/apply_ide_settings.py [source...] [--target PATH]...
+默认源是**两个**（按序合并，后者覆盖前者）：
+    - `.ide/settings.json` —— 镜像级预设（主题 / 编辑器 / 语言等，**慢变**）
+    - `.ide/agent-preferences.json` —— 运行期偏好（`codingcopilot.*`，**常变**）
+默认目标：**两个客户端的 User 级设置都写**（与 `.ide/Dockerfile` 的 COPY 覆盖面对齐）：
     - `/root/.local/share/code-server/User/settings.json`（WebIDE / code-server）
     - `/root/.vscode-server/data/User/settings.json`（VS Code Desktop / Remote-SSH）
-source=`.ide/settings.json`。source 与 target 都可显式指定（便于测试与复跑）；
-⚠️ 位置参数**只有** `source` 一个 —— target 一律走 `--target`，避免"只传一个参数"时
+source 与 target 都可显式指定（便于测试与复跑）。
+⚠️ 位置参数**只有** `source`（可给多个）—— target 一律走 `--target`，避免"只传一个参数"时
    把 source 误当 target、把源文件自我覆盖（2026-09-25 实测踩过，见 git 历史）。
+⚠️ **为什么拆成两个源**（2026-09-25）：`.ide/settings.json` 是**镜像构建输入**
+    （`Dockerfile` 的 COPY + `.cnb.yml` 的 `build.by`）⇒ 改它一次就换掉镜像输入哈希、
+    触发整机重建（约 20 min）；而黑名单是要**经常调**的 ⇒ 移到**不进 `build.by`** 的第二份里。
+    该判据由 `tests/unit/test_apply_ide_settings.py` 的
+    `test_runtime_preferences_file_is_not_a_build_input` 钉住。
 """
 
 import argparse
@@ -49,7 +57,11 @@ DEFAULT_TARGETS: tuple[Path, ...] = (
     Path("/root/.local/share/code-server/User/settings.json"),
     Path("/root/.vscode-server/data/User/settings.json"),
 )
-DEFAULT_SOURCE = Path(".ide/settings.json")
+# 顺序 = 合并顺序（后者覆盖前者）。两个源的键集**不相交**，由单测钉住。
+DEFAULT_SOURCES: tuple[Path, ...] = (
+    Path(".ide/settings.json"),
+    Path(".ide/agent-preferences.json"),
+)
 
 # 断言项：缺一项都不算「Agent 权限已落地」。
 GUARD_EXACT: tuple[tuple[str, object], ...] = (
@@ -187,6 +199,21 @@ def merge_settings(target: dict[str, Any], source: dict[str, Any]) -> dict[str, 
     return {**target, **overrides}
 
 
+def load_sources(paths: Sequence[Path]) -> tuple[dict[str, Any], dict[str, int]]:
+    """按给定顺序读取并覆盖式合并多个源；返回（合并结果，各源的**有效键数**）。
+
+    任一路径缺失、或某个源里没有任何有效设置，一律**非零退出**（fail-secure）：
+    "源文件不全"就是"权限没落地"，不允许"少读一个文件照样通过"。
+    """
+    merged: dict[str, Any] = {}
+    counts: dict[str, int] = {}
+    for path in paths:
+        raw = load_json_object(path, required=True)
+        merged = merge_settings(merged, raw)
+        counts[str(path)] = sum(1 for key in raw if not key.startswith(COMMENT_PREFIX))
+    return merged, counts
+
+
 def guard_failures(merged: dict[str, Any]) -> list[str]:
     """返回不满足的断言（空列表 = 全部通过）。"""
     failures = [
@@ -216,12 +243,13 @@ def resolve_targets(explicit: list[str] | None) -> list[Path]:
     return list(DEFAULT_TARGETS)
 
 
-def apply_to_target(target: Path, source_obj: dict[str, Any]) -> None:
+def apply_to_target(target: Path, source_obj: dict[str, Any], counts: dict[str, int]) -> None:
     """合并 + 断言写进单个目标。任一断言不符 ⇒ 非零退出（fail-secure）。"""
     base = load_json_object(target, required=False)
     merged = merge_settings(base, source_obj)
     write_object_atomic(target, merged)
-    print(f"[ok] 已合并 {len(source_obj)} 项设置 → {target}（原有 {len(base)} 项保留）")
+    detail = " + ".join(f"{path} {count}" for path, count in counts.items())
+    print(f"[ok] 已合并 {len(source_obj)} 项设置（{detail}）→ {target}（原有 {len(base)} 项保留）")
 
     failures = guard_failures(merged)
     for failure in failures:
@@ -232,10 +260,16 @@ def apply_to_target(target: Path, source_obj: dict[str, Any]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="把 .ide/settings.json 合并进 code-server / VS Code 的 User 设置并断言"
+        description="把 .ide/ 下的设置源合并进 code-server / VS Code 的 User 设置并断言"
     )
     parser.add_argument(
-        "source", nargs="?", default=str(DEFAULT_SOURCE), help="源 .ide/settings.json"
+        "sources",
+        nargs="*",
+        default=None,
+        help=(
+            "源设置文件（可给多个，按序合并、后者覆盖前者）；"
+            "缺省 = .ide/settings.json + .ide/agent-preferences.json"
+        ),
     )
     parser.add_argument(
         "--target",
@@ -246,14 +280,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     targets = resolve_targets(args.target)
-    source_obj = load_json_object(Path(str(args.source)), required=True)
+    source_paths = [Path(item) for item in args.sources] if args.sources else list(DEFAULT_SOURCES)
+    source_obj, counts = load_sources(source_paths)
 
     for target in targets:
-        apply_to_target(target, source_obj)
-
-    skipped = [target for target in DEFAULT_TARGETS if target not in targets]
-    for target in skipped:
-        print(f"[warn] 目标不存在，跳过（Remote-SSH 未初始化时属正常）：{target}")
+        apply_to_target(target, source_obj, counts)
 
     print(
         "[ok] Agent 权限已落地（autoRun / autoRunMode / safeDeleteEnabled / 黑名单 / 类别 均核对通过）"

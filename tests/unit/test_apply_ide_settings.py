@@ -2,12 +2,14 @@
 
 这组用例存在的理由：该脚本是**环境启动期**唯一把 Agent 权限写进运行中 User 设置的入口，
 它若静默失效，表现是"配置看起来是对的、运行时照样弹确认"——正是本项目头号失败模式
-（静默失败）的典型形状。因此这里除了测脚本本身，还钉住一条**不变式**：
+（静默失败）的典型形状。因此这里除了测脚本本身，还钉住**两条不变式**：
 
-    `.ide/settings.json`（仓库里那一份）必须能通过脚本的全部断言。
-
-即："改了设置文件却没同步改断言" 或 "把黑名单写空" 这类改动，会在单测里直接变红，
-而不是等到下次拉起环境才发现权限没落地。
+1. **运行期偏好那份**（`.ide/agent-preferences.json`）必须能通过脚本的全部断言
+   ⇒ "改了设置却没同步改断言" 或 "把黑名单写空" 这类改动会直接变红，
+   而不是等到下次拉起环境才发现权限没落地。
+2. **拆分本身可判定**：镜像级那份（`.ide/settings.json`）不得再出现 `codingcopilot.*`，
+   运行期那份不得成为构建输入 —— 否则"调黑名单要重建整机（约 20 min）"这个代价会悄悄回来。
+   这是 2026-09-25 拆分的**唯一目的**，见 `docs/engineering/agent-command-gate.md`。
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "apply_ide_settings.py"
 SETTINGS_PATH = REPO_ROOT / ".ide" / "settings.json"
+RUNTIME_PREFERENCES_PATH = REPO_ROOT / ".ide" / "agent-preferences.json"
 
 
 def _load_module() -> Any:
@@ -72,14 +75,14 @@ def test_strip_jsonc_allows_trailing_commas(mod: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. 仓库里那份设置必须真的通过断言（不变式）
+# 2. 运行期偏好那份必须真的通过断言（不变式 1）
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_repo_settings_file_satisfies_every_guard(mod: Any) -> None:
-    """把 `.ide/settings.json` 当作环境启动时要写进去的那份，逐项核对断言。"""
-    source = mod.load_json_object(SETTINGS_PATH, required=True)
+def test_runtime_preferences_file_satisfies_every_guard(mod: Any) -> None:
+    """把 `.ide/agent-preferences.json` 当作环境启动时要写进去的那份，逐项核对断言。"""
+    source = mod.load_json_object(RUNTIME_PREFERENCES_PATH, required=True)
     merged = mod.merge_settings({}, source)
 
     assert merged["codingcopilot.autoRun"] is True
@@ -93,18 +96,18 @@ def test_repo_settings_file_satisfies_every_guard(mod: Any) -> None:
 
 
 @pytest.mark.unit
-def test_repo_blacklist_patterns_are_valid_regex(mod: Any) -> None:
+def test_runtime_blacklist_patterns_are_valid_regex(mod: Any) -> None:
     """黑名单是"按正则匹配整条命令"，写坏一条会在运行期抛异常或静默放行。"""
-    source = mod.load_json_object(SETTINGS_PATH, required=True)
+    source = mod.load_json_object(RUNTIME_PREFERENCES_PATH, required=True)
     patterns = source["codingcopilot.customBlacklistCommands"]
     for pattern in patterns:
         re.compile(pattern)  # 不合法会在这里抛 re.error
 
 
 @pytest.mark.unit
-def test_repo_blacklist_covers_the_irreversible_baseline(mod: Any) -> None:
+def test_runtime_blacklist_covers_the_irreversible_baseline(mod: Any) -> None:
     """对齐参考实现（compute-matrix）的 5 条不可逆红线：删根 / 强推 / 改写历史 / 格式化 / 写裸盘。"""
-    source = mod.load_json_object(SETTINGS_PATH, required=True)
+    source = mod.load_json_object(RUNTIME_PREFERENCES_PATH, required=True)
     patterns = [re.compile(p) for p in source["codingcopilot.customBlacklistCommands"]]
     probes = [
         "rm -rf /",
@@ -186,7 +189,7 @@ def test_main_returns_zero_and_writes_merged_file(mod: Any, tmp_path: Path) -> N
         json.dumps({"cnb-welcome.locale": "zh-cn"}, ensure_ascii=False), encoding="utf-8"
     )
 
-    assert mod.main([str(SETTINGS_PATH), "--target", str(target)]) == 0
+    assert mod.main([str(RUNTIME_PREFERENCES_PATH), "--target", str(target)]) == 0
 
     written = json.loads(target.read_text(encoding="utf-8"))
     assert written["cnb-welcome.locale"] == "zh-cn"
@@ -208,7 +211,7 @@ def test_main_writes_every_default_target(
     second = tmp_path / "vscode-server" / "data" / "User" / "settings.json"
     monkeypatch.setattr(mod, "DEFAULT_TARGETS", (first, second))
 
-    assert mod.main([str(SETTINGS_PATH)]) == 0
+    assert mod.main([str(RUNTIME_PREFERENCES_PATH)]) == 0
 
     for target in (first, second):
         written = json.loads(target.read_text(encoding="utf-8"))
@@ -221,16 +224,22 @@ def test_main_creates_missing_parent_directories_for_explicit_target(
 ) -> None:
     """`--target` 指向尚不存在的客户端目录 ⇒ 自动建目录（首次 Remote-SSH 连接前的场景）。"""
     target = tmp_path / "vscode-server" / "data" / "User" / "settings.json"
-    assert mod.main([str(SETTINGS_PATH), "--target", str(target)]) == 0
+    assert mod.main([str(RUNTIME_PREFERENCES_PATH), "--target", str(target)]) == 0
     assert json.loads(target.read_text(encoding="utf-8"))["codingcopilot.autoRun"] is True
 
 
 @pytest.mark.unit
-def test_main_never_writes_the_source_file_itself(mod: Any, tmp_path: Path) -> None:
-    """回归（2026-09-25 实测事故）：单位置参数曾被当成 target，把源文件自我覆盖、注释丢失。"""
-    before = SETTINGS_PATH.read_text(encoding="utf-8")
-    assert mod.main([str(SETTINGS_PATH)]) == 0
-    assert SETTINGS_PATH.read_text(encoding="utf-8") == before
+def test_main_never_writes_the_source_file_itself(
+    mod: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """回归（2026-09-25 实测事故）：位置参数曾被当成 target，把源文件自我覆盖、注释丢失。
+
+    目标换成 tmp 目录：本用例只关心"位置参数永远是 source"，不该顺带写真实客户端的路径。
+    """
+    monkeypatch.setattr(mod, "DEFAULT_TARGETS", (tmp_path / "User" / "settings.json",))
+    before = RUNTIME_PREFERENCES_PATH.read_text(encoding="utf-8")
+    assert mod.main([str(RUNTIME_PREFERENCES_PATH)]) == 0
+    assert RUNTIME_PREFERENCES_PATH.read_text(encoding="utf-8") == before
 
 
 # ---------------------------------------------------------------------------
@@ -275,3 +284,69 @@ def test_makefile_exposes_the_apply_target() -> None:
     assert "apply-ide-settings:" in makefile
     assert "scripts/apply_ide_settings.py" in makefile
     assert SCRIPT_PATH.is_file()
+
+
+# ---------------------------------------------------------------------------
+# 7. 拆分不变式（不变式 2）：镜像级（慢变、进 build.by）与运行期（常变、不进 build.by）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_default_sources_are_the_image_copy_then_runtime_preferences(mod: Any) -> None:
+    """默认按序合并两个源；顺序一旦变了，"谁覆盖谁"的语义就变了。"""
+    assert tuple(str(path) for path in mod.DEFAULT_SOURCES) == (
+        ".ide/settings.json",
+        ".ide/agent-preferences.json",
+    )
+
+
+@pytest.mark.unit
+def test_default_sources_do_not_share_any_key(mod: Any) -> None:
+    """两个源必须**键集不相交**：否则一处的改动会被另一处静默盖掉（或反之）。"""
+    key_sets = [set(mod.load_json_object(path, required=True)) for path in mod.DEFAULT_SOURCES]
+    shared = sorted(key_sets[0] & key_sets[1])
+    assert not shared, f"两个源存在同名键：{shared}"
+
+
+@pytest.mark.unit
+def test_guard_keys_live_only_in_the_runtime_preferences_file(mod: Any) -> None:
+    """`codingcopilot.*` 不得出现在镜像级那份里。
+
+    它们若被写回 `.ide/settings.json`（**在 `build.by` 里**），调黑名单就会再次触发整机重建
+    —— 那正是 2026-09-25 拆分要消除的代价。
+    """
+    image_copy = mod.load_json_object(SETTINGS_PATH, required=True)
+    stray = sorted(key for key in image_copy if key.startswith("codingcopilot."))
+    assert not stray, f"镜像级设置里不得出现 Agent 权限键：{stray}"
+
+
+@pytest.mark.unit
+def test_runtime_preferences_file_is_not_a_build_input() -> None:
+    """运行期偏好**不得**成为构建输入：可出现在注释里，但不得出现在非注释行。
+
+    **这条就是"调黑名单不必重建镜像"的判据**——文件名一旦进了 `.cnb.yml` 的 `build.by`，
+    它的内容就会参与镜像输入哈希，拆分带来的收益随即消失（且没有任何别的信号会提示）。
+    """
+    cnb = (REPO_ROOT / ".cnb.yml").read_text(encoding="utf-8")
+    configured = [
+        line
+        for line in cnb.splitlines()
+        if RUNTIME_PREFERENCES_PATH.name in line and not line.lstrip().startswith("#")
+    ]
+    assert not configured, f"运行期偏好不得出现在构建配置里：{configured}"
+
+
+@pytest.mark.unit
+def test_main_merges_both_sources_when_no_source_given(
+    mod: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """端到端：不给位置参数时**两源都合并** ⇒ 镜像级键与运行期键同时落地。"""
+    target = tmp_path / "code-server" / "User" / "settings.json"
+    monkeypatch.setattr(mod, "DEFAULT_TARGETS", (target,))
+    monkeypatch.setattr(mod, "DEFAULT_SOURCES", (SETTINGS_PATH, RUNTIME_PREFERENCES_PATH))
+
+    assert mod.main([]) == 0
+
+    written = json.loads(target.read_text(encoding="utf-8"))
+    assert written["workbench.colorTheme"] == "Dark Modern"  # 来自镜像级那份
+    assert written["codingcopilot.autoRun"] is True  # 来自运行期那份
