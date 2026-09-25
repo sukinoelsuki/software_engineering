@@ -16,6 +16,14 @@
 
 ### Changed
 
+- **环境内 CodeBuddy Agent 默认自动运行**：主 Agent 命令闸门由"逐类逐次弹确认"放宽为
+  "**默认全自动 + 少数不可逆操作保留确认**"，红线命令由弹确认改为**黑名单提醒**（禁用 12 个内置安全类别、
+  只留 `custom`，并设 33 条黑名单正则覆盖不可逆操作与项目 B/D/E 类红线；决策见
+  [ADR-0032](docs/adr/0032-agent-command-gate-and-ide-settings.md)）；**防删库回收站阈值收紧到 200**
+  （`safeDeleteEnabled=true`、`safeDeleteBulkThreshold=200`）。因 `codingcopilot.*` 属 `scope=application`、
+  平台在环境启动时会覆盖 `User/settings.json`，故另设**环境启动期 stage `agent-permissions`** 在环境启动后
+  把偏好合并进运行中的 User 设置并断言生效（机制见
+  [`docs/engineering/agent-command-gate.md`](docs/engineering/agent-command-gate.md)）。
 - 新增**多会话并发纪律**：同一工作区同时跑多个会话时，提交与推送**只含本会话形成的内容**
   （[`docs/engineering/git-workflow.md`](docs/engineering/git-workflow.md) §6 的规则 M-1~M-9，
   含**推送前归属核对**与**推送被拒时的唯一合法路径**；
