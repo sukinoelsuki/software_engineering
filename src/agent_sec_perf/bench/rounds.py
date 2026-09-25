@@ -7,7 +7,7 @@
 
 * **失败不掩盖**：某档出错时记录错误、继续跑其余档位，并把整轮标记为 ``partial``
   （进程退出码非零）。半份数据比没有数据好，但必须让人知道它是半份；
-* **不清理证据**：服务端日志与模型产物原样留在 ``daily/<日期>/`` 下，
+* **不清理证据**：服务端日志与模型产物原样留在 ``daily/<轮次 id>/`` 下，
   何时删除由保留策略决定——日志是性能数字的唯一原件。
 
 用法（``make bench-round`` 是同一入口的薄封装）::
@@ -61,6 +61,26 @@ DEFAULT_KEEP_DAYS = 30
 DEFAULT_DATA_ROOT_SUBDIRS: tuple[str, ...] = ("logs", "artifacts", "work")
 
 
+def round_dir(data_root: pathlib.Path, round_id: str) -> pathlib.Path:
+    """轮次的落盘目录：``<数据根>/daily/<轮次 id>``。
+
+    **为什么按轮次 id 而不是按日期命名**：同一天可以有多轮（复跑、失败重跑、
+    同日不同标签），而轮次 id 本身就是 ``<日期>-<标签>``（见 :func:`store.today_local`
+    与 :class:`~agent_sec_perf.bench.protocol.RunParams`）。
+
+    按**日期**命名会让同日的第二轮与第一轮共用同一个目录；而发布脚本对目标目录是
+    "先删后拷"（``scripts/bench/publish.sh``）⇒ 第二轮会把第一轮的**服务端日志与模型
+    产物**删掉，而索引里第一条的 ``report`` 仍指向该目录 ⇒ **索引指向错报告、原件永久
+    丢失**。2026-09-25 发现该缺陷（当时数据分支上已有 ``2026-09-25-nightly`` 一轮，
+    目录内 124 个文件、其中 120 份是服务端日志与模型产物原件），
+    此前从未触发只是因为"每天最多一轮"这一偶然事实。
+
+    ⇒ 目录名必须与 ``env.round_id`` **逐字一致**：索引的 ``report`` 路径也由它构造，
+    两者同源是这条不变量的可检查形式（见 ``tests/unit/test_bench_store.py``）。
+    """
+    return data_root / store.DAILY_DIRNAME / round_id
+
+
 @dataclass
 class TierOutcome:
     """一个档位的产出（档位失败时两个字段都为空）。"""
@@ -106,7 +126,7 @@ def run_round(
     started_monotonic = time.monotonic()
     date = store.today_local()
     round_id = f"{date}-{params.label}"
-    daily_dir = data_root / store.DAILY_DIRNAME / date
+    daily_dir = round_dir(data_root, round_id)
     daily_dir.mkdir(parents=True, exist_ok=True)
 
     assets = read_model_manifest(manifest)
@@ -177,9 +197,12 @@ def run_round(
     store.write_text(data_root / store.LATEST_REPORT_FILENAME, report_text)
 
     core_hours = _core_hours(env, duration_s)
+    # 索引里 report 的相对路径**由 round_dir 推出**（同源 ⇒ 索引永远指向本轮自己的目录；
+    # 各写一份就会分叉，而分叉的后果是"索引把你带到别的轮次的报告"）
+    report_rel = (round_dir(pathlib.Path(), round_id) / "report.md").as_posix()
     entry = report_mod.index_entry(
         record=record,
-        report_path=f"{store.DAILY_DIRNAME}/{date}/report.md",
+        report_path=report_rel,
         core_hours=core_hours,
     )
     store.append_index(data_root, entry)

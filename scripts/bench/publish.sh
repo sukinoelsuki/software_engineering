@@ -91,24 +91,34 @@ fi
 # ---------------------------------------------------------------------------
 # 3. 把本轮数据**合并**进数据子目录（绝不删除历史，也绝不触碰代码）
 #
-# 为什么不是"整体替换"：CI 的数据根目录是全新容器里的、只有本轮，而数据分支上已经
-# 有历史轮次。整体替换会删掉历史轮次的日志/产物/报告，并把 index.json 退化成只有
+# 为什么不是"整体替换"：跑测环境的数据根目录是全新容器里的、只有本轮，而数据分支上
+# 已经有历史轮次。整体替换会删掉历史轮次的日志/产物/报告，并把 index.json 退化成只有
 # 一条——数据分支于是永远只剩最新一轮，"跨夜序列"根本建立不起来。
 # 2026-09-17 的首夜发布在提交 diff 里已经真实删除了 09-16 的 capability.json /
 # perf.json / report.md 与全部 server.log（该次发布因 SIGPIPE 失败，数据才侥幸留存）。
+#
+# ⚠️ 2026-09-25 修掉一处**同源**的覆盖缺陷：轮次目录名 = **轮次 id**（`<日期>-<标签>`），
+# 不再是纯日期。按日期命名时，同一天的第二轮与第一轮**共用目录**，而下面的 `rm -rf`
+# 只认目标目录名 ⇒ 会把第一轮的服务端日志与模型产物删掉，同时索引里第一轮的 `report`
+# 仍指向该目录 ⇒ **索引指向错报告、原件永久丢失**（发现时数据分支上正有
+# `2026-09-25-nightly` 一轮，目录内 124 个文件）。目录与轮次一一对应后，
+# `rm -rf` 只会替换**本轮自己**（同 round_id 复跑的语义），别的轮次不受影响。
 # ---------------------------------------------------------------------------
 readonly DAILY_SRC="${DATA_ROOT}/daily"
 [[ -d "${DAILY_SRC}" ]] || die "数据根目录下没有 daily/：${DAILY_SRC}"
 
-readonly LATEST_DAY="$(ls -1 "${DAILY_SRC}" | sort | tail -n1)"
-# 目录名参与路径构造，因此必须是严格白名单格式（防目录穿越）；
+readonly LATEST_ROUND="$(ls -1 "${DAILY_SRC}" | sort | tail -n1)"
+# 目录名参与路径构造，因此必须是严格白名单格式（防目录穿越）：
+# `<日期>-<标签>`（2026-09-25 起）或 `<日期>`（更早的历史轮次）。
+# 标签的字符集与协议层的校验一致（字母/数字/连字符/下划线，见 protocol.RunParams.validate）；
 # 不做"看起来像日期"的宽松判断。
-[[ "${LATEST_DAY}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
-    || die "每日目录名不是合法日期：${LATEST_DAY:-<空>}"
+readonly ROUND_DIR_PATTERN='^[0-9]{4}-[0-9]{2}-[0-9]{2}(-[A-Za-z0-9_-]+)?$'
+[[ "${LATEST_ROUND}" =~ ${ROUND_DIR_PATTERN} ]] \
+    || die "轮次目录名不符合白名单（<日期> 或 <日期>-<标签>）：${LATEST_ROUND:-<空>}"
 
 mkdir -p "${WORKTREE:?}/${DATA_SUBDIR:?}/daily"
-rm -rf "${WORKTREE:?}/${DATA_SUBDIR:?}/daily/${LATEST_DAY}"
-cp -a "${DAILY_SRC}/${LATEST_DAY}" "${WORKTREE}/${DATA_SUBDIR}/daily/"
+rm -rf "${WORKTREE:?}/${DATA_SUBDIR:?}/daily/${LATEST_ROUND}"
+cp -a "${DAILY_SRC}/${LATEST_ROUND}" "${WORKTREE}/${DATA_SUBDIR}/daily/"
 
 # 索引与 latest 报告交给生产代码合并（与跑轮次共用同一套模块，不引入第二套实现）
 PYTHONPATH="${PWD}/src" uv run python -m agent_sec_perf.bench.rounds \
@@ -134,7 +144,7 @@ fi
 readonly EMPTY_HOOKS_DIR="$(mktemp -d)"
 readonly COMMIT_MSG_FILE="$(mktemp)"
 {
-    printf 'chore(bench-data): 发布 %s 轮次数据\n\n' "${LATEST_DAY}"
+    printf 'chore(bench-data): 发布 %s 轮次数据\n\n' "${LATEST_ROUND}"
     printf '来源分支：%s；来源提交：%s\n' \
         "${CURRENT_BRANCH}" "$(git -C "${WORKTREE}" rev-parse --short HEAD)"
 } > "${COMMIT_MSG_FILE}"
@@ -187,4 +197,4 @@ git -C "${WORKTREE}" \
     -c credential.helper='!f() { echo username=cnb; echo "password=${CNB_TOKEN}"; }; f' \
     push origin "HEAD:refs/heads/${DATA_BRANCH}"
 
-log "已推送到 ${DATA_BRANCH}（来源 ${CURRENT_BRANCH}，日期 ${LATEST_DAY}）"
+log "已推送到 ${DATA_BRANCH}（来源 ${CURRENT_BRANCH}，轮次 ${LATEST_ROUND}）"

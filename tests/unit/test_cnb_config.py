@@ -50,6 +50,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 CNB_YML = REPO_ROOT / ".cnb.yml"
 PUBLISH_SH = REPO_ROOT / "scripts" / "bench" / "publish.sh"
 
+#: 发布脚本里的**轮次目录名白名单**（目录名参与 `rm -rf` / `cp -a` 的路径构造 ⇒ 防穿越）
+_ROUND_DIR_PATTERN_RE = re.compile(r"^readonly ROUND_DIR_PATTERN='([^']+)'$", re.MULTILINE)
+
 #: python 镜像必须带发行版后缀（浮动标签会随时间漂移）
 PINNED_PYTHON_IMAGE = re.compile(r"^python:3\.\d+(-slim)?-(bookworm|trixie|bullseye)$")
 
@@ -320,6 +323,42 @@ def test_publish_script_merges_instead_of_replacing_published_history() -> None:
         assert not re.search(r'rm -rf\s+"\$\{WORKTREE:\?\}/\$\{DATA_SUBDIR:\?\}"\s*$', stripped), (
             "不得整体删除已发布的数据子目录（会丢掉历史轮次的日志、产物与报告）"
         )
+
+
+@pytest.mark.unit
+def test_publish_script_whitelists_round_dir_names() -> None:
+    """轮次目录名进入路径构造 ⇒ 必须白名单校验（防目录穿越）。
+
+    目录名由 `BENCH_LABEL`（外部可控）拼成 `daily/<日期>-<标签>`，随后直接参与
+    `rm -rf` / `cp -a` 的路径构造。协议层的 `RunParams.validate` 也校验标签字符集，
+    但发布脚本读的是**目录名**而不是参数对象 ⇒ 它必须自己再挡一次
+    （信任边界上的校验要就近、且不依赖上游是否已经做过）。
+
+    2026-09-25 起目录名由"纯日期"改为"日期+标签"（同日多轮各有目录，见
+    `tests/unit/test_bench_store.py::test_round_dir_is_keyed_by_round_id_not_by_date`），
+    因此白名单同时接受两种形态。
+    """
+    match = _ROUND_DIR_PATTERN_RE.search(PUBLISH_SH.read_text(encoding="utf-8"))
+
+    assert match, "发布脚本必须声明轮次目录名白名单 `ROUND_DIR_PATTERN`"
+    pattern = match.group(1)
+
+    for name in ("2026-09-25", "2026-09-25-nightly", "2026-09-25-amd64-8", "2026-09-25-a_b-1"):
+        assert re.fullmatch(pattern, name), f"合法轮次目录名被拒：{name!r}"
+
+    for name in (
+        "",
+        "..",
+        "2026-9-25",
+        "20260925",
+        "2026-09-25-../../etc/passwd",
+        "2026-09-25/../x",
+        "2026-09-25-a/b",
+        "2026-09-25-a b",
+        "2026-09-25\n-a",
+        "+2026-09-25",
+    ):
+        assert not re.fullmatch(pattern, name), f"非法轮次目录名被放行：{name!r}"
 
 
 # ---------------------------------------------------------------------------

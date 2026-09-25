@@ -270,6 +270,8 @@ def prune_daily(data_root: pathlib.Path, *, keep_days: int, subdirs: Sequence[st
     """按保留期清理每日目录下的重型子目录（保留 JSON 与报告）。
 
     聚合数据（JSON、report.md）体积很小，长期保留；日志与模型产物只留最近若干天。
+
+    目录名是**轮次 id**（``<日期>-<标签>``，2026-09-25 起；更早的是纯日期）。
     """
     removed: list[str] = []
     daily_root = data_root / DAILY_DIRNAME
@@ -279,8 +281,11 @@ def prune_daily(data_root: pathlib.Path, *, keep_days: int, subdirs: Sequence[st
     for day_dir in sorted(daily_root.iterdir()):
         if not day_dir.is_dir():
             continue
+        # 只取**日期前缀**判断年龄：用 `fromisoformat(name)` 时，带标签的名字会解析失败
+        # 而被 `continue` **静默跳过** ⇒ 那些轮次的日志与产物永远不会被清理
+        # （保留期形同虚设，且不会报任何错）。
         try:
-            day = date.fromisoformat(day_dir.name)
+            day = date.fromisoformat(day_dir.name[:10])
         except ValueError:
             continue
         if day >= cutoff:

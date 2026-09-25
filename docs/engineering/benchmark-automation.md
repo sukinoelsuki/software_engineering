@@ -12,8 +12,8 @@
 | --- | --- | --- |
 | `bench/data` 分支 `bench/latest.md` | 最新一轮的一屏摘要 | `git fetch origin bench/data && git show FETCH_HEAD:bench/latest.md` |
 | 同上 `bench/index.json` | 全部轮次的索引（签名、中位数、核时） | 机器读：用于画趋势或做对照 |
-| 同上 `bench/daily/<日期>/report.md` | 该轮的完整报告（含超阈告警） | `git show FETCH_HEAD:bench/daily/2026-09-17/report.md` |
-| 同上 `bench/daily/<日期>/{env,perf,capability}.json` | 环境指纹 / 性能 / 能力 | 逐字段可机读 |
+| 同上 `bench/daily/<轮次 id>/report.md` | 该轮的完整报告（含超阈告警） | `git show FETCH_HEAD:bench/daily/2026-09-17/report.md` |
+| 同上 `bench/daily/<轮次 id>/{env,perf,capability}.json` | 环境指纹 / 性能 / 能力 | 逐字段可机读 |
 | 同上 `.../logs/*.server.log` | 服务端日志（性能数字的**原件**） | 有争议时以它为准 |
 
 **在别的分支上取数**：`git fetch origin bench/data` 即可，不必切分支，
@@ -360,10 +360,19 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 体积量级：约 0.5 MB/轮（压缩前后差异取决于模型产物体积），
 按每日一轮估算约 **15 MB/月**。月度回顾时确认一次即可。
 
-**发布语义（2026-09-17 修正）**：`make bench-publish` 是**合并**——只写入本轮的
-`daily/<日期>/`，索引由 `--merge-into` 按 `round_id` 并入，`latest.md` 覆盖为最新一轮。
+**发布语义（2026-09-17 修正）**：`make bench-publish` 是**合并**——只写入本轮自己的
+`daily/<轮次 id>/`，索引由 `--merge-into` 按 `round_id` 并入，`latest.md` 覆盖为最新一轮。
 **任何情况下都不会删除历史轮次**。早期版本是"整体替换数据子目录"，在 CI 上会删掉
 历史轮次（数据根目录只有本轮），已废弃并被测试钉住。
+
+> ⚠️ **轮次目录名的变化（2026-09-25）**：目录名 = **轮次 id**（`<日期>-<标签>`），
+> 不再是纯日期；09-25 之前发布的历史轮次仍是**纯日期**目录，两者并存、都可读。
+> 起因是一个此前从未触发的覆盖缺陷：按日期命名时，同一天的**第二轮**与第一轮共用目录，
+> 而发布脚本对目标目录是"先删后拷" ⇒ 第一轮的日志与产物被删，且索引里第一轮的
+> `report` 仍指向该目录（**索引指向错报告、原件永久丢失**）。发现时数据分支上正有
+> `2026-09-25-nightly` 一轮（目录内 124 个文件）⇒ 当日那轮"真实发布"被推迟到修复后。
+> 反例已由 `tests/unit/test_bench_store.py` 的三条用例钉住（含一条静态检查，
+> 防止调用点被改回按日期命名）。
 
 > ⚠️ **保留期清理仍未真正生效（2026-09-24 复核，口径更新）**：
 > `BENCH_KEEP_DAYS` 只在**跑轮次**时对**本地数据根**生效，而跑测环境里的
