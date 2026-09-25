@@ -27,12 +27,12 @@ description: 增删改本仓库 .cnb.yml 的 event、stage、endStages、runner�
 | 2 | 阶段脚本的 shell：由镜像 `/bin/sh`（Debian 12 的 dash）执行 ⇒ 用 `set -eu` —— 出处 `.cnb.yml` 头部规则 1、[`benchmark-automation.md`](../../../docs/engineering/benchmark-automation.md) §3「自动触发」提示框与 §7「排障」 | 需要 `pipefail` ⇒ **显式切 bash** 并写清理由；否则不写 `pipefail`（dash 第一行即报错、后续 stage 全不执行） |
 | 3 | 镜像：钉到**发行版**（如 `python:3.12-bookworm`）—— 出处 `.cnb.yml` 头部规则 2 | 用浮动标签 ⇒ 停下（同一配置在不同时间行为不同，且与开发镜像分叉） |
 | 4 | 流水线里的 `make setup` / `make check`：带 `LOCAL_HOOKS=0` —— 出处 `.cnb.yml` 头部规则 3、[`Makefile`](../../../Makefile) 的 `LOCAL_HOOKS` 段 | 不确定它的语义就**不要顺手关**（它是显式开关，不是"可以随便关"）；本地开发机**不带**该开关 |
-| 5 | `build.by`：列全**构建期输入** —— 出处 `.cnb.yml` 的 `vscode` 段与 `bench/*` 各段内联注释 | 新增了构建期文件而未列入 ⇒ 构建**会直接报错**；停下补 `by`，**不要**改 Dockerfile 绕过 |
-| 6 | runner 资源：`cpus: 8` ⇒ 内存 `16 GiB`（内存 = 核数 × 2 GiB）—— 出处 `benchmark-automation.md` §4「参数与预算」、`.cnb.yml` 的 `bench/nightly` 段注释 | 想降到 4 核 ⇒ 停下（L 档常驻约 8.70 GiB，4 核只有 8 GiB 会 OOM）；改前先有资源估算依据 |
+| 5 | `build.by`：列全**构建期输入** —— 出处 `.cnb.yml` 的 `vscode` 段与跑测段（`develop:` 键）内联注释 | 新增了构建期文件而未列入 ⇒ 构建**会直接报错**；停下补 `by`，**不要**改 Dockerfile 绕过 |
+| 6 | runner 资源：`cpus: 8` ⇒ 内存 `16 GiB`（内存 = 核数 × 2 GiB）—— 出处 `benchmark-automation.md` §4「参数与预算」、`.cnb.yml` 的跑测段注释（`develop:` 键） | 想降到 4 核 ⇒ 停下（L 档常驻约 8.70 GiB，4 核只有 8 GiB 会 OOM）；改前先有资源估算依据 |
 | 7 | 基准流水线：`lock` **串行**（`key: bench-cpu`）—— 出处 `benchmark-automation.md` §3、[`ADR-0014`](../../../docs/adr/0014-benchmark-automation.md) §2.1 | 为省时间去掉锁 ⇒ 停下（并发测量会让吞吐数字失去可比性） |
-| 8 | `endStages` 发布：**不得吞错**（不要 `|| echo`）—— 出处 `.cnb.yml` 的 `bench/*` 段注释、`benchmark-automation.md` §7「排障」首行 | 改完先确认"失败会把构建标红"；"绿着但没数据"是最难发现的失败 |
+| 8 | `endStages` 发布：**不得吞错**（不要 `|| echo`）—— 出处 `.cnb.yml` 的跑测段注释、`benchmark-automation.md` §7「排障」首行 | 改完先确认"失败会把构建标红"；"绿着但没数据"是最难发现的失败 |
 | 9 | 改完跑 [`tests/unit/test_cnb_config.py`](../../../tests/unit/test_cnb_config.py) | 该测试报红 ⇒ 修配置，**不要改测试**（它钉住的是历史坑） |
-| 10 | 改完按 `.cnb.yml` 头部注释自问：这次改动会不会让 `bench/nightly` 与 `develop` 分叉 ⇒ 需要同步时见 `benchmark-automation.md` §2「更新基准分支（重要）」 | 只有基准代码 / `.cnb.yml` 变更才需要同步；纯文档提交不必同步（会白跑一轮约 20 分钟） |
+| 10 | 改完测量/跑测代码**不需**"同步基准分支"——跑测**直接跑在 `develop` 上**（版本见 `benchmark-automation.md` §3） | ⚠️ 旧指令"防止 `bench/nightly` 与 `develop` 分叉"**已作废**（该分支与那套机制已于 2026-09-25 取消）；纯文档提交仍**不必**跑测（会白跑一轮约 20 分钟） |
 
 ## 权威源
 

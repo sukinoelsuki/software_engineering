@@ -35,7 +35,8 @@ main        稳定发布线（保护分支，只能通过 PR 合入）
   ——"**跑测发生在主干**"≠"可以往主干提交数据"，两者是两件事。
   ⚠️ **多机器 / 多架构不需要新分支**：在同一 `develop:` 键下加**独立事件名**
   （将来如 `api_trigger_bench_arm64`）+ 对应 `runner.tags` 即可。
-  ⚠️ 遗留远端分支 `test/amd64-8` / `test/keepalive-probe` / `test/quota-probe` **不可删**（D 类）⇒ 已停用。
+  ✅ `test/*` 三条（`test/amd64-8` / `test/keepalive-probe` / `test/quota-probe`）已于 2026-09-25
+  **删除**（所有者授权；删前核实**零独有提交** ⇒ 不丢代码）。探针类实验改挂 `develop` + 独立事件名。
   ⚠️ **环境会在 stages 跑完后自动释放，有 ≈5 分钟延迟**（`keepAliveTimeout` 是**离线宽限期**、
   不是总时长；实测下界 = 一个 5 分钟检查周期，设更小没用 ⇒ 设 **`5m`**）
   ⇒ 成本 ≈ `cpus` × (跑测时长 + 5 min)；**想立刻停**才需要人工关闭。

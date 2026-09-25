@@ -120,7 +120,7 @@
 | 环境来源 | 必然是 `develop` 的 tip ⇒ "与 `develop` 一致"**自动成立**（**无需**任何"快进引用"步骤） |
 | 提交 | 跑测**不改分支结构**：`develop` 本身就是允许直推的工作主干 |
 | 数据出口 | 只有 `bench/data`（经 `make bench` → `scripts/bench/publish.sh`）；大文件走制品库 |
-| 遗留 | `test/amd64-8` / `test/keepalive-probe` / `test/quota-probe` **不可删**（D 类）⇒ 已停用 |
+| 遗留 | ✅ `test/amd64-8` / `test/keepalive-probe` / `test/quota-probe` **已于 2026-09-25 删除**（所有者授权；删前逐条核实"零独有提交" ⇒ 不丢代码）。探针类实验改挂 `develop` + 独立事件名 |
 
 > ⚠️ **为什么取消**：`test/<slug>` 是"以为不能用 CI"时代的遗物——它要求在每个环境分支上
 > 维持"零提交 + 引用新鲜"两条纪律，而"**引用不会自己前进**"会**静默**导致

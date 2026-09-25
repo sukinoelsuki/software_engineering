@@ -462,7 +462,8 @@
     带标签的名字会解析失败并被 `continue` **静默跳过** ⇒ 那些轮次的日志永不被清理（保留期形同虚设）；
   - **发布脚本自带目录名白名单**（`publish.sh` 的 `ROUND_DIR_PATTERN`，防穿越；
     它读的是**目录名**而非参数对象 ⇒ 不依赖上游是否已校验）；
-  - **跑测流水线必须装 dev 依赖**：`test/amd64-8` 段新增 `prepare` 阶段 `make setup LOCAL_HOOKS=0`；
+  - **跑测流水线必须装 dev 依赖**：跑测段（现挂在 `.cnb.yml` 的 `develop:` 键下）新增
+    `prepare` 阶段 `make setup LOCAL_HOOKS=0`；
   - **五条机器检查**（`make check` 内自动跑）：
     `test_bench_store.py` 三条（同日两轮目录不同 / 调用点必须经 `round_dir()`（**静态**）/
     保留期对带标签目录同样生效）+ `test_cnb_config.py` 两条（目录名白名单拒穿越 /

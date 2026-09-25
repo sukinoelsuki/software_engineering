@@ -26,7 +26,7 @@ description: 要跑一轮基准、要看历史数据、要发布数据、要改�
 | 5 | **对照必须在同会话内做** —— 出处 `post-build-checklist.md` §6.4 | 只有跨会话的两个数 ⇒ 停下，不得下"更快 / 更慢"的结论 |
 | 6 | 任何会改变测量口径的改动：提 `PROTOCOL_VERSION` 并记 devlog —— 出处 `benchmark-automation.md` §5「改协议 / 改任务集的正确姿势」 | 口径变了而版本未提 ⇒ 停下（"改进"与"口径变了"将无法区分，旧数据不得与新数据放同一条序列） |
 | 7 | 发布用 `make bench-publish`：**合并**而非替换，且**不得吞错** —— 出处 `benchmark-automation.md` §8「保留期与体积」、§7「排障」 | 本地演练须显式 `DRY_RUN=1 BENCH_ALLOW_LOCAL=1`；**人手不得直接写数据分支**（只由 CI 写） |
-| 8 | 改完测量代码先跑快速自检（S 档小重复），再上全量 —— 出处 `benchmark-automation.md` §2「三条常用命令」 | 快速自检不过 ⇒ 停下，不推 `bench/nightly` |
+| 8 | 改完测量代码先跑快速自检（S 档小重复），再上全量 —— 出处 `benchmark-automation.md` §2「三条常用命令」 | 快速自检不过 ⇒ 停下，**不要**触发正式轮次（`api_trigger_bench`） |
 
 ## 权威源
 

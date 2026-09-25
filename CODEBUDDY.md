@@ -150,8 +150,11 @@ Refs: #<issue>
    ⚠️ 代价：**只能测 `develop` 的 tip**，不能测未合入的提交（要测就先合入）。
    **多机器 / 多架构不需要新分支**：在同一个 `develop:` 键下加一个**独立事件名**
    （将来如 `api_trigger_bench_arm64`）+ 对应 `runner.tags` 即可。
-   ⚠️ **遗留**：`test/amd64-8`、`test/keepalive-probe`、`test/quota-probe` 三条远端分支
-   **不可删**（D 类）⇒ 已停用，**勿再依赖**。
+   ✅ **`test/*` 分支已删除**（2026-09-25，所有者授权）：`test/amd64-8`、`test/keepalive-probe`、
+   `test/quota-probe` 三条**已删**。删前逐条核实过它们"**零独有提交**"（tip 都落在 `develop`
+   的祖先上，原本只是用来拉起容器的指针）⇒ 删除**不丢任何代码**。
+   ⚠️ 由此产生的唯一变化：探针类一次性实验**不再有新开分支这个载体**，
+   同样挂 `develop` 键 + 独立事件名（`api_trigger_probe_*`）。
 2. **测试数据与分析的唯一持久化出口是 `data` 分支**（`bench/data`；只由
    `make bench` → `scripts/bench/publish.sh` 写）；**大文件走制品库**。
    **不许把测试数据推到代码分支**（含 `develop`、`main`）。
