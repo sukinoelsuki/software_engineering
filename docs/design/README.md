@@ -18,8 +18,8 @@ design/
 │   ├── README.md           怎么用 + 方法 + 范围 + 条目总览 + 缺验证/未缓解清单
 │   ├── assets.md           资产与信任边界
 │   ├── execution-and-isolation.md     条目组 A：T-01 / T-02 / T-10 / T-13
-│   ├── untrusted-input-and-agentic.md 条目组 B：T-03 / T-04 / T-05 / T-11 / T-12
-│   └── supply-chain-and-process.md    条目组 C：T-06 / T-07 / T-08 / T-09
+│   ├── untrusted-input-and-agentic.md 条目组 B：T-03 / T-04 / T-05 / T-11 / T-12 / T-15
+│   └── supply-chain-and-process.md    条目组 C：T-06 / T-07 / T-08 / T-09 / T-14
 └── security-model.md       权限/能力模型设计
 ```
 
@@ -85,7 +85,8 @@ T-<序号>：<威胁名称>
 **没有"验证方式"的缓解措施视为未实现**——它是纸面防护，无法证明有效。
 
 > **已落地（2026-09-18）**：上述要求已落成
-> [`threat-model/`](threat-model/README.md)（13 条）。实际条目在必填字段之外
+> [`threat-model/`](threat-model/README.md)（初稿 13 条；**当前 15 条**——
+> `T-14` 于 2026-09-25 新增、`T-15` 于 2026-09-25 新增，**条数与状态的唯一真源是该目录 `README.md` §4/§4.1**）。实际条目在必填字段之外
 > **另加三个字段**，把"纸面防护"与"已生效防护"区分开：
 > **`状态`**（已缓解并验证 / 部分缓解 / 未缓解，定义见该目录 `README.md` §4.1）、
 > **`攻击者与前提`**（谁能做什么才有机会——没有前提的攻击路径是幻想）、
