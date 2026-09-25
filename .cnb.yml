@@ -59,7 +59,11 @@
 #      （定时不等人、不看当天有没有别的事）。
 #   6. **跑测有两个入口**：① 自动化 `api_trigger_bench`（本文件末尾，按分支键分派机器）；
 #      ② 人工 `make bench`（在 `vscode` 环境里；入口在 Makefile，实现在
-#      `scripts/bench/run.sh`）。⚠️ **四道可信闸门不随承载变化而消失**——
+#      `scripts/bench/run.sh`）。⚠️ 两个入口都**必须先有 dev 依赖**：
+#      自动化的 `prepare` 阶段跑 `make setup`，人工入口依赖 `vscode` 环境里已跑过它。
+#      **缺了它不会报错**——能力判定用的 `mypy` 缺失 ⇒ 通过率**恒为 0%**
+#      （2026-09-25 实测：`sn=cnb-8g5-1k3avbsr4` 因此发出了一条 0% 的轮次）。
+#      ⚠️ **四道可信闸门不随承载变化而消失**——
 #      它们从"流水线的 stage 结构"**迁移为脚本里的断言**，判据不变。
 #      闸门清单（KV 重启 / token≥32 且计时行 3 条 / 只暴露中位数+极差 / 入库前 schema 校验）
 #      见 docs/research/2026-09-24-ci-consumption-summary.md §5.2。
@@ -380,6 +384,19 @@ test/amd64-8:
         key: bench-cpu
         wait: true
       stages:
+        - name: prepare
+          script: |
+            set -eu
+            # ⚠️ 这一步不能省（2026-09-25 实测教训，sn=cnb-8g5-1k3avbsr4）：
+            # 能力判定要跑 `mypy --strict`，而 `mypy` 属于
+            # `[project.optional-dependencies].dev`，**只有 `make setup` 会装**
+            # （`uv sync --extra dev --extra security`）。缺了它的症状是**静默**的：
+            # 每个任务的 `mypy_rc=1`（No module named mypy）⇒ **能力通过率恒为 0%**，
+            # 而四道闸门全过、构建全绿、报告 §4 还写着"无告警"——典型坏数据。
+            # 归档的 `bench/nightly` 各段都有这一步；本次重构漏掉了它。
+            # 判据由 tests/unit/test_cnb_config.py 钉住。
+            make setup LOCAL_HOOKS=0
+
         - name: run
           script: |
             set -eu

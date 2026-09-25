@@ -451,6 +451,46 @@ def test_bench_pipelines_declare_vscode_service_to_stay_in_dev_bucket() -> None:
 
 
 @pytest.mark.unit
+def test_bench_pipelines_install_dev_dependencies_before_running() -> None:
+    """跑测流水线必须先 `make setup`（早于 `make bench`）：否则能力读数**恒为 0%**。
+
+    2026-09-25 实测（`sn=cnb-8g5-1k3avbsr4`）：`api_trigger_bench` 的 `run` 阶段直接跑
+    `make bench`，而 `mypy` 属于 `[project.optional-dependencies].dev`、**只有 `make setup`
+    会装**（`uv sync --extra dev --extra security`）。缺它的症状是**静默**的：
+
+    * 评测里每个任务的 `mypy_rc=1`（`No module named mypy`）⇒ **能力通过率恒为 0%**；
+    * 四道闸门**全部通过**（它们管 KV / 计时行 / 暴露面 / schema，不管评测工具链）；
+    * 构建**全绿**、报告 §4 还写着"无告警"。
+
+    ⇒ 唯一能挡住它的是"配置里有没有这一步"和"顺序对不对"。归档的 `bench/nightly` 各段
+    都有 `prepare: make setup`，本次重构（`423f659`）漏掉了它——因此把判据钉在这里。
+    """
+    blocks = _bench_pipeline_blocks()
+
+    assert blocks, f"应当至少有一条跑测流水线（事件名 `{_BENCH_EVENT}`）"
+    for block in blocks:
+        # ⚠️ 只看**可执行行**：本流水线的注释里就写着 "make setup"，
+        # 用 `block.find(...)` 会命中注释 ⇒ 整条检查变成**恒过**
+        # （2026-09-25 变异探针实测：删掉命令、只留注释时它照样通过）。
+        commands = [line.strip() for line in block.splitlines() if not line.strip().startswith("#")]
+        setup_at = next(
+            (index for index, line in enumerate(commands) if line.startswith("make setup")),
+            None,
+        )
+        bench_at = next(
+            (index for index, line in enumerate(commands) if line.startswith("make bench")),
+            None,
+        )
+
+        assert setup_at is not None, (
+            "跑测流水线必须跑 `make setup`：缺 dev 依赖时 `mypy --strict` 不可用，"
+            "能力通过率会**静默**变成 0%（四道闸门与构建状态都看不出异常）"
+        )
+        assert bench_at is not None, "跑测流水线应当调用 `make bench`"
+        assert setup_at < bench_at, "`make setup` 必须早于 `make bench`（顺序反了等于没装）"
+
+
+@pytest.mark.unit
 def test_runner_tags_are_limited_to_machines_that_actually_exist() -> None:
     """`runner.tags` 只能是**有真机、且有额度**的架构（ADR-0025 §2.7）。
 

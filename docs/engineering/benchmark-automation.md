@@ -83,6 +83,13 @@ make bench-verify-assets
 | `make bench`（人工） | 在 `vscode` 环境里执行 | 同上 | 日常开发、顺手跑 |
 | `make bench BENCH_TIERS=S BENCH_REPEATS=3` | 同上 | S × R=3 | 改完测量代码自检（约 3 分钟） |
 
+> ⚠️ **两个入口都要求"先装 dev 依赖"**（`make setup`）。自动入口的 `prepare` 阶段跑它，
+> 人工入口依赖 `vscode` 环境里已经跑过。**缺了它不会报错**：能力判定要跑 `mypy --strict`，
+> 而 `mypy` 只在 `[project.optional-dependencies].dev` 里 ⇒ 每个任务的 `mypy_rc=1`
+> ⇒ **能力通过率恒为 0%**，同时四道闸门全过、构建全绿、报告写着"无告警"
+> （2026-09-25 实测：`sn=cnb-8g5-1k3avbsr4` 因此发出了一条 0% 的轮次）。
+> 判据由 `tests/unit/test_cnb_config.py::test_bench_pipelines_install_dev_dependencies_before_running` 钉住。
+
 **机器按分支名分派**：`.cnb.yml` 用**精确分支键**（`test/amd64-8`、`test/arm64-8`…）
 声明各自的 `runner.tags` / `runner.cpus` ⇒ **分支上仍零提交**，配置集中在 `develop`。
 
@@ -349,6 +356,7 @@ curl -s -H "Authorization: Bearer $CNB_TOKEN" -H 'accept: application/json' \
 | 任务一直"无输出"被杀 | 单任务无输出超时（默认 10 分钟） | 轮次是逐请求打日志的，正常情况下不会触发；若触发，查是不是卡在模型下载/镜像拉取 |
 | 定时任务完全不触发 | 分支名/权限/负责人变更 | **已不适用**（2026-09-24 起不再有定时任务，见 ADR-0023）；保留原文作为历史 |
 | `make bench` 报 `[gate ...][FAIL]` | 该轮产出不满足四道闸门之一 | **不要放行**。按闸门号对照 §2 的表定位：① 有残留进程或某次重复被丢弃；② 计时行数≠3 或 token<32；③ 索引里混进单次采样；④ schema 校验不过。修的是**原因**，不是闸门 |
+| **能力通过率恒为 0%**，而性能、闸门、构建状态全正常 | 缺 dev 依赖：评测要跑 `mypy --strict`，而 `mypy` 只在 `[project.optional-dependencies].dev` 里，**只有 `make setup` 会装**。症状是每条判定 `mypy_rc=1` / `No module named mypy`（在 `daily/<轮次 id>/capability.json` 里可逐条核对） | 跑测前先 `make setup`（自动入口已固化为 `prepare` 阶段）。⚠️ **不要**把 0% 当作"模型能力"写进任何结论 |
 
 ## 8. 保留期与体积
 
