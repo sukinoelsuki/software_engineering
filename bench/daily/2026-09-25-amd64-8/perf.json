@@ -4,42 +4,42 @@
       "repeats": 3,
       "prefill_tok_per_s": {
         "n": 3,
-        "median": 121.6767,
-        "min": 121.14,
-        "max": 122.25,
-        "spread_pct": 0.91,
+        "median": 109.5,
+        "min": 109.36,
+        "max": 109.8067,
+        "spread_pct": 0.41,
         "values": [
-          121.14,
-          121.6767,
-          122.25
+          109.36,
+          109.8067,
+          109.5
         ]
       },
       "gen_tok_per_s": {
         "n": 3,
-        "median": 27.2367,
-        "min": 27.1133,
-        "max": 27.6333,
-        "spread_pct": 1.91,
+        "median": 26.5633,
+        "min": 26.53,
+        "max": 26.84,
+        "spread_pct": 1.17,
         "values": [
-          27.6333,
-          27.1133,
-          27.2367
+          26.53,
+          26.84,
+          26.5633
         ]
       },
       "request_elapsed_s": {
         "n": 3,
-        "median": 46.5443,
-        "min": 46.4546,
-        "max": 46.5757,
-        "spread_pct": 0.26,
+        "median": 48.503,
+        "min": 48.203,
+        "max": 48.6157,
+        "spread_pct": 0.85,
         "values": [
-          46.5443,
-          46.5757,
-          46.4546
+          48.6157,
+          48.203,
+          48.503
         ]
       },
       "load_seconds": 1.25,
-      "load_spread_pct": 0.32,
+      "load_spread_pct": 0.29,
       "model_load_seconds_log": null,
       "peak_memory_gib": 2.67,
       "valid_prefill_repeats": 3,
