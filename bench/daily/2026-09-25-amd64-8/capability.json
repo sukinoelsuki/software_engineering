@@ -1,0 +1,150 @@
+{
+  "capability": {
+    "S": {
+      "round_pass_rate": 0.0,
+      "tasks": {
+        "t1": {
+          "passed": 0,
+          "n": 3,
+          "rate": 0.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 1,
+              "mypy_tail": "/workspace/.venv/bin/python: No module named mypy",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            },
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 1,
+              "mypy_tail": "/workspace/.venv/bin/python: No module named mypy",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            },
+            {
+              "task": "t1",
+              "passed": false,
+              "fenced": true,
+              "missing_annotations": [],
+              "mypy_rc": 1,
+              "mypy_tail": "/workspace/.venv/bin/python: No module named mypy",
+              "behavior_rc": 0,
+              "behavior_ok": true
+            }
+          ]
+        },
+        "t2": {
+          "passed": 0,
+          "n": 3,
+          "rate": 0.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t2",
+              "passed": 0,
+              "fenced": true,
+              "pytest_rc": 1,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": "/workspace/.venv/bin/python: No module named pytest"
+            },
+            {
+              "task": "t2",
+              "passed": 0,
+              "fenced": true,
+              "pytest_rc": 1,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": "/workspace/.venv/bin/python: No module named pytest"
+            },
+            {
+              "task": "t2",
+              "passed": 0,
+              "fenced": true,
+              "pytest_rc": 1,
+              "failed": 0,
+              "errors": 0,
+              "no_tests": 0,
+              "tail": "/workspace/.venv/bin/python: No module named pytest"
+            }
+          ]
+        },
+        "t3": {
+          "passed": 0,
+          "n": 3,
+          "rate": 0.0,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "verdicts": [
+            {
+              "task": "t3",
+              "passed": false,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 1,
+              "delivered_counts": {
+                "passed": 0,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": false,
+              "killed_mutant": false
+            },
+            {
+              "task": "t3",
+              "passed": false,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 1,
+              "delivered_counts": {
+                "passed": 0,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": false,
+              "killed_mutant": false
+            },
+            {
+              "task": "t3",
+              "passed": false,
+              "fenced": true,
+              "delivered_importable": true,
+              "delivered_rc": 1,
+              "delivered_counts": {
+                "passed": 0,
+                "failed": 0,
+                "errors": 0,
+                "no_tests": 0
+              },
+              "assertions_ok": false,
+              "killed_mutant": false
+            }
+          ]
+        }
+      }
+    }
+  }
+}
