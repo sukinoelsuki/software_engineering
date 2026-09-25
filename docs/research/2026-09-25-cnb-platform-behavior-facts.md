@@ -77,6 +77,7 @@ stages **完整跑完、未被中断**（`[probe2] t+0min / t+1min / stages-done
 | --- | --- | --- | --- | --- |
 | E2（1 核） | `1m` | 07:22:39 | 07:27:39 | **+5m** |
 | E3（**8 核**，真实跑测） | `5m` | 07:45:06 | 07:50:06 | **+5m**（8 核同样成立） |
+| 真实发布轮（**8 核**，`sn=cnb-til-1k3b07aqj`） | `5m` | — | — | `BeforeEnd` 阶段 **304 s ≈5m**（8 核上第三次成立） |
 | E1（1 核） | `20m` | 06:31:45 | 06:51:45 | **+20m**（精确） |
 
 ✅ **E3 是端到端演练**（`sn=cnb-obc-1k3aslg93`，8 核，真实跑 `make bench`）：
@@ -218,6 +219,11 @@ Missing required scopes: account-engage:rw
 | 4 | 不声明 `runner.cpus` ⇒ 按**默认 8 核**计费（1 核能干的活会贵 8 倍） | 📄 build-node.md |
 | 5 | `sandbox: true` 会让 `CNB_TOKEN` 失效 ⇒ 与"需要令牌发布"冲突 | 📄 grammar.md |
 | 6 | `lock` 在 Pipeline / Stage / Job 三级都可用 ⇒ 并发控制可以做**机制**而非纪律 | 📄 grammar.md |
+| 7 | **`--sha` 不能跨分支**：git-clone **只 fetch `--branch` 指定的 ref**，随后 `git checkout <sha>` ⇒ 该提交必须在**该分支上可达**，否则 `fatal: reference is not a tree`（退出码 128，Prepare 阶段失败）。⇒ 想验证"某个提交"必须让环境分支**快进**到它 | ✅ `sn=cnb-k12-1k3av99mv`（2026-09-25） |
+| 8 | **开发节点机型不固定**：同一 `runner.tags`（`cnb:arch:amd64`）可落在不同 CPU 型号（历史 8 轮 `AMD EPYC 9754 128-Core`，本轮 `AMD EPYC 9K65 192-Core`）⇒ 跨轮可比性**只能**靠签名（本项目 `comparison_signature` 含 `cpu_model`），**不得**假定"自动化环境每次同机" | ✅ `sn=cnb-til-1k3b07aqj` 的 `env.json.runner.cpu_model` |
+| 9 | **镜像缓存看日志才知**：`local image cache miss` → `docker pull …/dockerfile-caches:<内容哈希>` → `remote image cache hit`。`.ide/Dockerfile` 与其 `build.by` 输入不变时**不重建**；Prepare 耗时随缓存位置在 **14 s ~ 4.6 min** 之间波动 | ✅ `sn=cnb-8g5-1k3avbsr4`（4.6 min）与 `sn=cnb-til-1k3b07aqj`（14 s） |
+| 10 | **构建级核时可对账**：`get-build-status` 的 `metricCoreHours` 与组织 `charge get-volume` 的 `dev_in_sec` 增量可交叉核对（本次 1.63 + 1.08 = **2.71**，组织同期 +**2.70**） | ✅ 2026-09-25 |
+| 11 | **`stop-build` 能停掉尚未开跑的构建**：`status: cancel`，`run` 未开始 ⇒ **无产物落库**（发现配置不对时的止损手段） | ✅ `sn=cnb-01p-1k3b06kbh`（2026-09-25） |
 
 ---
 

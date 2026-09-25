@@ -120,7 +120,7 @@
 | V3 | 保留期对"带标签目录"同样生效 | 同文件 `::test_prune_daily_also_cleans_round_id_named_dirs` | ✅ 落地 |
 | V4 | 目录名白名单拒绝穿越写法 | `tests/unit/test_cnb_config.py::test_publish_script_whitelists_round_dir_names` | ✅ 落地 |
 | V5 | 变异探针：把三处改回旧写法，V1~V3 **逐一失败** | 一次性变异 3 处 ⇒ `3 failed`（1:1 对应） | ✅ 实测 |
-| V6 | **真实发布**后，历史轮次目录逐字保留、新轮次落在自己的目录 | 触发 `api_trigger_bench`（`test/amd64-8`）后核对 `bench/data` 的树与 `index.json` | ⏳ 本轮执行 |
+| V6 | **真实发布**后，历史轮次目录逐字保留、新轮次落在自己的目录 | 触发 `api_trigger_bench`（`test/amd64-8`）后核对 `bench/data` 的树与 `index.json` | ✅ **已完成**（`sn=cnb-8g5-1k3avbsr4`：`git diff fffe8ec..0ac255c` **只有新增无删除**；`daily/2026-09-25/` 仍 124 个文件；新轮次落在 `daily/2026-09-25-amd64-8/`。详见 devlog 0024 §4.1） |
 
 ## 8. 后续行动
 
@@ -129,5 +129,5 @@
 - [x] `publish.sh`：目录名白名单 + 注释说明（`LATEST_DAY` → `LATEST_ROUND`）
 - [x] 运行手册 §1/§8 更新（两种目录形态并存）
 - [x] 用例 V1~V4 + 变异探针 V5
-- [ ] V6：真实发布一轮并核对（同一次提交后的跑测）
+- [x] V6：真实发布一轮并核对（`sn=cnb-8g5-1k3avbsr4`，见 §7；证据落 devlog 0024 §4.1）
 - [ ] 是否新增 `A-4` 对应的 `T-*` 条目：**待所有者裁决**
