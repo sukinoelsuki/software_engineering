@@ -23,6 +23,62 @@
 - **本文件不重抄命令**：命令真源是 `product-handbook.md`。这与 `product-walkthrough.md` §0 的
   分工是同一条理由——本项目的重复失效模式是"**同一事实两处表述 ⇒ 必然漂移**"。
   本文只写"**指向哪一节 + 看什么 + 为什么**"。
+  ⚠️ **但"不重抄"不等于"不指路"**：凡讲到的原理都要**当场给出可自取的资料入口**（见 §0.2）。
+- **修订**：2026-09-26 —— 新增 **§0**（带读约定 + 资料索引，源自所有者当天的反馈）；
+  §6 恢复点改为"**下次会话从头开始**"。§1~§5 的内容未改。
+
+---
+
+## 0. 带读约定与资料索引（2026-09-26 所有者提出，后续会话一律遵守）
+
+> 本节是**带读方式的改进**，不是规范、也不是新真源。落在文件里唯一的原因是：
+> 云环境**重启即清空上下文**，不写下来下次会话就会退回到所有者明确不满意的那种讲法。
+
+### 0.1 命令必须带**关键**注释
+
+| 要 | 不要 |
+| --- | --- |
+| 每条命令 / 每个关键参数**一行短注释**：它在做什么、**为什么需要它** | 只贴命令不解释——所有者看结果能猜到在查什么，**但命令本身读不懂** |
+| 注释写**意图**（为什么） | 长篇教程式注释（那不如直接读手册，且拖长会话） |
+
+口径同 [`CODEBUDDY.md`](../../CODEBUDDY.md) §4：「只解释'为什么'，不解释'是什么'」。
+**判据**：所有者照着注释念一遍，能说清这条命令在干什么——**而不是**只知道"跑完会出什么"。
+
+### 0.2 讲到的每个原理都要**指明可自取的资料入口**
+
+- 凡讲解中出现的原理 / 机制 / 设计取舍，**当场给出去哪一节看原文**（`文件路径 + 小节号`），
+  **不要只在对话里讲一遍**。
+- 理由（所有者原话的意思）：能自己查到的简单原理/信息，**指个路就行**；
+  否则每处都得回头问助手，**反复咨询会拖慢对话效率**。
+- ⚠️ **与开头的"不重抄"不矛盾，反而是同一取向的两面**：**不重抄 ≠ 不指路**——
+  本文负责"**指向哪一节 + 看什么**"，原文一律留给真源。
+- 若某点**仓库里确实没有**（例如上游 `llama.cpp` 的 `print_timing` 字段含义），
+  必须**明说"仓库内无记载"**，并给出外部入口，**不得**编造出处。
+
+### 0.3 资料索引（想深入某一点，直接查这里）
+
+| 你可能想问 | 去哪看（真源） |
+| --- | --- |
+| 分层 / 模块边界 / 依赖方向 `R1`~`R5` | [`architecture.md`](../design/architecture.md) §1.1（分层图）、§4（实现状态+依据）；[`ADR-0015`](../adr/0015-layering-and-reuse-boundary.md) |
+| 字段级契约（事件 / 审计 / 策略 / 工具 / 模型） | [`interfaces/README.md`](../design/interfaces/README.md) 为总索引，细则在 `harness.md` / `policy.md` / `audit.md` / `tools.md` / `model.md` |
+| 退出码 `0`~`5` 各是什么 | [`interfaces/harness.md`](../design/interfaces/harness.md) §5.2（表）；逐码排障 [`product-handbook.md`](product-handbook.md) §4.1 |
+| 为什么配错是 `3`、审计失败是 `4` | [`interfaces/harness.md`](../design/interfaces/harness.md) §5.2 + §2.9（错误面表）；[`product-walkthrough.md`](product-walkthrough.md) 阶段 1/2 的 ④ 栏 |
+| 工具调用的**六步决策序列** | [`interfaces/harness.md`](../design/interfaces/harness.md) §3.3；代码 `src/agent_sec_perf/harness/loop.py` 的 `_handle_tool_call` |
+| `allow`/`requires_confirmation` 四格、`1b` 类型检查 | [`interfaces/policy.md`](../design/interfaces/policy.md) §2.4、§2.5 |
+| 审计落盘白名单 / `emit` 失败为什么必须冒泡 | [`interfaces/audit.md`](../design/interfaces/audit.md) §2.4、§2.5、§2.6 |
+| 审计每行的字段层级 / 怎么回放 | [`interfaces/audit.md`](../design/interfaces/audit.md) §2.3；[`product-handbook.md`](product-handbook.md) §3 舞台 3 |
+| 不可信内容允许出现在哪四处（`I8`） | [`interfaces/harness.md`](../design/interfaces/harness.md) §2.2（`I8` 澄清表） |
+| 领域包怎么写 / 有哪些合法键 / 失败模式 | [`interfaces/harness.md`](../design/interfaces/harness.md) §4.2、§4.3、§4.4；示例 [`pack.toml`](../../examples/packs/coding-readonly/pack.toml)；[`examples/README.md`](../../examples/README.md) |
+| 档位裁剪、`not_exposed` vs `unknown_tool` | [`interfaces/harness.md`](../design/interfaces/harness.md) §3.1、§7.1；[`interfaces/tools.md`](../design/interfaces/tools.md) §2.6（`T6` 裁决） |
+| 威胁模型当前状态（哪条缓解了） | [`threat-model/README.md`](../design/threat-model/README.md) §4.1（**唯一真源**）、§5、§8.2 |
+| 安全基线（写码前四问、豁免两步写） | [`SECURITY.md`](../../SECURITY.md)；[`.codebuddy/rules/`](../../.codebuddy/rules/) |
+| 测试怎么分层 / 真模型用例怎么跑 | [`testing-strategy.md`](testing-strategy.md) §2、§8 |
+| 门禁由哪些目标组成 | [`Makefile`](../../Makefile) 的 `check` / `security` / `test-security` 目标（含注释）；摘要见 [`product-walkthrough.md`](product-walkthrough.md) 阶段 1 的 ③ 栏 |
+| 阶段式跑测的执行顺序与设计取舍 | [`product-walkthrough.md`](product-walkthrough.md)（每阶段的 ①~④ 四栏） |
+| 产品能 / 不能做什么 | [`product-handbook.md`](product-handbook.md) §1.3、§1.4、§6 |
+| 分支模型 / 提交规范 / 远端授权分级 A~F | [`git-workflow.md`](git-workflow.md) §4、§6；[`ADR-0013`](../adr/0013-branch-model-for-solo-dev.md) |
+| 里程碑判据 / 版本与发布口径 | [`sdlc.md`](sdlc.md) §3；[`ADR-0019`](../adr/0019-release-and-version-policy.md) |
+| 当前活待办（唯一任务清单） | [`docs/devlog/`](../devlog/) **最新一篇的 §7**；重拾语境的四步见 [`devlog/README.md`](../devlog/README.md) |
 
 ---
 
@@ -302,7 +358,7 @@ stdout **空**（装配期故障不进事件流）· **秒级**（模型没起�
 
 ---
 
-## 6. 恢复点（**下次会话从这里开始**）
+## 6. 恢复点（**下次会话从这里开始，且要从头开始**）
 
 > 读到这里就够了；接 `docs/devlog/` 最新一篇的 §7，并执行"重拾语境"四步
 > （`docs/devlog/README.md` §重拾语境）。
@@ -311,19 +367,46 @@ stdout **空**（装配期故障不进事件流）· **秒级**（模型没起�
 
 | 项 | 状态 |
 | --- | --- |
-| 带读 **R1**（本文 §1~§3） | ✅ **已讲完并落盘** |
+| 带读 **R1**（本文 §1~§3） | ✅ 已讲完并落盘；⚠️ 但所有者 2026-09-26 要求**下次会话重走一遍**（见 §6.1） |
+| **带读约定（§0）** | ⬜ **新增，尚未在任何一次带读中生效** |
 | 带读路线图 R2~R5（§4） | ✅ 已排定；所有者确认 **R2 与 R3 都要学** |
 | **阶段 1（门禁）** | ⬜ **命令已给出，未执行** |
 | **阶段 2（装配期拒绝）** | ⬜ **命令已给出，未执行** |
 | 阶段 3（真模型多步会话） | ⬜ 未开始 |
 | 阶段 4（审计回放）/ 阶段 5（默认拒绝）/ 阶段 6（收尾核对） | ⬜ 未开始 |
 
+### 6.1 下次会话的执行顺序（**从头开始**）
+
+所有者 2026-09-26 的决定：**下次会话把学习过程重新走一遍**。
+⚠️ **理由不要读错**——不是"R1 讲错了"，而是**让 §0 的两条约定从第一句起就生效**：
+上一轮的讲法里命令没有注释、原理没有资料入口，重走一遍才能对照出差别。
+
+顺序（助手按此执行，不得跳步）：
+
+1. **先读 §0**（带读约定 + 资料索引），并按 §0.1 / §0.2 组织后面的每一次讲解；
+2. **R1 复述**（§1~§3）：讲一处就**指一处**资料入口（§0.3）；
+3. **阶段 1**（环境与门禁）：命令真源 `product-handbook.md` §2.1 + §3 **舞台 0**
+   —— 由助手给出**带关键注释**的命令，**所有者亲自敲**，把**原始输出（含退出码与 stderr）贴回**；
+4. **阶段 2**（装配期拒绝）：命令真源 `product-handbook.md` §3 **舞台 1** —— 同上；
+5. 对照 §5.1 / §5.2（含 §5.2 的**九跳调用链**）讲完，再进**阶段 3**。
+
+⚠️ **助手硬边界（每个阶段都适用）**：**不替跑、不猜输出**；输出与文档"怎么看"不符 ⇒ **先停下**，
+不要自行改参数"试到绿"（`product-walkthrough.md` §0.2）。
+
+⚠️ **一处口径更正（2026-09-26）**：上一版的可复制话术把两个阶段的出处写成"§2.1 / §3 舞台 1"，
+**不符合本文 §5.1 / §5.2 的分列** ⇒ 正确对应是
+**阶段 1 = §2.1 + §3 舞台 0**、**阶段 2 = §3 舞台 1**。
+
 **续上的第一句话**（可直接复制）：
 
 ```text
-按 docs/engineering/product-onboarding-notes.md §6 续上。
-先跑【阶段 1 + 阶段 2】（命令在 product-handbook.md §2.1 / §3 舞台 1），
-我把原始输出（含退出码与 stderr）贴回；你不要替我跑、不要替我猜输出。
+按 docs/engineering/product-onboarding-notes.md §6.1 从头开始。
+先读 §0（带读约定 + 资料索引）并照它执行：给我的每条命令都要带关键注释，
+讲到的每个原理都要指明可自取的资料入口（文件 + 小节）。
+然后复述 R1（§1~§3），再让我跑【阶段 1 + 阶段 2】
+（阶段 1 = product-handbook.md §2.1 + §3 舞台 0；阶段 2 = §3 舞台 1）。
+命令我自己敲，我把原始输出（含退出码与 stderr）贴回；你不要替我跑、不要替我猜输出。
+不要自行改参数重试；不符就停下。
 跑完对照 product-onboarding-notes.md §5 的要点讲，然后进入阶段 3。
 ```
 
