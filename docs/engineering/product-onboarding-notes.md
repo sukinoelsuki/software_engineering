@@ -26,6 +26,9 @@
   ⚠️ **但"不重抄"不等于"不指路"**：凡讲到的原理都要**当场给出可自取的资料入口**（见 §0.2）。
 - **修订**：2026-09-26 —— 新增 **§0**（带读约定 + 资料索引，源自所有者当天的反馈）；
   §6 恢复点改为"**下次会话从头开始**"。§1~§5 的内容未改。
+- **修订**：2026-09-28 —— 新增 **§0.4 术语表** 与 **§0.5 图索引**（源自所有者"复述看不懂、
+  里面的名词不知道在干什么、项目应该有画图的办法"的反馈）；**§6.1 的切入点随之改为
+  "先看 §0.4 / §0.5，再照着图复述 R1"**。§1~§5 的内容仍未改（保持 2026-09-26 的原貌）。
 
 ---
 
@@ -79,6 +82,72 @@
 | 分支模型 / 提交规范 / 远端授权分级 A~F | [`git-workflow.md`](git-workflow.md) §4、§6；[`ADR-0013`](../adr/0013-branch-model-for-solo-dev.md) |
 | 里程碑判据 / 版本与发布口径 | [`sdlc.md`](sdlc.md) §3；[`ADR-0019`](../adr/0019-release-and-version-policy.md) |
 | 当前活待办（唯一任务清单） | [`docs/devlog/`](../devlog/) **最新一篇的 §7**；重拾语境的四步见 [`devlog/README.md`](../devlog/README.md) |
+
+### 0.4 术语表（看不懂名词时先查这里）
+
+> 2026-09-28 新增。**起因**：所有者明确反馈"全产品复述基本看不懂，里面太多概念和细节，
+> 比如装配期中间基本每一步都不懂、里面的名词不知道在干什么"。
+> ⇒ 上一轮的讲法有一处硬伤：**术语出现时没有当场定义**。本节就是补这个洞。
+> ⚠️ 本节仍是**指针**，不是真源：每条只给一句话 + 到哪里看原文（`文件 + 小节`）。
+
+**A. 装配期（起模型之前的那一段）**
+
+| 名词 | 一句话 | 真源 |
+| --- | --- | --- |
+| **装配期** | 把"配置 → 审计落点 → 授予能力 → 审计 sink → 策略引擎 → 工具注册表 → 模型客户端"逐段建好并接起来的那一段；**此时模型还没启动**，失败 ⇒ 退出码 `3` | `architecture.md` §5.1（7 步表） |
+| **领域包**（domain pack） | 一个**只含声明**（TOML）的目录：声明暴露哪些工具、需要哪些能力、风险等级、提示片段、输出格式；**只能收窄能力，绝不扩权**；目录内出现 `.py`/`.pyc`/`__pycache__` 即拒绝加载 | `interfaces/harness.md` §4.2~§4.4；`examples/README.md` |
+| **能力**（`Capability`） | 授权的**最小单位**，只有 4 个：`read_file` / `write_file` / `execute_command` / `network_outbound` | `interfaces/policy.md` §2.1 |
+| **授予**（`granted`） | **人**在配置里显式写下的能力集合；默认是**空集**（default-deny 的第一条约束） | `security/capabilities.py::CapabilitySet` |
+| **能力收窄**（`narrow_granted`） | `授予 ∩ 领域包声明`（交集）⇒ 结果**只会变小** | `security/capabilities.py::narrow_granted` |
+| **允许根**（`--allowed-root`） | 路径白名单的"根"；所有路径**先 resolve（展开 `..` 与符号链接）再判是否落在某个根内** | `foundation/paths.py::resolve_within` |
+| **策略引擎**（`PolicyEngine`） | 把"这一次调用要不要放行"算成**一个决策对象**；它是 `frozen dataclass` ⇒ **构造之后再收窄能力不会生效** | `security/policy.py` |
+
+**B. 一次任务（运行期）**
+
+| 名词 | 一句话 | 真源 |
+| --- | --- | --- |
+| **工具调用**（`ToolCallRequest`） | 模型请求执行某个工具；其中 `arguments_json` 是**原始 JSON 文本——不可信、尚未解析** | `interfaces/tools.md` §2.1 |
+| **暴露集合 / 解析域** | 本会话**允许模型看见**的工具名集合（由裁剪产生，只收窄不放大） | `interfaces/harness.md` §3.1 |
+| **`not_exposed` / `unknown_tool`** | 前者 = **我们把它裁掉了**（在注册表里、但不在暴露集合）；后者 = **模型幻觉**（两边都没有） | `interfaces/tools.md` §2.6（`T6` 裁决） |
+| **决策四格** | `allow` × `requires_confirmation` 的四种组合：放行 / 须人工确认 / 可升级拒绝 / 硬拒绝 | `interfaces/policy.md` §2.4 |
+| **硬拒绝 vs 可升级拒绝** | `False/False`（**不给任何人工通道**）vs `False/True`（可经人工确认继续；**只有"求值失败"走这条**） | `architecture.md` §5.3 |
+| **审批门**（`ApprovalGate`） | 交互模式下的确认通路；**非交互模式显式传 `None`** ⇒ 需确认的调用一律拒绝，且**不产** `APPROVAL_RESULT`（"没有人被问过"，伪造用户拒绝会让审计撒谎） | `interfaces/harness.md` §2.5.5 |
+| **事件流**（`SessionEvent`） | 运行期对外可见的事实序列，**一行一个事件**；`seq` 必须从 `0` 起连续（空洞 ⇒ 缺陷） | `interfaces/harness.md` §2.1 |
+
+**C. 记录面与门禁**
+
+| 名词 | 一句话 | 真源 |
+| --- | --- | --- |
+| **审计**（audit） | 只追加的证据面（JSONL）；kind 有 `tool_call` / `policy_decision` / `approval` 等；落在**仓库之外**的用户状态目录 | `interfaces/audit.md` §2.2、§2.3 |
+| **`event_id` / `audit_id` / `call_id` / `session_id`** | 证据与事件之间的**显式关联键**——靠它们对齐，**不靠时间戳猜** | `interfaces/harness.md` §1.2 |
+| **`flush()` = `fsync`** | 强持久化点（幂等） | `architecture.md` §5.2（`AuditEvent` 行） |
+| **fail-secure / fail-open** | 失败时**拒绝**（安全）vs 失败时**放行**（危险）；本项目的取向见"写码前四问"第 4 问 | `SECURITY.md` |
+| **门禁**（`make check`） | 六步本地检查 `hooks-check → format-check → lint → typecheck → test → security`；`hooks-check` 排最前是**刻意**的——本地防线没装时**立刻**失败 | `Makefile` 的 `check` 目标 |
+| **新容器的第一件事** | 每个**新容器/重启后**都要跑一次 `make setup`（装依赖 extra + git 钩子）；否则 `make check` 必挂在 `hooks-check`、`make test-security` 报 `Failed to spawn: pytest` | `Makefile` 的 `setup` 目标；`product-handbook.md` §2.1 的注 |
+
+### 0.5 图索引（**先看图，再读文字**）
+
+> 2026-09-28 新增。**同上起因**，另一处硬伤：上一轮**只讲文字、没指图**。
+> 事实是：本仓库**已经在用 Mermaid 画图**（11 份文档含图），且按规范**就地画在权威源旁边**
+> （`diagram-conventions.md` §3.2 的决策树）——**不需要新造一套画图工具**。
+
+| 你想搞懂 | 去看这张图（图型） | 在哪 |
+| --- | --- | --- |
+| **谁能依赖谁**（分层边界） | 分层与依赖方向（`flowchart`） | `architecture.md` §1.1 |
+| 跑在哪、有哪些进程 / 文件、什么进出 | 部署形态（`flowchart LR`） | `architecture.md` §1.2 |
+| **一次运行的整体调用顺序**（主流程） | 一次任务时序图（`sequenceDiagram`） | `architecture.md` §5.2 |
+| **什么情况会被拒、拒到什么程度**（default-deny 全貌） | 被拒绝的路径（`flowchart TD`） | `architecture.md` §5.3 |
+| **一次工具调用的六步**（最该背下来的） | 决策序列（`sequenceDiagram`，6 步） | `interfaces/harness.md` §3.3 |
+| harness 内部谁依赖谁 | 模块依赖（`flowchart TD`） | `interfaces/harness.md` §3.2 |
+| 画新图前先问"放哪" | "图放在哪"决策树 | `diagram-conventions.md` §3.2 |
+| 为什么不能用四象限图 | 2×2 矩阵替代画法 | `diagram-conventions.md` §9 |
+
+**预览**：code-server **自带** Mermaid 渲染，**不得**再装第三方预览扩展（2026-09-21 已结案，
+见 `diagram-conventions.md` §6/§7）。预览不出来时**先取失败侧的原始报错**再看图/扩展/客户端，**不要**先重装扩展。
+
+**已知缺口（如实登记）**：**装配期目前只有表格、没有图**（`architecture.md` §5.1）。
+是否补一张"装配顺序"流程图待定——理由：该节是**契约视角的 7 步**，而实现（`cli/app.py::_assemble`）
+是**9 段**（多出"工具实例 / 领域包 / 能力收窄"），**先要定图按哪个视角画**，否则会变成第三份说法。
 
 ---
 
@@ -383,8 +452,11 @@ stdout **空**（装配期故障不进事件流）· **秒级**（模型没起�
 
 顺序（助手按此执行，不得跳步）：
 
-1. **先读 §0**（带读约定 + 资料索引），并按 §0.1 / §0.2 组织后面的每一次讲解；
-2. **R1 复述**（§1~§3）：讲一处就**指一处**资料入口（§0.3）；
+1. **先读 §0**（带读约定 + 资料索引）——⚠️ **先看 §0.4 术语表与 §0.5 图索引**，
+   并按 §0.1 / §0.2 组织后面的每一次讲解；
+2. **R1 复述**（§1~§3）：**以 §0.5 的图为骨架**（`architecture.md` §5.2 → §5.3 →
+   `interfaces/harness.md` §3.3），每讲到图上的一步就**指一处**资料入口（§0.3），
+   出现的新名词**当场查 §0.4**；
 3. **阶段 1**（环境与门禁）：命令真源 `product-handbook.md` §2.1 + §3 **舞台 0**
    —— 由助手给出**带关键注释**的命令，**所有者亲自敲**，把**原始输出（含退出码与 stderr）贴回**；
 4. **阶段 2**（装配期拒绝）：命令真源 `product-handbook.md` §3 **舞台 1** —— 同上；
