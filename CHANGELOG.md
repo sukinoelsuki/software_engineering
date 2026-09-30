@@ -36,6 +36,14 @@
   同时修正两处**反向建议**——`test-environments.md` §4 的 `P-1` 与 `testing-strategy.md` §6
   原先推荐的 `git add -A` / 不带路径的 `git stash`，在共享工作区会波及**其他会话**未提交的改动。
 
+### Fixed
+
+- 更正若干会把现状读成「云原生**构建**桶 / 旧 `test/<slug>` 分支」的**过期口径**
+  （`scripts/bench/run.sh`、`scripts/bench/publish.sh` 的注释、`AGENTS.md` §3、
+  `CODEBUDDY.md` §3、`docs/engineering/benchmark-automation.md` §2）：跑测与开发环境
+  走**云原生开发**桶、轻门禁仍**刻意**走构建桶（单核）；并在运行手册补两条官方约束
+  （单 Job ≤ 12 h、额度不足预冻结即终止）。**仅改文本**，配置与门禁强度零变化。
+
 ## [0.2.0] - 2026-09-21
 
 > 本版以文档、研究与流程收敛为主，不引入新的代码层安全缓解；威胁模型文档有更新

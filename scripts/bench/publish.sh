@@ -10,10 +10,10 @@
 #   1. **只推数据分支**：分支名来自 BENCH_DATA_BRANCH（默认 bench/data），
 #      推送形式固定为 `HEAD:${BENCH_DATA_BRANCH}`，**不提供**推其它分支的入口；
 #   2. **禁止 force**：不使用 --force / --force-with-lease；
-#   3. **来源分支白名单**：默认只允许从 `bench/nightly` 或 `test/*` 运行
-#      （2026-09-24 起跑测改在 `test/<slug>` 借来的云原生开发环境里人工触发，
-#       见 ADR-0023）；本地演练需显式 `BENCH_ALLOW_LOCAL=1`
-#      （避免在 develop/main 上误触发发布）；
+#   3. **来源分支白名单**：默认只允许从 `bench/nightly` 或 `develop` 运行
+#      （2026-09-25 起跑测直接跑在 `develop` 上，见 ADR-0028；代码实体见下方
+#       `CODE_BRANCH_PATTERN`）；本地演练需显式 `BENCH_ALLOW_LOCAL=1`
+#      （避免在 main 上误触发发布）；
 #   4. **提交前校验**：调用生产代码里的同一套 schema 校验，失败即拒绝发布
 #      （不发布坏数据——坏数据比没有数据更难发现）；
 #   5. **凭据**：不读取、不落盘任何密钥。CI 里用运行期临时令牌（构建结束即销毁），
@@ -165,8 +165,9 @@ fi
 # 数据提交**不运行代码钩子**（core.hooksPath 指向空目录）：
 #   钩子是为代码质量设计的（ruff 会格式化 Markdown/`.py` 里的代码块），
 #   而这里提交的是模型产出与日志——它们必须字节保真，不能被"格式化"。
-#   代码侧的门禁由**借来的开发环境**里的 pre-commit 与 `make check` 承担
-#   （2026-09-24 起已无 CI 推送这条路径，见 ADR-0023）；此处既不重复也不适用。
+#   代码侧的门禁由 `develop` 上的 pre-commit 与 `make check` 承担
+#   （跑测走开发桶的 `api_trigger_bench` 或人工 `make bench`，见 ADR-0025）；
+#   此处既不重复也不适用。
 #   该豁免已登记：docs/adr/0014-benchmark-automation.md。
 readonly EMPTY_HOOKS_DIR="$(mktemp -d)"
 readonly COMMIT_MSG_FILE="$(mktemp)"

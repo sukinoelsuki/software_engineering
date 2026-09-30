@@ -21,12 +21,15 @@
 
 ## 2. 一键跑测（`make bench`）
 
-> **2026-09-24 起跑测不再由 CI 触发**：组织级「云原生构建」免费额度只有
-> **160 核时/月**且按**顶级组织**共享 ⇒ 自动跑测全部下线
-> （[ADR-0023](../adr/0023-ci-downgrade-to-manual-trigger.md)；实测账与口径分歧见
+> **2026-09-25 改写**（[ADR-0025](../adr/0025-benchmark-automation-moves-to-dev-bucket.md)）：
+> 跑测是**自动化**的，且一律走**云原生开发桶**——判据是"有没有声明 `services: [vscode]`"，
+> 不是"它是怎么被触发的"（`api_trigger_bench` + vscode ⇒ 计入开发用量）。
+> ⇒ 组织级「云原生构建」免费额度（**160 核时/月**，`total == free`，**硬顶**）**不被跑测占用**，
+> 它只留两条 1 核轻门禁。两个入口见 §3。
+> ⚠️ 本节此前写"2026-09-24 起跑测不再由 CI 触发 / 自动跑测全部下线"——
+> **该前提已被 ADR-0025 推翻**，原文不再有效（当时的实测账与口径分歧见
 > [`../research/2026-09-24-ci-consumption-summary.md`](../research/2026-09-24-ci-consumption-summary.md)）。
-> 跑测改为**在借来的云原生开发环境里人工一键触发**。
-> ⚠️ **闸门没有跟着下线**：四道可信闸门从 CI 的 stage 结构**迁移进脚本**
+> ⚠️ **闸门没有跟着下线**：四道可信闸门在脚本里
 > （`scripts/bench/run.sh` + `scripts/bench/gates.py`），**判据一条未改**。
 
 ```bash
@@ -167,6 +170,14 @@ make bench-verify-assets
 构建桶成本 = runner.cpus × 流水线时长        （单核门禁 ⇒ 1 核时/小时）
 ```
 
+> 📄 **平台的"预冻结"机制**（[pricing.md](https://docs.cnb.cool/zh/pricing.md)，访问 2026-09-30）：
+> 启动构建 / 开发环境后**每 5 分钟预冻结一次**，`冻结用量 = 5 min × 节点规格`
+> （8 核 ⇒ 0.67 核时）；**预冻结时若可用额度不足，系统立即终止任务**（避免产生额外费用）。
+> 任务结束后按**实际运行时间**上报（预冻结值不是最终计费值）；跨月任务计入**结束月**。
+> ⚠️ 与"免费额度用尽"是两件事（⚠️ 推断）：免费额度用尽 ⇒ **计费**；额度（`total`）用尽 ⇒ **终止**。
+> 观测上的对应量是 `get-volume` 的 `freeze_dev_in_sec` 增量（见
+> [`../research/2026-09-25-cnb-platform-behavior-facts.md`](../research/2026-09-25-cnb-platform-behavior-facts.md) §3）。
+
 **七步流程（谁在什么时候做什么）**：
 
 | # | 步骤 | 判据 / 产物 |
@@ -264,6 +275,9 @@ L 档常驻 8.70 GiB，4 核只有 8 GiB 会 OOM。
 
 **平台注入的时长上限（实测值，比文档更硬）**：`CNB_PIPELINE_MAX_RUN_TIME` = 72000000 ms
 （**20 h**，构建）、`CNB_VSCODE_MAX_RUN_TIME` = 64800000 ms（**18 h**，开发）。
+另（📄 官方 [grammar.md](https://docs.cnb.cool/zh/build/grammar.md) §Job.timeout，访问 2026-09-30）：
+**单个 Job 硬上限 12 h**（默认 2 h；对脚本 / 插件任务有效）、**无输出超时 10 min**
+（与 `keepAliveTimeout` 是两个独立的 10 分钟）—— 本仓库自设的**单片墙钟 ≤ 60 min** 远低于该上限。
 
 ## 4.2 分片、保活与关闭（**硬要求**，均来自 2026-09-25 实测）
 
