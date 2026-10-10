@@ -342,15 +342,10 @@ def _show_help(out: IO[str]) -> None:
             (
                 "可用命令：",
                 "  /help   显示本帮助",
-                "  /new    重开一轮笔试：清空对话上下文，换一个新的会话"
-                "（题目需要重新粘一遍，模型也不记得之前的纠正）",
+                "  /new    重开一轮：清空对话上下文，换一个新的会话（新 session_id）",
                 "  /quit   退出（等同 /exit、Ctrl-D、Ctrl-C）",
                 "",
-                "其它任何输入都会作为**一段话**交给模型；模型可自行决定调用工具或直接回答。",
-                "想纠正模型就像跟人说话一样直接说，例如：",
-                "  「路径要用相对路径 student.c，不要用绝对路径」",
-                "  「不要用 scanf 交互，main 里要内置测试数据」",
-                "  「先编译再运行，别在回答里直接贴输出」",
+                "除上述命令外，任何输入都作为一段话交给模型。",
                 "",
             )
         ),
@@ -378,7 +373,6 @@ def _show_banner(request: ExamRequest, *, assembly: Assembly, stdout: IO[str]) -
                 f" 本轮暴露给模型的工具：{names or '（无）'}",
                 " 命令：/help 帮助 · /new 重开一轮（清空上下文）· /quit 退出",
                 "=" * 72,
-                "把题面整段粘进来即可开始；模型每调用一次工具，这里都会显示它调了什么、结果如何。",
                 "",
             )
         ),
@@ -479,11 +473,7 @@ class _Presenter:
     def _show_task_finished(self, event: SessionEvent) -> None:
         status = event.status
         if status is TaskStatus.LIMIT_REACHED:
-            _block(
-                self.out,
-                "  — 本轮到达步数上限：模型没能在这一轮做完。直接说下一步，"
-                "或下次用更大的 --max-steps。",
-            )
+            _block(self.out, "  — 本轮到达步数上限（模型未在本轮内收尾）。")
             return
         if status is TaskStatus.FAILED:
             _block(self.out, f"  — 本轮以失败结束：{event.text or ''}")

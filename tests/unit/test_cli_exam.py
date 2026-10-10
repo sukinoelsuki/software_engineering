@@ -239,8 +239,13 @@ def test_new_spawns_a_session_without_previous_history(tmp_path: Path) -> None:
     """``/new`` 之后，新一轮的**首次请求**里不得出现上一轮的任何消息。
 
     这是"重开一次流程不要上下文污染"的可机器验证形态：装配顺序是
-    ``[SYSTEM] + 数据段 + [USER(任务)] + 历史``，历史为空时消息数必须是 **3**；
-    上一轮的助手消息与工具回执若被带过来，这个数字会变大。
+    ``[SYSTEM] + 数据段（可选）+ [USER(任务)] + 历史``，历史为空时**只应出现 system / user
+    两种角色，且最后一条是本轮任务**。
+
+    ⚠️ 刻意**不**断言消息条数：条数取决于领域包是否声明了 ``prompt.fragments``
+    （``exam/pack/pack.toml`` 自 2026-10-10 起**有意留空** ⇒ 数据段消失、条数由 3 变 2）。
+    把条数写死，会把"包内容变了"和"上下文被污染了"两种完全不同的原因混进同一个断言里，
+    翻红时看不出该查哪一边；而污染的真判据是角色构成与残留内容，不是条数。
     """
     model = _ScriptedModel(
         [
@@ -262,12 +267,15 @@ def test_new_spawns_a_session_without_previous_history(tmp_path: Path) -> None:
 
     assert code == EXIT_OK
     assert "新会话已就绪" in out.getvalue()
-    # 第二轮的首个请求应当只有 [SYSTEM] + 数据段 + [USER(任务)] 三条；带上一轮的助手消息
-    # 或工具回执会让条数变多——那正是"上下文污染"。
+    # 第二轮的首个请求只应含 [SYSTEM]（+ 数据段，若包内有片段）与 [USER(任务)]；
+    # 出现 assistant / tool 角色，或上一轮的任何原文，就是"上下文污染"。
     last = model.requests[-1]
-    assert len(last) == 3, f"新会话的首个请求应只有三条，实际 {len(last)}"
-    assert {message.role.value for message in last} == {"system", "user"}
+    assert {message.role.value for message in last} <= {"system", "user"}
+    assert last[0].role.value == "system"
+    assert last[-1].role.value == "user"
     assert last[-1].content == "重新开始"
+    leaked = {message.content for message in last} & {"先看看目录", "第一轮结束"}
+    assert not leaked, f"新一轮的首个请求里出现了上一轮的原文：{leaked}"
 
 
 # ---------------------------------------------------------------------------

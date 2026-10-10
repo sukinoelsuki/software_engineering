@@ -27,7 +27,12 @@
   新增交互式子命令 `agent-sec-perf exam`（回合制 REPL；`/help` · `/new` 清空上下文重开一轮 · `/quit`）。
   决策与安全权衡见 [ADR-0033](docs/adr/0033-ai-coding-exam-kit.md)。
 - 新增领域包 `exam/pack/`（`coding-exam`）：暴露 `read_file` / `list_dir` / `write_file` / `run_command`
-  与三项能力，并预置四条给模型的提示片段（路径 / 流程 / 证据 / 调用风格）。
+  与三项能力；**零引导**——`[prompt] fragments` **有意留空**，不向模型注入任何提示片段。
+- **交互窗口与领域包均零引导**：`agent-sec-perf exam` 的开场横幅、`/help`、运行期提示
+  **只报事实、不规定流程**（原有的四条提示片段与"纠正话术"已从产品中移除，
+  原文存档在 [`docs/devlog/0030`](docs/devlog/0030-2026-10-10-AI-coding笔试套件.md)）；
+  `exam/PROBLEM.md` 亦不再教"怎么把题面交进去"。
+  ⇒"怎么开场、怎么拆解问题、怎么纠正模型"是笔试**要练的能力**，不再由工具代劳。
   ⚠️ **它把写与执行声明为 `low`（自动放行），属一次显式登记的"下调安全默认"**：
   仅限**本机、自用、建议一次性容器**；`examples/packs/` 的只读边界未动，且仍由
   `tests/unit/test_example_packs.py` 机器钉住。
