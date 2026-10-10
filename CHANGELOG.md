@@ -19,7 +19,8 @@
 - 新增 **AI coding 笔试套件**（`exam/`）：让使用者**直接与端侧模型多轮对话**、由人纠正模型来完成
   一道 C 语言编程题。含
   [`exam/README.md`](exam/README.md)（面向第三方的人性化使用手册）、
-  [`exam/PROBLEM.md`](exam/PROBLEM.md)（题面 + 评分标准）、
+  [`exam/PROBLEM.md`](exam/PROBLEM.md)（**题面只有一段话**：只给目标与协议，
+  边界与错误优先级留给模型自己推；原多段式题面降级为供人理解的「完整版题面」+ 评分标准）、
   4 个**客观判分用例**（`exam/cases/`）、
   一键启动脚本 `exam/run.sh`（前置检查 → 全新隔离工作区 → 钉住生成线程数 → 起会话）与
   判分脚本 `exam/verify.sh`（编译 + 逐行比对 + 分数）；
