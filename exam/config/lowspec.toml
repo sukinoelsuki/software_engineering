@@ -1,0 +1,14 @@
+# 笔试会话的能力授予（本文件会被 run.sh 复制成工作目录下的 `.lowspec.toml`）。
+#
+# 为什么要有这一份：本产品的授权是 **default-deny** —— 不写这个文件，一个能力也不授予，
+# 模型每次调用工具都会被策略拒绝（然后它会一遍遍重试，最后 STALLED）。
+# 领域包（`exam/pack/pack.toml`）只能在**已授予集合**上做收窄（求交集），**不能代你授予**。
+#
+# 三项能力分别对应：读源码、写源码、编译运行。
+# 键与取值见 docs/design/interfaces/policy.md 与 src/agent_sec_perf/security/capabilities.py。
+
+[policy]
+granted_capabilities = ["read_file", "write_file", "execute_command"]
+
+[logging]
+level = "WARNING"

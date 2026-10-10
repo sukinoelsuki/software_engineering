@@ -14,6 +14,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增 **AI coding 笔试套件**（`exam/`）：让使用者**直接与端侧模型多轮对话**、由人纠正模型来完成
+  一道 C 语言编程题。含
+  [`exam/README.md`](exam/README.md)（面向第三方的人性化使用手册）、
+  [`exam/PROBLEM.md`](exam/PROBLEM.md)（题面 + 评分标准）、
+  4 个**客观判分用例**（`exam/cases/`）、
+  一键启动脚本 `exam/run.sh`（前置检查 → 全新隔离工作区 → 钉住生成线程数 → 起会话）与
+  判分脚本 `exam/verify.sh`（编译 + 逐行比对 + 分数）；
+  新增交互式子命令 `agent-sec-perf exam`（回合制 REPL；`/help` · `/new` 清空上下文重开一轮 · `/quit`）。
+  决策与安全权衡见 [ADR-0033](docs/adr/0033-ai-coding-exam-kit.md)。
+- 新增领域包 `exam/pack/`（`coding-exam`）：暴露 `read_file` / `list_dir` / `write_file` / `run_command`
+  与三项能力，并预置四条给模型的提示片段（路径 / 流程 / 证据 / 调用风格）。
+  ⚠️ **它把写与执行声明为 `low`（自动放行），属一次显式登记的"下调安全默认"**：
+  仅限**本机、自用、建议一次性容器**；`examples/packs/` 的只读边界未动，且仍由
+  `tests/unit/test_example_packs.py` 机器钉住。
+- `harness.session.Session` 新增两个**只读属性** `session_id` 与 `exposed_tools`（不参与任何判定），
+  供界面如实展示"模型实际能用哪些工具"。
+
 ### Changed
 
 - **环境内 CodeBuddy Agent 默认自动运行**：主 Agent 命令闸门由"逐类逐次弹确认"放宽为

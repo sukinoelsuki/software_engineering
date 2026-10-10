@@ -97,6 +97,7 @@
 | [0027](0027-test-branch-ref-must-track-the-commit-under-test.md) | 跑测环境分支 `test/<slug>` 的**引用必须快进到被测提交**（只动引用、**零提交**）：`--sha` 实测**不能跨分支**（git-clone 只 fetch 该 ref）⇒ 引用陈旧会"用旧代码测新修复"且**看不出区别**；候选硬化（流水线内断言 tip == 默认分支 tip）待裁决 | **已被 [0028](0028-benchmark-runs-on-develop.md) 取代**（2026-09-25 同日；`test/<slug>` 整体取消，该纪律随之失效） |
 | [0028](0028-benchmark-runs-on-develop.md) | 跑测**直接跑在 `develop` 上**、**取消 `test/<slug>` 环境分支**：分派键由**分支名**改为**事件名**（`api_trigger_bench`，将来 `api_trigger_bench_arm64`）；环境必然是 `develop` 的 tip ⇒ "引用陈旧"整类失效模式消失；代价=只能测 tip。**取代** 0027 与 0025 §2.2 | **已接受**（2026-09-25） |
 | [0032](0032-agent-command-gate-and-ide-settings.md) | Agent 命令闸门放宽为「默认全自动 + 少数不可逆操作弹确认」：`codingcopilot.*` 六键的 **`scope = application`** 只能写 User 级、且平台启动时会覆盖 ⇒ 由 `.cnb.yml` 的 `vscode` 事件首段 stage 把设置源（`.ide/agent-preferences.json` + `.ide/settings.json`，2026-09-25 拆分）**合并进运行中的** User 设置并**断言**（不符即非零退出）；关闭 12 个内置类别（只留 `custom`）+ **38 条黑名单**（同日由 33 条补到 38）承接不可逆与本项目 **B/D/E 类红线**；⚠️ 定性 = **提醒层，非安全边界**。配套 `docs/engineering/agent-command-gate.md`、威胁条目 `T-15` | **已接受**（2026-09-25，F 类授权） |
+| [0033](0033-ai-coding-exam-kit.md) | AI coding 笔试套件：新增**交互式子命令** `agent-sec-perf exam`（多轮对话，`/new` 清空上下文）与**写/执行领域包** `exam/pack/`，新增 `exam/` 目录（题面 · 判分用例 · 一键启动 · 使用手册）；⚠️ **登记一次"下调安全默认"**（该包内 `write_file`/`run_command` 声明为 `low` 自动放行），适用范围被限定为"本机、自用、建议一次性容器"，受影响面追加在威胁条目 `T-01`（编号与计数不变） | **已接受**（2026-10-10，所有者授权；Issue #10） |
 
 > 新增 ADR 后请同步更新本表。
 > ⚠️ 索引缺项会导致读者（与代理）以为文档不存在、进而重复决策——2026-09-18 的一致性核查已发现一次（0014 缺登记）。

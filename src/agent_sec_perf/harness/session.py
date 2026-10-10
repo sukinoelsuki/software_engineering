@@ -126,6 +126,11 @@ class Session(SessionContract):
 
         self._model = model
         self._sink = sink
+        self._session_id = session_id
+        #: 会话内**固定**的暴露集合（`trimming.select_tools` 的结果）。存下来只为只读展示：
+        #: 它是"模型实际能看到哪些工具"的唯一真值，而 `Session` 之外没有别的入口能拿到它。
+        #: 它**不参与**任何判定（判定用的是 `TaskLoop` 里同一份对象，两者同源不漂移）。
+        self._exposed = exposed
         self._closed = False
         self._loop = TaskLoop(
             session_id=session_id,
@@ -141,6 +146,21 @@ class Session(SessionContract):
             data_context=data_context,
             pack_name=None if pack is None else pack.name,
         )
+
+    @property
+    def session_id(self) -> str:
+        """本会话的标识（只读；审计与事件流用它把同一会话的记录关联起来）。"""
+        return self._session_id
+
+    @property
+    def exposed_tools(self) -> tuple[ToolSpec, ...]:
+        """会话内**固定**暴露给模型的工具描述（只读、**不参与判定**）。
+
+        存在的理由只有一个：使用者需要看到"模型到底能用哪些工具"（``cli/exam.py`` 的开场
+        与 ``/help`` 一类展示）。取的是 :func:`trimming.select_tools` 的**同一份结果**
+        ——另算一份必然与 ``--capability-tier`` / 领域包白名单的实际生效集漂移。
+        """
+        return self._exposed
 
     def run(self, task: str) -> Iterator[SessionEvent]:
         """把任务交给循环并返回事件流（**本类不产事件，只做透传**）。"""

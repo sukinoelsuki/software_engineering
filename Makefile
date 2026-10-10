@@ -36,7 +36,7 @@ LOCAL_HOOKS ?= 1
         security security-bandit security-secrets security-audit commit-check changelog \
         release bump \
         check branch-status apply-ide-settings clean distclean quota \
-        bench bench-round bench-publish bench-verify-assets
+        bench bench-round bench-publish bench-verify-assets exam exam-verify
 
 # ---------------------------------------------------------------------------
 help: ## 显示所有可用目标
@@ -232,6 +232,24 @@ bench-verify-assets: ## 校验预置资产摘要（复用构建期脚本，不�
 
 bench-publish: ## 校验并发布数据到数据分支（只推送被允许的分支；CI 专用）
 	bash scripts/bench/publish.sh
+
+# ---------------------------------------------------------------------------
+# AI coding 笔试（决策与安全权衡见 docs/adr/0033-ai-coding-exam-kit.md）
+# ⚠️ 该套件内 write_file / run_command 自动放行（下调安全默认），适用范围为"本机、自用"。
+#    使用手册：exam/README.md；题面：exam/PROBLEM.md
+# ---------------------------------------------------------------------------
+EXAM_WORKSPACE ?=
+
+exam: ## 开一场 AI coding 笔试（交互式；把 exam/PROBLEM.md 的题面粘进去即可）
+	bash exam/run.sh
+
+exam-verify: ## 判分（需 EXAM_WORKSPACE=<笔试工作区路径>）
+	@test -n "$(EXAM_WORKSPACE)" || { \
+		echo "用法：make exam-verify EXAM_WORKSPACE=<笔试工作区路径>"; \
+		echo "（工作区路径在 run.sh 的开场横幅与结束摘要里都会打印）"; \
+		exit 1; \
+	}
+	bash exam/verify.sh "$(EXAM_WORKSPACE)"
 
 # ---------------------------------------------------------------------------
 clean: ## 清理构建与缓存产物

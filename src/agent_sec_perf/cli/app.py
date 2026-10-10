@@ -87,8 +87,10 @@ __all__ = [
     "EXIT_UNEXPECTED",
     "OUTPUT_JSON",
     "OUTPUT_TEXT",
+    "Assembly",
     "RunRequest",
     "app",
+    "assemble_session",
     "execute",
     "main",
 ]
@@ -219,6 +221,13 @@ class _Assembly:
     session: Session
     recorder: _AuditRecorder
     json_mode: bool
+
+
+#: :class:`_Assembly` 的**公开别名**：``exam`` 子命令（``cli/exam.py``）需要拿到
+#: 「会话 + 审计记录器」这一对，才能与 ``run`` **共用同一条装配路径**。
+#: 加别名而**不改名**：``docs/engineering/`` 与 ``docs/research/`` 中有若干处按
+#: ``_assemble`` 这个名字指向实现，改名会让那些引用一起失真——而它们的价值正是"指到真东西"。
+Assembly = _Assembly
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +412,11 @@ def _assemble(
         pack=pack,
     )
     return _Assembly(session=session, recorder=audited, json_mode=json_mode)
+
+
+#: :func:`_assemble` 的**公开别名**（理由同 :data:`Assembly`）：``run`` 与 ``exam``
+#: 走的是**同一段装配代码**，不存在"第二条装配路径"需要同步。
+assemble_session = _assemble
 
 
 class _RequestTimeoutModel(ModelClient):
@@ -686,6 +700,84 @@ def run(
         model_ready_timeout_s=model_ready_timeout_s,
     )
     raise typer.Exit(code=execute(request, stdout=sys.stdout, stderr=sys.stderr))
+
+
+@app.command()
+def exam(
+    working_dir: Annotated[
+        Path | None, typer.Option("--working-dir", help="笔试工作目录；省略取 cwd")
+    ] = None,
+    allowed_root: Annotated[
+        list[Path] | None,
+        typer.Option("--allowed-root", help="允许访问的根目录（可重复）；省略取工作目录"),
+    ] = None,
+    pack_directory: Annotated[
+        Path | None, typer.Option("--pack", help="领域包目录（笔试应指向 exam/pack）")
+    ] = None,
+    capability_tier: Annotated[
+        str,
+        typer.Option("--capability-tier", help="basic | standard | advanced（笔试用 advanced）"),
+    ] = CapabilityTier.ADVANCED.value,
+    max_steps: Annotated[int, typer.Option("--max-steps", min=1, help="单轮模型往返上限")] = 16,
+    max_consecutive_failures: Annotated[
+        int, typer.Option("--max-consecutive-failures", min=1, help="连续未执行/工具失败的上限")
+    ] = 5,
+    tool_timeout_s: Annotated[
+        float, typer.Option("--tool-timeout-s", min=0.001, help="单次工具超时秒（编译留余量）")
+    ] = 120.0,
+    max_prompt_tokens: Annotated[
+        int, typer.Option("--max-prompt-tokens", min=1, help="提示 token 预算")
+    ] = 32768,
+    max_completion_tokens: Annotated[
+        int | None,
+        typer.Option("--max-completion-tokens", min=1, help="单次补全 token 上限"),
+    ] = 4096,
+    model_request_timeout_s: Annotated[
+        float, typer.Option("--model-request-timeout-s", min=0.001, help="单次模型请求超时秒")
+    ] = 1800.0,
+    model_ready_timeout_s: Annotated[
+        float, typer.Option("--model-ready-timeout-s", min=0.0, help="模型服务就绪等待上限秒")
+    ] = 300.0,
+    model_binary: Annotated[str, typer.Option("--model-binary", help="llama-server 可执行文件")] = (
+        "llama-server"
+    ),
+    model_path: Annotated[Path | None, typer.Option("--model-path", help="GGUF 模型路径")] = None,
+    model_log: Annotated[Path | None, typer.Option("--model-log", help="服务日志落点")] = None,
+    host: Annotated[str, typer.Option("--host", help="后端主机（只允许回环地址）")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", min=1, max=65535, help="后端端口")] = 8080,
+    approval_timeout_s: Annotated[
+        float, typer.Option("--approval-timeout-s", min=0.001, help="人工确认等待上限秒")
+    ] = 120.0,
+) -> None:
+    """交互式 AI coding 笔试（多轮对话；``/new`` 清空上下文重开一轮）。
+
+    与 ``run`` 的分工：``run`` 是**一次性**任务（给定任务跑完即止），本命令是**回合制**——
+    人每输入一行就是一轮，模型可以调工具，人可以随时出言纠正。实现见 ``cli/exam.py``。
+    """
+    # 函数内 import：`cli/exam.py` 需要本模块的 `RunRequest` / `assemble_session` / 退出码，
+    # 模块级互相 import 会构成循环。这是有意为之，不是遗漏。
+    from agent_sec_perf.cli.exam import ExamRequest, run_exam
+
+    request = ExamRequest(
+        working_dir=Path.cwd() if working_dir is None else working_dir,
+        allowed_roots=tuple(allowed_root or ()),
+        pack_directory=pack_directory,
+        capability_tier=_parse_capability_tier(capability_tier),
+        max_steps=max_steps,
+        max_consecutive_failures=max_consecutive_failures,
+        tool_timeout_s=tool_timeout_s,
+        max_prompt_tokens=max_prompt_tokens,
+        max_completion_tokens=max_completion_tokens,
+        model_binary=model_binary,
+        model_path=model_path,
+        model_log=model_log,
+        host=host,
+        port=port,
+        approval_timeout_s=approval_timeout_s,
+        model_request_timeout_s=model_request_timeout_s,
+        model_ready_timeout_s=model_ready_timeout_s,
+    )
+    raise typer.Exit(code=run_exam(request, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
 
 
 def _parse_capability_tier(value: str) -> CapabilityTier:

@@ -1,0 +1,41 @@
+# AI coding 笔试领域包（声明式，无代码 —— 目录内出现 .py/.pyc/__pycache__ 会被拒绝加载）。
+#
+# ⚠️ 安全口径（**必读**，依据 docs/adr/0033-ai-coding-exam-kit.md）：
+#    本包把 write_file 与 run_command 声明为 low（自动放行），这是**下调安全默认**，
+#    只允许用于"本机、自己发起的笔试"这一场景。它**不得**被照抄进 examples/packs/
+#    （那里的用例 tests/unit/test_example_packs.py 会因此翻红），也不得用于
+#    "在不可信机器上跑不可信模型"。缓解手段见 ADR-0033 §安全权衡：
+#    default-deny 能力授予、路径白名单（工作目录 + 本包目录）、非特权 uid 执行 + rlimit、
+#    全过程审计可回放。
+#
+# 键与形状见 docs/design/interfaces/harness.md §4.2；加载实现见 harness/domain_pack.py。
+
+[pack]
+name = "coding-exam"
+version = "0.1.0"
+description = "AI coding 笔试：读写源码 + 编译执行（限工作目录）"
+
+[prompt]
+# 片段是**数据**（role=USER），永不进 SYSTEM 位置（harness.md §4.4 第 2 条）。
+# 下面四条不是泛泛的客套话，每条都对应一次**实测踩到的坑**（见 ADR-0033 §背景）：
+fragments = [
+    "【路径】工作目录是你唯一可写的地方。所有文件路径一律写相对路径（例如 student.c），不要使用以 / 开头的绝对路径（例如 /workdir/student.c）——绝对路径不在允许根内，会被直接拒绝。",
+    "【流程】先用 write_file 写源码，再用 run_command 调用 gcc 编译，再用 run_command 运行可执行文件。编译或运行失败时，先读工具返回的错误信息，修改源码后再重试；不要原样重复同一个调用。",
+    "【证据】不要在回答里直接写出「运行输出」或「预期的运行结果」。程序的输出必须以工具真的运行过为前提；没有运行过就不要声称它输出了什么。需要确认时先调用 run_command。",
+    "【调用风格】gcc 的参数一律以字符串列表给出（例如 [\"gcc\", \"-std=c11\", \"-Wall\", \"-o\", \"student\", \"student.c\"]）。命令不经 shell 解释，参数里不要出现 &&、|、;、>、* 这类元字符。",
+]
+
+[tools]
+allowlist = ["read_file", "list_dir", "write_file", "run_command"]
+
+[security]
+capabilities = ["read_file", "write_file", "execute_command"]
+
+[security.risk_overrides]
+read_file = "low"
+list_dir = "low"
+write_file = "low"
+run_command = "low"
+
+[output]
+format = "text"
