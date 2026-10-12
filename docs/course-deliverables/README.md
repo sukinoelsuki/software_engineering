@@ -5,7 +5,7 @@
 | 子目录 / 文件 | 内容 | 状态 |
 | --- | --- | --- |
 | [`experiment-1-requirements/`](experiment-1-requirements/) | **实验 1**：需求分析文档交付包（10 个 md：需求正文、AI 协作记录、人工核实说明、图表、证据附录、评审处置对照） | 已成册 v1.3（2026-09-28） |
-| [`experiment-2-design/`](experiment-2-design/) | **实验 2**：软件设计文档（架构设计与系统设计），12 项设计要素齐备 | v1.0（2026-10-12） |
+| [`experiment-2-design/`](experiment-2-design/) | **实验 2**：软件设计文档（架构设计与系统设计），12 项设计要素齐备 | v1.1（2026-10-12，按外部评阅意见修订 15 项，变更说明见文档 §13.4） |
 
 ## 约定
 
@@ -20,4 +20,4 @@
 python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py docs/course-deliverables
 ```
 
-> 2026-10-12 实测：**11 个文件 / 36 张图 / 0 错误 / 0 警告**（实验 1 包 28 张 + 实验 2 文档 8 张）。
+> 2026-10-12 实测：**12 个文件 / 38 张图 / 0 错误 / 0 警告**（实验 1 包 28 张 + 实验 2 文档 10 张）。
