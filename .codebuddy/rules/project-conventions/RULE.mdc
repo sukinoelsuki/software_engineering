@@ -35,6 +35,7 @@ provider:
 | `docs/requirements/` | 需求规格 |
 | `docs/research/` | 前沿调研与实验结论 |
 | `docs/devlog/` | **开发日志**（按阶段分篇，见下） |
+| `docs/course-deliverables/` | **课程交付物**（实验 1 需求分析文档、实验 2 软件设计文档；目录英文、文档可中文，见 ADR-0033） |
 | `.cnb/` | CNB 平台协作配置 |
 | `.codebuddy/skills/` | 按需触发的流程型 Skill（[ADR-0017](../../../docs/adr/0017-project-level-agent-skills.md)：只写顺序、不复述规范、一律指针指向权威源） |
 
