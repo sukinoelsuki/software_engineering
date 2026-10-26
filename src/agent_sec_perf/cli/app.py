@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import math
 import sys
+import tempfile
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -51,8 +52,13 @@ from pathlib import Path
 from typing import IO, Annotated, Final
 
 import typer
+from rich.console import Console
+from rich.text import Text
 
 from agent_sec_perf.cli.approval import InteractiveApprovalGate, StdioApprovalInput
+from agent_sec_perf.cli.demo import load_case, prepare_workspace, run_demo
+from agent_sec_perf.cli.doctor import DEFAULT_MODEL_DIR, doctor_main
+from agent_sec_perf.cli.guidance import print_manual, print_welcome
 from agent_sec_perf.cli.render import render_event, serialize_event
 from agent_sec_perf.contracts.audit import AuditEvent, AuditSink
 from agent_sec_perf.contracts.harness import (
@@ -574,19 +580,88 @@ def _write_event(event: SessionEvent, *, stdout: IO[str], json_mode: bool) -> No
 
 app = typer.Typer(
     add_completion=False,
-    help="端侧 agent 的安全与性能基线 CLI（Phase 1 最小入口：能跑一次完整会话）。",
+    help=(
+        "端侧 agent 的安全与性能基线 CLI。\n\n"
+        "起步：doctor（体检）→ demo（准备演示）→ demo --run（真跑）→ manual（手册）。"
+    ),
 )
 
 
-@app.callback()
-def _root() -> None:
-    """顶层回调。
+@app.callback(invoke_without_command=True)
+def _root(ctx: typer.Context) -> None:
+    """顶层回调：无子命令时打印引导；有子命令时只做结构占位。
 
-    存在的唯一理由是**结构**：没有它时，Typer 会把"唯一的一个命令"折叠成顶层命令，
-    ``cli run <task>`` 里的 ``run`` 会被当成**任务文本**（任务恰好叫 ``run`` 时更荒诞）。
-    加了回调，``run`` 就是一个真正的子命令（后续还能长出 ``bench`` 等），
-    用法稳定为 ``<prog> run <task> [OPTIONS]``。
+    结构理由（原有）：没有回调时 Typer 会把唯一命令折叠成顶层命令，
+    ``run <task>`` 里的 ``run`` 会被当成**任务文本**。
+
+    引导理由（本阶段新增）：产品只有一个 CLI，第一次接触的人看到的是 ``--help`` 的
+    参数清单——那解释不了"先做什么"。无参数启动时直接给四步路径，把人送进
+    ``doctor → demo → demo --run → manual``。
     """
+    if ctx.invoked_subcommand is not None:
+        return
+    print_welcome(Console())
+    raise typer.Exit(code=EXIT_OK)
+
+
+@app.command()
+def doctor(
+    model_dir: Annotated[
+        Path, typer.Option("--model-dir", help="端侧模型所在目录（默认 /opt/models）")
+    ] = DEFAULT_MODEL_DIR,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="输出机器可读的 JSON（供脚本核对）")
+    ] = False,
+) -> None:
+    """环境体检：模型、推理后端、配置、审计落点、隔离能力、演示资产。"""
+    raise typer.Exit(code=doctor_main(model_dir=model_dir, as_json=as_json))
+
+
+@app.command()
+def demo(
+    do_run: Annotated[
+        bool, typer.Option("--run", help="真跑端侧模型（省略则只准备隔离工作区）")
+    ] = False,
+    keep: Annotated[bool, typer.Option("--keep", help="保留临时工作区（便于事发后核对）")] = False,
+    model: Annotated[Path | None, typer.Option("--model", help="GGUF 路径；省略按案例首选")] = None,
+    model_dir: Annotated[
+        Path, typer.Option("--model-dir", help="模型目录（省略按案例首选查找）")
+    ] = DEFAULT_MODEL_DIR,
+    workspace: Annotated[
+        Path | None, typer.Option("--workspace", help="显式指定工作区（省略用临时目录）")
+    ] = None,
+) -> None:
+    """演示案例：准备隔离工作区 →（可选）真跑 → 机检 → 审计回放。"""
+    if not do_run:
+        case = load_case()
+        target = workspace
+        if target is None:
+            target = Path(tempfile.mkdtemp(prefix="lowspec-showcase-")) / "workspace"
+        prepare_workspace(case, target)
+        console = Console()
+        console.print(Text(f"已准备演示工作区：{target}", style="bold green"))
+        console.print(Text(f"现场文件：{', '.join(sorted(p.name for p in target.iterdir()))}"))
+        console.print(Text("下一步（真跑，本次实测 489 s）：", style="bold"))
+        console.print(Text(f"  agent-sec-perf demo --run --workspace {target}"))
+        return
+
+    try:
+        outcome = run_demo(
+            model_path=model,
+            model_dir=model_dir,
+            workspace=workspace,
+            keep=keep,
+        )
+    except FileNotFoundError as exc:
+        typer.echo(f"演示无法开始：{exc}", err=True)
+        raise typer.Exit(code=EXIT_ASSEMBLY) from None
+    raise typer.Exit(code=EXIT_OK if outcome.passed else EXIT_TASK_FAILED)
+
+
+@app.command()
+def manual() -> None:
+    """命令速查 + 三条必须知道的约定 + 文档索引。"""
+    print_manual(Console())
 
 
 @app.command()

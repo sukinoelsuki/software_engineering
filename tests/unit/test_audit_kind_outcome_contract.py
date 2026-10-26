@@ -59,6 +59,13 @@ from agent_sec_perf.contracts.policy import (
     PolicyRequest,
     RiskLevel,
 )
+from agent_sec_perf.contracts.sandbox import (
+    IsolationDimension,
+    IsolationDimensionStatus,
+    IsolationMatrix,
+    IsolationMechanism,
+    SandboxTier,
+)
 from agent_sec_perf.contracts.tools import (
     ExecutionContext,
     ToolCallRequest,
@@ -68,6 +75,7 @@ from agent_sec_perf.contracts.tools import (
 from agent_sec_perf.harness.loop import TaskLoop
 from agent_sec_perf.security.capabilities import CapabilitySet
 from agent_sec_perf.security.policy import PolicyEngine
+from agent_sec_perf.security.sandbox import IsolationReport, emit_degradation_audit
 from agent_sec_perf.tools.registry import audit_tool_call
 
 #: 契约文档（``parse`` 的对象就是它；路径变了本文件必须跟着改，故失败信息写清预期位置）。
@@ -389,6 +397,36 @@ def test_approval_layer_produces_only_allow_and_deny() -> None:
     }
 
 
+def test_sandbox_probe_emits_degradation_with_degraded_outcome() -> None:
+    """``security/sandbox/probe.py``：降级事件只产 ``(EXECUTION_DEGRADATION, DEGRADED)``。
+
+    这条用例同时钉住两件事：① 该 emit 调用点已登记；② 降级**不得**借用 ``ERROR``
+    （``ERROR`` 在契约表里不属于 ``EXECUTION_DEGRADATION`` 的允许结果）。
+    """
+    sink = _RecordingSink()
+    status = IsolationDimensionStatus(
+        dimension=IsolationDimension.USER,
+        enforced=True,
+        mechanism=IsolationMechanism.PRIVDROP,
+        evidence="uid=65534",
+    )
+    report = IsolationReport(
+        matrix=IsolationMatrix(
+            tier=SandboxTier.L1,
+            dimensions={IsolationDimension.USER: status},
+            degraded=True,
+            reason="测试用降级原因",
+        ),
+        notes=("测试用降级原因",),
+    )
+
+    emit_degradation_audit(sink, session_id=SESSION_ID, report=report)
+
+    observed = _observed(sink.events)
+    _assert_within_declaration(observed)
+    assert observed == {(AuditEventKind.EXECUTION_DEGRADATION, AuditOutcome.DEGRADED)}
+
+
 class _FakeModel:
     """按脚本返回响应的模型替身；脚本用尽即失败（"多请求一次"不得被静默吞掉）。"""
 
@@ -633,6 +671,9 @@ PRODUCERS: Final[Mapping[str, str]] = {
     "agent_sec_perf/cli/approval.py::InteractiveApprovalGate._record": (
         "构造 AuditEvent(APPROVAL)；outcome 由 _audit_outcome 给出 ALLOW / DENY"
     ),
+    "agent_sec_perf/security/sandbox/probe.py::emit_degradation_audit": (
+        "构造 AuditEvent(EXECUTION_DEGRADATION)；outcome 恒为 DEGRADED（ADR-0006 规则 S-2）"
+    ),
 }
 
 #: 每个 producer 由 (b) 的哪些**具名**用例触发（用例名必须在本文件里真实存在，否则翻红）。
@@ -649,6 +690,9 @@ PRODUCER_TRIGGERED_BY: Final[Mapping[str, tuple[str, ...]]] = {
     ),
     "agent_sec_perf/cli/approval.py::InteractiveApprovalGate._record": (
         "test_approval_layer_produces_only_allow_and_deny",
+    ),
+    "agent_sec_perf/security/sandbox/probe.py::emit_degradation_audit": (
+        "test_sandbox_probe_emits_degradation_with_degraded_outcome",
     ),
 }
 

@@ -64,6 +64,19 @@ agent-sec-perf run "读取 README.md，用三条要点总结它" \
 交互式确认（`--interactive`，需要 TTY）不是必须的：这两个包把只读工具声明为 `low`，
 风险求值结果就是"自动放行"，无需确认通路。
 
+## 演示案例（`showcase/incident-01/`）
+
+`agent-sec-perf demo` 用的就是这一份，**不要**把它当成"第三个示例包"随手册改动：
+
+| 路径 | 作用 |
+| --- | --- |
+| `showcase/incident-01/case.toml` | 案例唯一声明源（任务文本、最少工具调用、结论必须包含的事实） |
+| `showcase/incident-01/scene/` | 合成故障现场（`app.log` / `service.toml` / `README.md`） |
+| `showcase/incident-01/pack/` | 只读领域包 `incident-triage`（`read_file` / `list_dir`，风险 `low`） |
+
+案例的判据与设计理由见 [`../docs/design/showcase-incident-triage.md`](../docs/design/showcase-incident-triage.md)；
+怎么讲见 [`../docs/engineering/demo-showcase.md`](../docs/engineering/demo-showcase.md)。
+
 ## 自己写一个包
 
 - 键名、类型、取值上限与**未知键 / 未知段一律拒绝**的口径见 `harness.md` §4.2 / §4.3；

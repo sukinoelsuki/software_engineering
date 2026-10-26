@@ -32,10 +32,14 @@ class IsolationMechanism(StrEnum):
     """提供隔离的机制类别（ADR-0007）。``NONE`` 表示该维度未隔离。
 
     ``CGROUP`` 保留在枚举里是为了让探针能**如实记录**"尝试过但未生效"，而不是把失败从数据里抹掉。
+    ``PRIVDROP`` 是 2026-10-26 新增的成员：``setuid`` 到非特权 uid 既不是 rlimit、也不是
+    命名空间；在此之前 ``USER`` 维度只能被误标成 ``SETRLIMIT``。新增而非复用的理由与
+    留痕见 ``docs/design/interfaces/sandbox.md`` §5。
     """
 
     NONE = "none"
     SETRLIMIT = "setrlimit"
+    PRIVDROP = "privdrop"
     NAMESPACE = "namespace"
     CGROUP = "cgroup"
 

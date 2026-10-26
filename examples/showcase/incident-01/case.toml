@@ -1,0 +1,44 @@
+# 演示案例的**唯一声明源**：CLI 的 `agent-sec-perf demo` 只读这一份。
+#
+# 设计口径（详见 docs/design/showcase-incident-triage.md）：
+# - 只读：场景不需要写文件或执行命令，因此不要求任何降级的安全默认；
+# - 可机检：required_substrings 是"结论必须出现的事实"，由 demo 自动核对；
+# - 有回环：至少两次真实工具调用 + 一次最终回答 + 审计可回放。
+#
+# ⚠️ 任务文本要写成"不许跳步"的硬约束：4B 级模型很容易读一个文件就下结论
+#    （2026-10-26 实测：只读 app.log 就编出了一个 CONFIG_TIMEOUT_MS）。
+#    这不是模型"不会用工具"，而是提示里少了"少读一个就无效"的判据。
+
+[case]
+id = "incident-01"
+title = "离线日志根因定位"
+scene = "scene"
+pack = "pack"
+min_tool_calls = 2
+required_substrings = ["E42", "3000", "8000"]
+task = """
+你是离线故障排查助手。工作目录里有 app.log 与 service.toml 两个文件。
+这是一个**两步取证**任务，必须严格按顺序执行：
+
+第一步（必须）：调用 read_file 读取 app.log，path 参数必须是 "app.log"。
+第二步（必须）：等第一步结果返回后，调用 read_file 读取 service.toml，path 参数必须是 "service.toml"。
+第三步：只有完成上述两次 read_file 之后，才允许输出最终回答。
+
+最终回答只包含四行，不要解释、不要 Markdown 代码块、不要额外文字：
+CODE=<app.log 中第一条 ERROR 行的 code 值>
+LOG_TIMEOUT_MS=<该 ERROR 行的 timeout_ms 数值>
+CONFIG_TIMEOUT_MS=<service.toml 中 [upstream.payment] 段的 timeout_ms 数值>
+VERDICT=<一句中文，说明两个 timeout_ms 数值是否一致>
+
+硬性约束：
+- 只调用 read_file，不要调用其他工具；
+- 所有取值必须逐字来自文件，禁止猜测；
+- 如果还没读到 service.toml，就不得输出 CONFIG_TIMEOUT_MS。
+"""
+
+[model]
+# 默认模型；可用 `--model` 覆盖。换模型必须重测 token 预算与超时（见手册 §6）。
+preferred = "Qwen3-4B-Q4_K_M.gguf"
+max_completion_tokens = 1536
+request_timeout_s = 600
+ready_timeout_s = 120

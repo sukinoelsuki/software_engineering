@@ -150,7 +150,13 @@ tmp/
 .Trash-0/
 .Trash-*/
 .cache/
+# 通用临时沙箱目录（本地试验用，不属项目产物）。
 sandbox/
+# 例外：security/sandbox/ 是**生产代码包**（契约 docs/design/interfaces/sandbox.md
+# 指定的实现位置），必须版本化。2026-10-26 发现：上面的 `sandbox/` 规则把它一并
+# 忽略了，`git status` 里看不到新模块 ⇒ 差点提交出一个"import 得到但仓库里没有"的包。
+!src/agent_sec_perf/security/sandbox/
+!src/agent_sec_perf/security/sandbox/**
 *.prof
 *.trace
 *.svg.html

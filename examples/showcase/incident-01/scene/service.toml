@@ -1,0 +1,7 @@
+# 当前生效配置（合成数据，不含任何真实主机或凭据）
+[server]
+max_connections = 8
+
+[upstream.payment]
+timeout_ms = 8000
+retry = 3
