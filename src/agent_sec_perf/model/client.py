@@ -31,11 +31,12 @@ from __future__ import annotations
 
 import http.client
 import json
+import logging
 import math
 import pathlib
 import time
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Protocol, cast
 
 from agent_sec_perf.contracts.model import (
@@ -60,12 +61,21 @@ __all__ = [
     "DEFAULT_MAX_RESPONSE_BYTES",
     "DEFAULT_PORT",
     "LOOPBACK_HOSTS",
+    "DeltaCallback",
     "HttpResponse",
     "HttpTransport",
     "LocalLlamaClient",
     "LoopbackHttpTransport",
     "validate_loopback_host",
 ]
+
+#: 流式增量回调：``(channel, text)``，``channel`` ∈ ``{"reasoning", "content"}``。
+#:
+#: 存在的理由：端侧 4B 模型单次补全要 3~4 分钟（约 2.8 tok/s）。非流式时这期间
+#: **一个字节都没有**，看的人无法区分"在算"与"卡死"，更看不出"这是本地模型在生成"。
+#: 回调只用于**展示**（不参与控制流、不进事件流）；异常由回调自己吞掉，
+#: 展示失败绝不能打断推理。
+DeltaCallback = Callable[[str, str], None]
 
 #: 允许的后端主机：**只允许回环地址**，其余一律拒绝（默认拒绝）。
 LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
@@ -85,6 +95,8 @@ _HEALTH_PATH = "/health"
 
 #: 展示上限：不可信文本进入错误信息前先净化并截断。
 _LABEL_LIMIT = 64
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -147,6 +159,39 @@ class LoopbackHttpTransport:
         finally:
             connection.close()
 
+    def stream(self, path: str, *, body: bytes, timeout_s: float) -> Iterator[bytes]:
+        """以 SSE **逐行**读取响应（流式补全用）。
+
+        与 :meth:`request` 的三点区别，都是流式特有的约束：
+
+        1. 逐行 yield，调用方边读边展示——这正是"看得到模型在生成"的前提；
+        2. **单行与累计**都受 ``max_response_bytes`` 保护：不设限时，一个不换行的
+           超大响应就能让 ``readline`` 把内存吃满；
+        3. 非 200 时先读完（受上限保护的）错误体再抛，错误分类与
+           :meth:`request` 完全一致——流式**不得**自创一套错误语义。
+        """
+        connection = http.client.HTTPConnection(self._host, self._port, timeout=timeout_s)
+        try:
+            connection.request(
+                "POST", path, body=body, headers={"Content-Type": "application/json"}
+            )
+            response = connection.getresponse()
+            if response.status != 200:
+                # 不读错误体：它同样受"响应体上限"约束，而这里只需要状态码定性。
+                _raise_for_status(response.status)
+            total = 0
+            while True:
+                line = response.readline()
+                if not line:
+                    return
+                total += len(line)
+                if len(line) > self._max_response_bytes or total > self._max_response_bytes:
+                    msg = f"流式响应体超过上限 {self._max_response_bytes} 字节"
+                    raise ModelProtocolError(msg)
+                yield line
+        finally:
+            connection.close()
+
     def close(self) -> None:
         """无状态传输：没有需要释放的资源（幂等）。"""
         return
@@ -187,7 +232,11 @@ class LocalLlamaClient(ModelClient):
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
         transport: HttpTransport | None = None,
         start_server: bool = True,
+        on_delta: DeltaCallback | None = None,
     ) -> None:
+        #: 给了回调 ⇒ 走**流式**请求（``stream: true``），边生成边回调。
+        #: 没给 ⇒ 保持原来的非流式路径，行为与之前逐字一致（含错误语义）。
+        self._on_delta = on_delta
         self._binary = binary
         self._model_path = pathlib.Path(model_path)
         self._log_path = pathlib.Path(log_path)
@@ -329,6 +378,8 @@ class LocalLlamaClient(ModelClient):
         payload = _build_payload(
             checked, tools=tools, temperature=temperature, max_tokens=max_tokens
         )
+        if self._on_delta is not None:
+            return self._chat_streaming(payload=payload, timeout=timeout)
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
         try:
@@ -341,18 +392,45 @@ class LocalLlamaClient(ModelClient):
 
         return self._parse_response(response)
 
+    def _chat_streaming(self, *, payload: Mapping[str, object], timeout: float) -> ModelResponse:
+        """流式补全：边读边回调增量，最后拼成与非流式**同一形状**的 ``ModelResponse``。
+
+        三条与"能不能显示"无关、但与**正确性**有关的约定：
+
+        1. 流式**不改错误语义**：状态码、非法 JSON、``content`` 与 ``tool_calls`` 皆空
+           都在同一处判定（``_raise_for_status`` / ``_sse_chunks`` / ``_StreamState``）；
+        2. 增量回调**只用于展示**：回调抛异常只记 debug 日志，不打断推理
+           （它不是控制流的一部分，更不是工具执行的一部分）；
+        3. 传输层不支持 ``stream`` 时**退回非流式**：展示不了增量，但结果正确——
+           不抛异常、不伪装"已流式"。
+        """
+        stream = getattr(self._transport, "stream", None)
+        if not callable(stream):
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            response = self._transport.request("POST", _CHAT_PATH, body=body, timeout_s=timeout)
+            return self._parse_response(response)
+
+        streaming_payload = {**payload, "stream": True}
+        body = json.dumps(streaming_payload, ensure_ascii=False).encode("utf-8")
+        state = _StreamState()
+        try:
+            for line in cast("Iterator[bytes]", stream(_CHAT_PATH, body=body, timeout_s=timeout)):
+                for chunk in _sse_chunks(line):
+                    state.apply(chunk, on_delta=self._on_delta)
+        except ModelProtocolError:
+            raise
+        except OSError as exc:
+            msg = f"模型后端不可达：{type(exc).__name__}"
+            raise ModelUnavailableError(msg) from exc
+        return state.to_response(model_id=str(self._model_path))
+
     def _parse_response(self, response: HttpResponse) -> ModelResponse:
         """把 HTTP 响应映射为 :class:`ModelResponse`，逐项校验契约不变式。"""
         if len(response.body) > self._max_response_bytes:
             # 纵深防御：即便注入的传输层没有在读时设限，也不接受超限响应。
             msg = f"响应体超过上限 {self._max_response_bytes} 字节"
             raise ModelProtocolError(msg)
-        if response.status != 200:
-            if response.status >= 500:
-                msg = f"模型后端返回 {response.status}（服务端故障 / 未就绪）"
-                raise ModelUnavailableError(msg)
-            msg = f"模型后端返回 {response.status}（请求或协议错误）"
-            raise ModelProtocolError(msg)
+        _raise_for_status(response.status)
 
         payload = _json_object(response.body)
         raw_choices = payload.get("choices")
@@ -512,6 +590,140 @@ def _parse_model_id(raw: object, *, fallback: str) -> str:
     if isinstance(raw, str) and raw:
         return raw
     return fallback
+
+
+def _raise_for_status(status: int) -> None:
+    """状态码 → 异常（**流式与非流式共用**，避免两套错误语义）。"""
+    if status == 200:
+        return
+    if status >= 500:
+        msg = f"模型后端返回 {status}（服务端故障 / 未就绪）"
+        raise ModelUnavailableError(msg)
+    msg = f"模型后端返回 {status}（请求或协议错误）"
+    raise ModelProtocolError(msg)
+
+
+def _sse_chunks(line: bytes) -> Iterator[Mapping[str, object]]:
+    """把一行 SSE 解析成**顶层** chunk；非 ``data:`` 行与 ``[DONE]`` 不产出。"""
+    text = line.decode("utf-8", "replace").strip()
+    if not text.startswith("data:"):
+        return
+    payload = text[5:].strip()
+    if not payload or payload == "[DONE]":
+        return
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        msg = "流式响应含非法 JSON 数据"
+        raise ModelProtocolError(msg) from exc
+    if not isinstance(parsed, dict):
+        msg = "流式响应的数据不是 JSON 对象"
+        raise ModelProtocolError(msg)
+    yield cast("Mapping[str, object]", parsed)
+
+
+def _emit(on_delta: DeltaCallback | None, channel: str, text: str) -> None:
+    """把增量交给展示回调；**回调失败不影响推理**（它不是控制流的一部分）。"""
+    if on_delta is None:
+        return
+    try:
+        on_delta(channel, text)
+    except Exception:
+        # 展示层故障（终端断开、富文本编码失败）不应把一次成功的推理变成失败。
+        _LOG.debug("增量回调失败（不影响推理）", exc_info=True)
+
+
+@dataclass
+class _StreamState:
+    """把 SSE 增量拼成与非流式响应等价的形状（``content`` / ``tool_calls`` / usage）。"""
+
+    _content: list[str] = field(default_factory=list)
+    _reasoning: list[str] = field(default_factory=list)
+    _calls: dict[int, dict[str, str]] = field(default_factory=dict)
+    _finish: str | None = None
+    _usage: Mapping[str, object] | None = None
+
+    def apply(self, chunk: Mapping[str, object], *, on_delta: DeltaCallback | None) -> None:
+        usage = chunk.get("usage")
+        if isinstance(usage, Mapping):
+            self._usage = cast("Mapping[str, object]", usage)
+        choices = chunk.get("choices")
+        if not isinstance(choices, list):
+            return
+        for entry in choices:
+            if not isinstance(entry, dict):
+                continue
+            choice = cast("Mapping[str, object]", entry)
+            delta = choice.get("delta")
+            if isinstance(delta, Mapping):
+                self._apply_delta(cast("Mapping[str, object]", delta), on_delta=on_delta)
+            finish = choice.get("finish_reason")
+            if isinstance(finish, str) and finish:
+                self._finish = finish
+
+    def _apply_delta(self, delta: Mapping[str, object], *, on_delta: DeltaCallback | None) -> None:
+        reasoning = delta.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning:
+            self._reasoning.append(reasoning)
+            _emit(on_delta, "reasoning", reasoning)
+        content = delta.get("content")
+        if isinstance(content, str) and content:
+            self._content.append(content)
+            _emit(on_delta, "content", content)
+        calls = delta.get("tool_calls")
+        if isinstance(calls, list):
+            self._apply_tool_calls(calls)
+
+    def _apply_tool_calls(self, calls: list[object]) -> None:
+        """工具调用是**分片**到达的：``id`` / ``name`` / ``arguments`` 各走各的增量。"""
+        for entry in calls:
+            if not isinstance(entry, dict):
+                continue
+            item = cast("Mapping[str, object]", entry)
+            raw_index = item.get("index")
+            index = raw_index if isinstance(raw_index, int) else 0
+            slot = self._calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+            call_id = item.get("id")
+            if isinstance(call_id, str) and call_id:
+                slot["id"] = call_id
+            function = item.get("function")
+            if not isinstance(function, Mapping):
+                continue
+            spec = cast("Mapping[str, object]", function)
+            name = spec.get("name")
+            if isinstance(name, str):
+                slot["name"] += name
+            arguments = spec.get("arguments")
+            if isinstance(arguments, str):
+                slot["arguments"] += arguments
+
+    def to_response(self, *, model_id: str) -> ModelResponse:
+        content = "".join(self._content) or None
+        parsed: list[ToolCallRequest] = []
+        for _, slot in sorted(self._calls.items()):
+            if not slot["name"]:
+                continue
+            if not slot["id"]:
+                msg = "流式 tool_calls 缺少 id（不符合契约）"
+                raise ModelProtocolError(msg)
+            parsed.append(
+                ToolCallRequest(
+                    call_id=slot["id"],
+                    name=slot["name"],
+                    arguments_json=slot["arguments"],
+                )
+            )
+        calls = tuple(parsed)
+        if content is None and not calls:
+            msg = "流式响应中 content 与 tool_calls 皆空（不符合契约）"
+            raise ModelProtocolError(msg)
+        return ModelResponse(
+            content=content,
+            tool_calls=calls,
+            finish_reason=_parse_finish_reason(self._finish),
+            usage=_parse_usage(self._usage),
+            model_id=model_id,
+        )
 
 
 def _json_object(body: bytes) -> Mapping[str, object]:

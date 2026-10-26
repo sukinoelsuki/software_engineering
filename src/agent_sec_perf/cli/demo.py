@@ -26,6 +26,7 @@ import pathlib
 import shutil
 import tempfile
 import tomllib
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, cast
@@ -74,6 +75,23 @@ DEMO_CAPABILITY_TIER: Final = CapabilityTier.STANDARD
 #: 阶段名（顺序固定：先诊断、后修订）。
 STAGE_DRAFT: Final = "draft"
 STAGE_REVISE: Final = "revise"
+
+#: 演示用后端参数：让思考**可见**，并给它一个预算。
+#:
+#: * ``--reasoning-format deepseek``：把 ``<think>`` 抽到 ``message.reasoning_content``，
+#:   ``content`` 只留最终答复（否则思考会混进答复，工具调用也更容易被截断）；
+#: * ``--reasoning-budget 256``：思考最多 256 token（约 1.5 分钟 @2.8 tok/s）。
+#:   不设上限时实测思考能吃光整个补全预算（96 token 全用在思考上、``content`` 为空）。
+DEMO_SERVER_ARGS: Final[tuple[str, ...]] = (
+    "--reasoning-format",
+    "deepseek",
+    "--reasoning-budget",
+    "128",
+)
+
+#: 思考流式渲染：每行字符数 / 单段回显上限。
+_THINK_WIDTH: Final = 110
+_THINK_LIMIT: Final = 4000
 
 _LABEL_LIMIT: Final = 80
 _LIVE_CONTENT_LIMIT: Final = 120
@@ -339,7 +357,9 @@ def _run_stage(
     from agent_sec_perf.cli.app import OUTPUT_JSON, RunRequest, execute
 
     console.print(Text(f"\n=== 阶段：{stage_id} ===", style="bold cyan"))
-    stream = _LiveStream(console=console)
+    view = _StreamView(console, workdir=workdir, stage=stage_id)
+    view.begin()
+    stream = _LiveStream(console=console, view=view)
     stderr = io.StringIO()
     request = RunRequest(
         task=task,
@@ -359,13 +379,15 @@ def _run_stage(
         model_log=workdir / "llama-server.log",
         model_request_timeout_s=case.request_timeout_s,
         model_ready_timeout_s=case.ready_timeout_s,
+        model_server_args=DEMO_SERVER_ARGS,
     )
     config = AppConfig(
         logging=LoggingConfig(),
         policy=PolicyConfig(granted_capabilities=DEMO_GRANTED_CAPABILITIES),
         audit=AuditConfig(),
     )
-    exit_code = execute(request, stdout=stream, stderr=stderr, config=config)
+    exit_code = execute(request, stdout=stream, stderr=stderr, config=config, progress=view.feed)
+    view.finish()
     events = _parse_events(stream.getvalue())
     return StageRun(
         stage_id=stage_id,
@@ -375,18 +397,141 @@ def _run_stage(
     )
 
 
+class _StreamView:
+    """实时渲染模型的**增量**输出，并在一次补全结束时折叠。
+
+    为什么需要它：非流式时一次补全要 3~4 分钟，屏幕上**一个字节都没有** ⇒
+    看的人分不清"在算"还是"卡死"，更看不出这是本地模型在逐 token 生成。
+
+    折叠规则（照常见 CLI agent 的做法）：
+    - 思考边来边显示（灰色，按 ``_THINK_WIDTH`` 折行），让人看到 token 在长；
+    - 一次补全结束（工具调用 / 回答 / 终态事件）就把残行刷出，**不再重复整段**；
+    - 阶段结束时只留一行摘要 ``└ 思考已折叠（N 字符，全文：reasoning-draft.md）``，
+      完整思考落盘在工作区，随时可展开核对。
+    """
+
+    def __init__(self, console: Console, *, workdir: pathlib.Path, stage: str) -> None:
+        self._console = console
+        self._path = workdir / f"reasoning-{stage}.md"
+        self._reasoning: list[str] = []
+        self._content: list[str] = []
+        self._line = ""
+        self._channel: str | None = None
+        # 按**显示列**留出余量（"│ " 前缀占 2 列）：中文是双宽字符，
+        # 按 len() 切会让 Rich 再折一次，折出来的行没有前缀、看起来像串行。
+        self._width = max(40, min(_THINK_WIDTH, console.width - 4))
+
+    def begin(self) -> None:
+        """阶段开始：先给一行状态，避免"按下回车后什么都不动"。"""
+        self._console.print(Text("· 模型生成中（流式：思考实时显示，结束后折叠）", style="dim"))
+
+    def feed(self, channel: str, text: str) -> None:
+        """增量回调（``channel`` ∈ {``reasoning``, ``content``}）。
+
+        **不抛异常**：展示层故障不能打断一次正在进行的推理（回调内部已兜底，
+        这里再保持"只读自己的缓冲"这一条）。
+        """
+        if channel == "reasoning":
+            self._reasoning.append(text)
+        else:
+            self._content.append(text)
+        if channel != self._channel:
+            self._flush()
+            self._channel = channel
+        parts = text.split("\n")
+        for index, part in enumerate(parts):
+            if part:
+                self._line += sanitize_for_display(part, limit=_THINK_LIMIT)
+                while True:
+                    head, rest = _take_display_width(self._line, self._width)
+                    if not rest:
+                        break
+                    self._emit(head)
+                    self._line = rest
+            if index < len(parts) - 1:
+                self._flush()
+
+    def fold(self) -> None:
+        """一次补全结束：刷出残行（已经显示过的内容不重画）。"""
+        self._flush()
+
+    def finish(self) -> None:
+        """阶段结束：落盘完整思考，屏幕上只留一行摘要。"""
+        self._flush()
+        total = "".join(self._reasoning)
+        if total.strip():
+            try:
+                self._path.write_text(total, encoding="utf-8")
+            except OSError:
+                self._console.print(Text("! 思考全文落盘失败（不影响任务）", style="yellow"))
+            else:
+                self._console.print(
+                    Text(
+                        f"└ 思考已折叠（{len(total)} 字符，全文：{self._path.name}）",
+                        style="dim",
+                    )
+                )
+        self._channel = None
+
+    def _emit(self, line: str) -> None:
+        style = "dim" if self._channel == "reasoning" else "bold"
+        self._console.print(Text(f"│ {line}", style=style))
+
+    def _flush(self) -> None:
+        if self._line.strip():
+            self._emit(self._line)
+        self._line = ""
+
+
+def _char_width(char: str) -> int:
+    """单个字符的显示列数（东亚宽/全角算 2 列，其余 1 列）。"""
+    return 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
+
+
+def _take_display_width(text: str, width: int) -> tuple[str, str]:
+    """按**显示列宽**切出不超过 ``width`` 的前缀，返回 ``(head, rest)``。
+
+    为什么不用 ``text[:width]``：中文是双宽字符，按字符数切会让终端再折一次，
+    折出来的续行没有前缀、和正文混在一起（2026-10-26 实测）。
+    """
+    used = 0
+    for index, char in enumerate(text):
+        cost = _char_width(char)
+        if used + cost > width:
+            return text[:index], text[index:]
+        used += cost
+    return text, ""
+
+
+def _event_kind(raw: str) -> str | None:
+    """取事件行的 ``kind``（解析失败返回 ``None``，与 :func:`_live_line` 的容错一致）。"""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict):
+        kind = cast("Mapping[str, object]", payload).get("kind")
+        return kind if isinstance(kind, str) else None
+    return None
+
+
 class _LiveStream(io.StringIO):
     """既收集 JSONL，又把每行渲染成一行进度（不写产品 stdout 以外的内容）。"""
 
-    def __init__(self, *, console: Console) -> None:
+    def __init__(self, *, console: Console, view: _StreamView) -> None:
         super().__init__()
         self._console = console
+        self._view = view
 
     def write(self, text: str) -> int:
         written = super().write(text)
         for line in text.splitlines():
-            if line.strip():
-                self._console.print(Text(_live_line(line), style="dim"))
+            if not line.strip():
+                continue
+            # 一次补全在这三类事件处收尾：先把思考残行刷出，再打事件行。
+            if _event_kind(line) in {"tool_call", "model_response", "task_finished"}:
+                self._view.fold()
+            self._console.print(Text(_live_line(line), style="dim"))
         return written
 
 
@@ -515,15 +660,33 @@ def verify_stages(
     results = [
         item for stage in stages for item in stage.events if item.get("kind") == "tool_result"
     ]
-    executed_ok = [item for item in results if _result_ok(item)]
-    denied = [item for item in results if item.get("result") is None]
+    # 三分类，语义各不相同（2026-10-26 实测踩过：把"工具拒绝幻觉"当成了失败）：
+    #   * executed：工具真的跑了（有 result）；succeeded / rejected 是它的两种结局；
+    #   * not_executed：`result is None`，即**根本没执行**（策略拒绝 / 未暴露）⇒ 这才是失败。
+    # 「工具拒绝了非法输入」恰恰是**治理生效**：模型编了 `log_timeout_ms=1000`，
+    # 工具当场拒绝并指出字段，模型改成 3000 后成功。把它算失败，等于惩罚正确行为。
+    executed = [item for item in results if item.get("result") is not None]
+    succeeded = [item for item in executed if _result_ok(item)]
+    rejected = len(executed) - len(succeeded)
+    not_executed = len(results) - len(executed)
     checks.append(
         VerifyCheck(
             "工具真的执行",
-            len(executed_ok) == len(results) and bool(results) and not denied,
-            f"成功执行 {len(executed_ok)}/{len(results)} 次，未执行/被拒 {len(denied)} 次",
+            bool(results) and not_executed == 0 and bool(succeeded),
+            (
+                f"执行 {len(executed)}/{len(results)} 次（成功 {len(succeeded)}，"
+                f"工具拒绝非法输入 {rejected}，未执行 {not_executed}）"
+            ),
         )
     )
+    if rejected:
+        checks.append(
+            VerifyCheck(
+                "工具拒绝生效",
+                True,
+                f"{rejected} 次非法输入在执行前被工具拒绝（见审计 detail.message）",
+            )
+        )
 
     # 空白不承载语义：模型写"配置值 8000 大于日志值 3000"还是"配置值8000大于日志值3000"
     # 是同一句话（2026-10-26 实测：只差空格，判据却判失败）。⇒ 去掉所有空白后比较。

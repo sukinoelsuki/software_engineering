@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from agent_sec_perf.cli.demo import (
     DEMO_CAPABILITY_TIER,
     StageRun,
+    _take_display_width,
     load_case,
     prepare_workspace,
     verify_stages,
@@ -111,6 +112,21 @@ def test_case_declares_two_stages_and_scoped_write() -> None:
     # 修订阶段不暴露写全文工具 ⇒ "重写整份报告"这个动作不存在。
     assert "write_report" not in revise_pack.tool_allowlist
     assert "write_file" not in revise_pack.tool_allowlist
+
+
+def test_take_display_width_counts_cjk_as_double() -> None:
+    """中文按 2 列切：按字符数切会让终端再折一次、折出的行丢前缀。"""
+    head, rest = _take_display_width("中文abc", 5)
+
+    assert head == "中文a"
+    assert rest == "bc"
+
+
+def test_take_display_width_keeps_short_text_whole() -> None:
+    head, rest = _take_display_width("短句", 20)
+
+    assert head == "短句"
+    assert rest == ""
 
 
 def test_demo_tier_budget_exposes_write_report() -> None:

@@ -76,7 +76,7 @@ from agent_sec_perf.foundation.logging import configure_logging, get_logger, san
 from agent_sec_perf.harness.arguments import SubsetArgumentValidator
 from agent_sec_perf.harness.domain_pack import load_pack
 from agent_sec_perf.harness.session import Session
-from agent_sec_perf.model.client import LocalLlamaClient
+from agent_sec_perf.model.client import DeltaCallback, LocalLlamaClient
 from agent_sec_perf.observability.audit import JsonlAuditSink
 from agent_sec_perf.security.capabilities import narrow_granted, parse_capabilities
 from agent_sec_perf.security.policy import PolicyEngine
@@ -174,6 +174,9 @@ class RunRequest:
     model_request_timeout_s: float = 60.0
     #: 模型服务就绪等待上限（秒）。默认 ``60.0`` = ``LocalLlamaClient`` 的构造默认值。
     model_ready_timeout_s: float = 60.0
+    #: 追加给 ``llama-server`` 的参数（默认空 ⇒ 行为与之前逐字一致）。
+    #: 演示用它开启 ``--reasoning-format deepseek`` 与思考预算，从而能显示"模型在想什么"。
+    model_server_args: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +250,7 @@ def execute(
     config: AppConfig | None = None,
     sink: AuditSink | None = None,
     model: ModelClient | None = None,
+    progress: DeltaCallback | None = None,
 ) -> int:
     """装配并运行一次会话，返回**退出码**（契约 §5.2 的表）。
 
@@ -255,6 +259,8 @@ def execute(
         stdout: 产品输出流（文本模式是渲染行；JSON 模式是 JSONL）。
         stderr: 诊断与交互提示流（**永不**写产品输出）。
         config: 注入的配置；``None`` ⇒ ``load_config()``。
+        progress: 模型生成增量的展示回调（``reasoning`` / ``content``）。只影响
+            **本地模型客户端**，不进事件流、不影响控制流；``None`` ⇒ 非流式（原行为）。
         sink: 注入的审计落点；``None`` ⇒ ``JsonlAuditSink(config.audit.directory)``。
             注入点存在不是为了绕过白名单：默认落点的路径校验在 ``JsonlAuditSink`` 构造里，
             注入方想换落点也逃不过它自己的校验。
@@ -278,7 +284,9 @@ def execute(
     configure_logging(stream=stderr, level=app_config.logging.level)
 
     try:
-        assembly = _assemble(request, config=app_config, sink=sink, model=model, stderr=stderr)
+        assembly = _assemble(
+            request, config=app_config, sink=sink, model=model, stderr=stderr, progress=progress
+        )
     except BenchError as exc:
         logger.error("装配失败", error_type=type(exc).__name__)
         return EXIT_ASSEMBLY
@@ -335,6 +343,7 @@ def _assemble(
     sink: AuditSink | None,
     model: ModelClient | None,
     stderr: IO[str],
+    progress: DeltaCallback | None = None,
 ) -> _Assembly:
     """按 §5.1 的顺序装配一个 ``Session``；**任何一步失败都拒绝启动**。
 
@@ -394,7 +403,9 @@ def _assemble(
 
     # 6) model：云端客户端未开工，本轮只有本地 llama-server。
     client: ModelClient = (
-        model if model is not None else _build_local_model(request, working_dir=working_dir)
+        model
+        if model is not None
+        else _build_local_model(request, working_dir=working_dir, progress=progress)
     )
 
     # 7) approval：非交互模式**显式传 None**（需确认的调用一律拒绝，§2.5.5 的 R1）。
@@ -481,7 +492,12 @@ class _RequestTimeoutModel(ModelClient):
         self._inner.close()
 
 
-def _build_local_model(request: RunRequest, *, working_dir: Path) -> ModelClient:
+def _build_local_model(
+    request: RunRequest,
+    *,
+    working_dir: Path,
+    progress: DeltaCallback | None = None,
+) -> ModelClient:
     """构造本地模型客户端（并入 CLI 的可用性参数）；未给模型路径 ⇒ **拒绝启动**（不猜默认模型）。"""
     if request.model_path is None:
         raise ConfigError("未指定模型路径：请用 --model-path 指定 GGUF 模型（不猜默认值）")
@@ -497,6 +513,9 @@ def _build_local_model(request: RunRequest, *, working_dir: Path) -> ModelClient
         host=request.host,
         port=request.port,
         ready_timeout_s=request.model_ready_timeout_s,
+        server_args=request.model_server_args,
+        # 给了回调 ⇒ 客户端走流式，模型边生成边把 reasoning / content 递出来。
+        on_delta=progress,
     )
     return _RequestTimeoutModel(client, request_timeout_s=request.model_request_timeout_s)
 
