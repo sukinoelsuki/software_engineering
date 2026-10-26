@@ -80,7 +80,14 @@ from agent_sec_perf.model.client import LocalLlamaClient
 from agent_sec_perf.observability.audit import JsonlAuditSink
 from agent_sec_perf.security.capabilities import narrow_granted, parse_capabilities
 from agent_sec_perf.security.policy import PolicyEngine
-from agent_sec_perf.tools.files import ListDirTool, ReadFileTool, WriteFileTool
+from agent_sec_perf.tools.files import (
+    ListDirTool,
+    ReadFileTool,
+    ReviseReportTool,
+    WriteFileTool,
+    WriteIncidentReportTool,
+    WriteReportTool,
+)
 from agent_sec_perf.tools.registry import ToolRegistry
 from agent_sec_perf.tools.shell import ShellCommandTool
 
@@ -358,6 +365,12 @@ def _assemble(
         WriteFileTool(audited),
         ListDirTool(audited),
         ShellCommandTool(audited),
+        # 受限写工具：目标固定为工作区 report.md（演示案例的"写/修订"载体）。
+        WriteReportTool(audited),
+        # 结构化写（领域工具）：模型只给四个字段值，KEY=VALUE 的行由工具生成。
+        WriteIncidentReportTool(audited),
+        # 只改一行：把"按复核意见只改结论行"从提示约束升级为**工具保证**。
+        ReviseReportTool(audited),
     )
     known_tools = frozenset(tool.spec.name for tool in tools)
 
@@ -633,15 +646,20 @@ def demo(
 ) -> None:
     """演示案例：准备隔离工作区 →（可选）真跑 → 机检 → 审计回放。"""
     if not do_run:
-        case = load_case()
-        target = workspace
-        if target is None:
-            target = Path(tempfile.mkdtemp(prefix="lowspec-showcase-")) / "workspace"
-        prepare_workspace(case, target)
+        try:
+            case = load_case()
+            target = workspace
+            if target is None:
+                target = Path(tempfile.mkdtemp(prefix="lowspec-showcase-")) / "workspace"
+            prepare_workspace(case, target)
+        except (FileNotFoundError, BenchError, ValueError) as exc:
+            # 案例资产 / 声明有问题是**装配期**故障（退出码 3），不是"案例跑挂了"（1）。
+            typer.echo(f"演示无法开始：{exc}", err=True)
+            raise typer.Exit(code=EXIT_ASSEMBLY) from None
         console = Console()
         console.print(Text(f"已准备演示工作区：{target}", style="bold green"))
         console.print(Text(f"现场文件：{', '.join(sorted(p.name for p in target.iterdir()))}"))
-        console.print(Text("下一步（真跑，本次实测 489 s）：", style="bold"))
+        console.print(Text("下一步（真跑两个阶段，本次实测见演示手册 §6）：", style="bold"))
         console.print(Text(f"  agent-sec-perf demo --run --workspace {target}"))
         return
 
@@ -652,7 +670,7 @@ def demo(
             workspace=workspace,
             keep=keep,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, BenchError, ValueError) as exc:
         typer.echo(f"演示无法开始：{exc}", err=True)
         raise typer.Exit(code=EXIT_ASSEMBLY) from None
     raise typer.Exit(code=EXIT_OK if outcome.passed else EXIT_TASK_FAILED)

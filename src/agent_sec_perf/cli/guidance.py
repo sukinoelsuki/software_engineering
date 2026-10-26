@@ -27,7 +27,7 @@ _WELCOME_BODY: Final = (
     "第一次使用，建议按这个顺序走：\n"
     "  1. agent-sec-perf doctor    体检：模型、推理后端、隔离能力、审计落点\n"
     "  2. agent-sec-perf demo      演示：准备一个隔离工作区（不调用模型）\n"
-    "  3. agent-sec-perf demo --run  真跑：端侧模型完成一次可机检的任务\n"
+    "  3. agent-sec-perf demo --run  真跑：端侧模型完成一段可机检的业务（读 → 写 → 修订）\n"
     "  4. agent-sec-perf manual    手册：全部命令、退出码与文档索引\n\n"
     '自己写任务：agent-sec-perf run "<任务>" --model-path <GGUF> --pack <领域包>'
 )
@@ -43,6 +43,7 @@ _MANUAL_SECTIONS: Final[tuple[tuple[str, str], ...]] = (
 _MANUAL_NOTES: Final[tuple[str, ...]] = (
     "能力默认拒绝：不写 .lowspec.toml 的 granted_capabilities，工具调用一律被拒（这是设计，不是故障）。",
     "领域包只能收窄、不能扩权：包里的 capabilities 与你授予的集合取交集。",
+    "演示的写是受限的：只能经 write_report 写工作区 report.md；通用 write_file 不在暴露面。",
     "退出码：0 完成 / 1 任务失败 / 2 步数用尽 / 3 装配或配置失败 / 4 审计写入失败 / 5 未预期异常。",
     "完整手册：docs/engineering/product-handbook.md；演示脚本：docs/engineering/demo-showcase.md。",
     "案例设计：docs/design/showcase-incident-triage.md。",

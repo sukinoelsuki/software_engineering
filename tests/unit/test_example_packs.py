@@ -28,7 +28,7 @@
 由验证角色独立完成。
 
 口径对齐：``docs/adr/0021-example-domain-packs-and-first-usable-release.md`` §7 第 1 条
-（``load_pack(..., roots=(<examples/packs>), known_tools=<4 个内置工具名>)`` ⇒ 成功，
+（``load_pack(..., roots=(<examples/packs>), known_tools=<全部内置工具名>)`` ⇒ 成功，
 且 ``tool_allowlist ⊆ {read_file, list_dir}`` / ``capabilities_allowlist ⊆ {READ_FILE}``）
 与本模块的常量 ``READONLY_TOOL_ALLOWLIST`` / ``READONLY_CAPABILITIES`` 逐条对应。
 """
@@ -44,7 +44,14 @@ from agent_sec_perf.contracts.audit import AuditEvent
 from agent_sec_perf.contracts.policy import Capability, RiskLevel
 from agent_sec_perf.contracts.tools import Tool
 from agent_sec_perf.harness.domain_pack import DomainPack, load_pack
-from agent_sec_perf.tools.files import ListDirTool, ReadFileTool, WriteFileTool
+from agent_sec_perf.tools.files import (
+    ListDirTool,
+    ReadFileTool,
+    ReviseReportTool,
+    WriteFileTool,
+    WriteIncidentReportTool,
+    WriteReportTool,
+)
 from agent_sec_perf.tools.shell import ShellCommandTool
 
 #: 仓库根（本文件位于 ``tests/unit/``）。
@@ -100,9 +107,17 @@ class _NoopSink:
 
 
 def _builtin_tools() -> tuple[Tool, ...]:
-    """四个内置工具实例（构造期无 I/O；工具名从它们的 ``spec`` 读取）。"""
+    """全部内置工具实例（构造期无 I/O；工具名从它们的 ``spec`` 读取）。"""
     sink = _NoopSink()
-    return (ReadFileTool(sink), WriteFileTool(sink), ListDirTool(sink), ShellCommandTool(sink))
+    return (
+        ReadFileTool(sink),
+        WriteFileTool(sink),
+        ListDirTool(sink),
+        ShellCommandTool(sink),
+        WriteReportTool(sink),
+        WriteIncidentReportTool(sink),
+        ReviseReportTool(sink),
+    )
 
 
 #: ``src/agent_sec_perf/tools/`` 里**实际**存在的工具名集合。

@@ -1,0 +1,36 @@
+# 演示领域包（**修订阶段专用**）：只暴露 read_file + revise_report。
+#
+# 为什么拆成两个包：工具暴露面是**会话级**固定的（`trimming.select_tools` 在装配期算一次）。
+# 2026-10-26 实测：把 write_report 与 revise_report 放进同一个包时，模型在诊断阶段
+# （报告还不存在）误调 revise_report 两次，连续失败三次后整段 FAILED。
+# 与其在提示里叮嘱"这个阶段不要用那个工具"，不如让它在**这个阶段看不到**那个工具——
+# 与"重写全文"被 `revise_report` 取消是同一个思路：**不该发生的动作，工具面上不给**。
+#
+# 暴露面 = read_file / revise_report：
+#   - 修订只改一行：目标固定为工作区根目录的 report.md，参数是 key + value；
+#   - write_report **不在** allowlist ⇒ 模型无法重写整份报告。
+
+[pack]
+name = "incident-triage-revise"
+version = "0.1.0"
+description = "报告修订：读回既有报告，按复核意见只改指定的一行。"
+
+[prompt]
+fragments = [
+    "本阶段只做修订：用 read_file 读回报告，再用 revise_report 改指定的一行；不能重写整份报告，也不能执行命令。",
+    "revise_report 的 key 必须是报告里已有的行名，value 只写值本身（不要 KEY=、不要引号、不要换行）。",
+    "其余行由工具原样保留；不要试图复制或重写它们。",
+]
+
+[tools]
+allowlist = ["read_file", "revise_report"]
+
+[security]
+capabilities = ["read_file", "write_file"]
+
+[security.risk_overrides]
+read_file = "low"
+revise_report = "low"
+
+[output]
+format = "markdown"

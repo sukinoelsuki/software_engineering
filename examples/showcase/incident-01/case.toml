@@ -1,39 +1,63 @@
 # 演示案例的**唯一声明源**：CLI 的 `agent-sec-perf demo` 只读这一份。
 #
 # 设计口径（详见 docs/design/showcase-incident-triage.md）：
-# - 只读：场景不需要写文件或执行命令，因此不要求任何降级的安全默认；
-# - 可机检：required_substrings 是"结论必须出现的事实"，由 demo 自动核对；
-# - 有回环：至少两次真实工具调用 + 一次最终回答 + 审计可回放。
+# - 工具集：read_file / list_dir / **write_report**（受限写：目标固定为 report.md）；
+# - 两阶段闭环：阶段 A 诊断并写报告初稿 → 阶段 B 读回报告、按复核意见只改 VERDICT 行；
+# - 可机检：report_substrings 必须出现在**落盘文件**里，report_forbidden 必须消失
+#   （"待复核"若还在，说明只写了初稿、没完成修订）。
 #
 # ⚠️ 任务文本要写成"不许跳步"的硬约束：4B 级模型很容易读一个文件就下结论
 #    （2026-10-26 实测：只读 app.log 就编出了一个 CONFIG_TIMEOUT_MS）。
-#    这不是模型"不会用工具"，而是提示里少了"少读一个就无效"的判据。
 
 [case]
 id = "incident-01"
-title = "离线日志根因定位"
+title = "离线日志根因定位与报告修订"
 scene = "scene"
-pack = "pack"
-min_tool_calls = 2
-required_substrings = ["E42", "3000", "8000"]
-task = """
+pack_draft = "pack"
+pack_revise = "pack-revise"
+min_tool_calls = 5
+min_read_calls = 3
+min_write_calls = 2
+report_file = "report.md"
+report_substrings = ["E42", "3000", "8000", "配置值 8000 大于日志值 3000"]
+report_forbidden = ["待复核"]
+# 修订保真：这三行在初稿与终稿之间必须逐字不变，只有 Verdict 行允许变。
+report_preserved_keys = ["CODE", "LOG_TIMEOUT_MS", "CONFIG_TIMEOUT_MS"]
+report_revised_key = "VERDICT"
+
+task_draft = """
 你是离线故障排查助手。工作目录里有 app.log 与 service.toml 两个文件。
-这是一个**两步取证**任务，必须严格按顺序执行：
+这是**诊断阶段**，必须严格按顺序执行，每一步都真的调用工具：
 
-第一步（必须）：调用 read_file 读取 app.log，path 参数必须是 "app.log"。
-第二步（必须）：等第一步结果返回后，调用 read_file 读取 service.toml，path 参数必须是 "service.toml"。
-第三步：只有完成上述两次 read_file 之后，才允许输出最终回答。
-
-最终回答只包含四行，不要解释、不要 Markdown 代码块、不要额外文字：
-CODE=<app.log 中第一条 ERROR 行的 code 值>
-LOG_TIMEOUT_MS=<该 ERROR 行的 timeout_ms 数值>
-CONFIG_TIMEOUT_MS=<service.toml 中 [upstream.payment] 段的 timeout_ms 数值>
-VERDICT=<一句中文，说明两个 timeout_ms 数值是否一致>
+第一步：调用 read_file 读取 app.log，path 参数必须是 "app.log"。
+第二步：等第一步结果返回后，调用 read_file 读取 service.toml，path 参数必须是 "service.toml"。
+第三步：调用 write_incident_report 写报告初稿，四个参数都是字符串：
+- code：app.log 里第一条 ERROR 行的 code 值（短代码）
+- log_timeout_ms：同一行的 timeout_ms 数字
+- config_timeout_ms：service.toml 里 [upstream.payment] 段的 timeout_ms 数字
+- verdict：待复核
 
 硬性约束：
-- 只调用 read_file，不要调用其他工具；
-- 所有取值必须逐字来自文件，禁止猜测；
-- 如果还没读到 service.toml，就不得输出 CONFIG_TIMEOUT_MS。
+- 只调用 read_file 与 write_incident_report，不要调用其他工具；
+- 四个值只写内容本身（短代码、数字或"待复核"）：不要中文说明、不要括号、不要尖括号；
+- 前三个值必须**逐字出现在**你读到的文件内容里：写错或推测会被工具拒绝，并告诉你哪个字段找不到；
+- 报告的行格式由工具生成，你只负责填四个值；
+- write_incident_report 成功返回之前，不要输出最终回答；完成后只回复 DRAFT_OK。
+"""
+
+task_revise = """
+你是离线故障排查助手，现在进入**报告修订阶段**。工作目录里已经有一份 report.md。
+
+第一步：调用 read_file 读取 report.md，path 参数必须是 "report.md"。
+第二步：调用 revise_report 按复核意见修订报告，参数只有两个：
+- key 参数必须是 "VERDICT"
+- value 参数必须是：配置值 8000 大于日志值 3000，日志侧超时更短
+其余三行由工具原样保留，你**不需要也不要**重写它们。
+
+硬性约束：
+- 只调用 read_file 与 revise_report；**不要**用 write_report 重写整份报告；
+- value 只写这一句结论：不要加引号、不要写 KEY=、不要换行；
+- revise_report 成功返回之前，不要输出最终回答；完成后只回复 REVISED_OK。
 """
 
 [model]

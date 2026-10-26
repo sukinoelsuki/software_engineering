@@ -1,31 +1,35 @@
-# 演示领域包：离线日志根因定位（**只读**）。
+# 演示领域包：离线日志根因定位与报告修订。
 #
-# 与 coding-readonly 一样，只声明只读工具与只读能力，且只把只读工具声明为 low。
-# 写文件 / 执行命令在演示里一律不授予：演示的看点是"受限资源下把只读证据用起来"，
-# 不是"给模型更大权限"。把 run_command / write_file 声明成 low 属降级安全默认，
-# 必须先走 ADR（docs/engineering/product-handbook.md §4.4）。
+# 暴露面 = read_file / list_dir / **write_report**：
+#   - write_report 是**受限写**工具：目标固定为工作区根目录的 report.md，
+#     参数只有 content，不能指定路径（实现见 tools/files.py::WriteReportTool）；
+#   - 通用 write_file / run_command **不在 allowlist 里** ⇒ 对模型等同"不存在"；
+#   - 因此这里把 write_report 声明为 low 是"工具影响面更窄"，不是把通用写能力降级。
+#     把通用 write_file 声明成 low 仍属下调安全默认，必须先走 ADR。
 
 [pack]
 name = "incident-triage"
-version = "0.1.0"
-description = "离线日志根因定位（只读）：读取现场日志与配置，给出可核对的结论。"
+version = "0.4.0"
+description = "离线日志诊断：读取现场文件并按字段写出报告初稿（修订由 pack-revise 负责）。"
 
 [prompt]
 fragments = [
-    "本领域包只授予只读能力：可以读取文件与列出目录，不能写入文件，也不能执行命令。",
+    "本领域包只授予只读能力与受限写能力：可以读文件、列目录，用 write_incident_report 把四个字段写成工作区内的 report.md；不能写其它文件，也不能执行命令。",
     "结论必须来自工具真实读到的内容；每个取值都要能从文件原文复核，找不到依据时明确说明。",
     "任务点名了几个文件，就必须逐个读取；少读一个即视为未完成，不得用推测填补缺项。",
+    "写报告时只给四个字段的值：行格式由工具生成，不要自己拼字符串，也不要写说明文字、括号或尖括号。",
 ]
 
 [tools]
-allowlist = ["read_file", "list_dir"]
+allowlist = ["read_file", "list_dir", "write_incident_report"]
 
 [security]
-capabilities = ["read_file"]
+capabilities = ["read_file", "write_file"]
 
 [security.risk_overrides]
 read_file = "low"
 list_dir = "low"
+write_incident_report = "low"
 
 [output]
 format = "markdown"
