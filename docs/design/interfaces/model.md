@@ -309,3 +309,25 @@ ADR-0015 §5.1.2 写作 `chat(messages, tools, ...)`，其中 `...` 的**其余�
    与 `ModelResponse.tool_calls` 均引用它。
 8. **新增 `HardwareTier`**（`StrEnum`：`S` / `M` / `L`）——由 `ADR-0011 §5.1` 定义（见 §2.3.2）；
    单测须断言**成员集合恰好等于** `{"s", "m", "l"}`（用"**恰好相等**"断言，不要只断言"存在"）。
+
+---
+
+## 6. 实现说明（非契约，2026-10-26 追加）
+
+`model/client.py::LocalLlamaClient` 增加了两个**可选**能力，**不改** `ModelClient` 协议
+（协议签名、默认值、错误语义均未变；不给新参数时行为与之前逐字一致）：
+
+| 参数 / 方法 | 语义 |
+| --- | --- |
+| `LocalLlamaClient(on_delta=...)` | 给了回调 ⇒ 请求带 `stream: true`，SSE 增量按 `reasoning` / `content` **分道**回调；没给 ⇒ 走原非流式路径 |
+| `LoopbackHttpTransport.stream(...)` | 逐行读 SSE；**单行与累计**都受 `max_response_bytes` 保护 |
+
+三条边界：
+
+1. **错误语义与非流式共用** `_raise_for_status`：流式不得自创一套"状态码 → 异常"的映射；
+2. **回调只用于展示**：回调抛异常只记 debug 日志，不打断推理（它不是控制流）；
+3. **`reasoning_content` 不进 `ModelResponse`**、不进事件流与审计——思考只是展示，
+   不是任务证据；机检也不检查它。
+
+为什么需要这两个能力：非流式时一次补全要 3~4 分钟，期间没有任何输出，看的人
+分不清"在算"还是"卡死"，也看不出这是本地模型在逐 token 生成。

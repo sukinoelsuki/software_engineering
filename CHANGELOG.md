@@ -16,6 +16,11 @@
 
 ### Added
 
+- **端侧模型思考过程可见（流式）**：`LocalLlamaClient` 支持 `stream: true` 与增量回调
+  （`on_delta`），把 `reasoning_content` 与 `content` 分道递出；`demo` 以灰色行实时显示
+  思考、一次补全结束即折叠，阶段末只留一行摘要并把全文落盘为 `reasoning-<阶段>.md`。
+  演示后端启用 `--reasoning-format deepseek`（思考与答复分离）与 `--reasoning-budget 256`
+  （思考预算；不设上限时实测会吃光整个补全预算）。流式**不改错误语义**，非流式路径行为不变。
 - **CLI 交付形态（阶段产品，2026-10-26）**：`agent-sec-perf` 无参数启动给首屏引导；
   新增 `doctor`（8 项环境体检 + 逐维度隔离矩阵）、`demo`（准备隔离工作区 / `--run` 真跑 +
   11 条机检 + 审计回放）、`manual`（命令速查）。引导与手册文案见
@@ -35,7 +40,7 @@
   `examples/showcase/incident-01/{case.toml,scene/,pack/}`。模型在只授予
   `read_file` + `write_file`、只允许两个目录、且**写只能写 `report.md`** 的条件下，
   完成"读日志 → 读配置 → 写报告初稿 → 读回报告、按复核意见只改结论行"的两阶段业务
-  （两次独立会话、至少五步工具调用）。11 条机检覆盖阶段完整 / 两阶段的终态与 `seq` /
+  （两次独立会话、至少五步工具调用）。11 条机检（有工具拒绝时多 1 条如实报告）覆盖阶段完整 / 两阶段的终态与 `seq` /
   工具次数 / 工具执行 / 落盘报告 / **修订保真**（初稿与终稿逐字比对）/ 审计回放 / 降级留痕。
 - **逐维度隔离探针** `agent_sec_perf.security.sandbox.probe`：以**负向探针**判定
   `user`（uid=65534）、`address_space`（3 GiB 分配被拒）、`file_size`（65 MiB 写入被拒）；
