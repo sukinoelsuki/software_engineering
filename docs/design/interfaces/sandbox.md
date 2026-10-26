@@ -44,6 +44,7 @@ class IsolationDimension(StrEnum):
 class IsolationMechanism(StrEnum):
     NONE = "none"  # 该维度未隔离
     SETRLIMIT = "setrlimit"  # 内核 per-process rlimit（ADR-0007 机制类别三）
+    PRIVDROP = "privdrop"  # setuid 到非特权 uid（2026-10-26 新增，见 §5）
     NAMESPACE = "namespace"  # 命名空间 / mount 类（ADR-0007 机制类别一）
     CGROUP = "cgroup"  # cgroup v2 配额（ADR-0007 机制类别二）
 ```
@@ -54,7 +55,7 @@ class IsolationMechanism(StrEnum):
 | --- | --- | --- |
 | `FILESYSTEM` | `--read-only` 后写文件 | L2-C 由容器提供；L1 由**路径白名单**兜底（非内核隔离） |
 | `NETWORK` | `--network=none` 后出站 | L2-C 由容器提供；L1 = 默认拒绝 + 审计（非内核隔离） |
-| `USER` | `--user 65534:65534` | 由容器或 `proc.run(isolation="user")` 提供 |
+| `USER` | `--user 65534:65534` | 由容器（`NAMESPACE`）或 `proc.run(isolation="user")`（`PRIVDROP`）提供 |
 | `CAPABILITIES` | `--cap-drop=ALL` | 仅容器后端提供 |
 | `CPU_TIME` | `RLIMIT_CPU` | **setrlimit**（可靠） |
 | `ADDRESS_SPACE` | `RLIMIT_AS` | **setrlimit**（可靠） |
@@ -285,3 +286,20 @@ ADR-0007 §4.2 明确"档位选择是**逐维度**的"，且不同后端 / 参�
   它是上一条已登记的未覆盖项、**不是别名待办**，本次未关闭（见威胁模型 `T-08` 残余风险 3）。
   **证据**：`98cd203`（其提交信息记录 `make check` 全绿 110 passed / 0 xfailed、
   `make test-security` 18 passed）；本条的 grep 结果与行号由本目录于 2026-09-18 **独立复跑**。
+
+- **2026-10-26 · `IsolationMechanism` 增加 `PRIVDROP`（契约**增量**，不改既有语义）**：
+  **触发**：实现 `security/sandbox/probe.py` 时，`USER` 维度的负向探针（子进程回读
+  ``uid=65534``）**通过**了，但枚举里没有"降权"这一类：`SETRLIMIT` 是 rlimit、
+  `NAMESPACE` 是命名空间、`CGROUP` 是配额。旧代码只有两个选择——**把 uid 探针误标成
+  `SETRLIMIT`**，或**把已通过的探针记成未隔离**。两者都让"证据"与"字段"矛盾，
+  而本契约 §2.2 的立身之本正是"字段必须反映证据"。
+  **处置**：新增 `PRIVDROP = "privdrop"`，由 `probe.py` 的 `USER` 维度使用；
+  §2.1 的维度表同步注明"容器 ⇒ `NAMESPACE`，`proc.run(isolation='user')` ⇒ `PRIVDROP`"。
+  **影响面**：**加成员**，不删除、不改既有成员取值；消费方若只判 `NONE` 与非 `NONE` 则完全兼容。
+  **未做**：没有新增 `IsolationDimension`（`USER` 仍是同一维度），也没有改
+  `SandboxTier` / `IsolationMatrix` 的任何不变式。
+  **证据**：`agent-sec-perf doctor --json` 输出 `user: enforced=true, mechanism=privdrop`；
+  单测 `tests/unit/test_sandbox_probe.py::test_mechanism_none_cannot_claim_enforced`
+  钉住"`NONE` 不得声明 `enforced=True`"。
+  **待补**：`contracts/sandbox.py` 的 `IsolationMechanism` 注释已同步；若后续接入容器后端，
+  需在 §2.1 表里补"同一维度可由不同机制提供"的示例。

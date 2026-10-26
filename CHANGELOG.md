@@ -14,6 +14,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- **CLI 交付形态（阶段产品，2026-10-26）**：`agent-sec-perf` 无参数启动给首屏引导；
+  新增 `doctor`（8 项环境体检 + 逐维度隔离矩阵）、`demo`（准备隔离工作区 / `--run` 真跑 +
+  8 条机检 + 审计回放）、`manual`（命令速查）。引导与手册文案见
+  [`src/agent_sec_perf/cli/guidance.py`](src/agent_sec_perf/cli/guidance.py)；
+  演示设计见 [`docs/design/showcase-incident-triage.md`](docs/design/showcase-incident-triage.md)，
+  六幕演示脚本见 [`docs/engineering/demo-showcase.md`](docs/engineering/demo-showcase.md)。
+- **端侧 agent 演示案例 `incident-01`（离线日志根因定位，只读）**：
+  `examples/showcase/incident-01/{case.toml,scene/,pack/}`。模型在只授予 `read_file`、
+  只允许两个目录的条件下完成"读日志 → 读配置 → 给出可复核结论"的两步取证；
+  8 条机检覆盖终态 / `seq` / 工具执行 / 结论事实 / 审计回放 / 降级留痕。
+- **逐维度隔离探针** `agent_sec_perf.security.sandbox.probe`：以**负向探针**判定
+  `user`（uid=65534）、`address_space`（3 GiB 分配被拒）、`file_size`（65 MiB 写入被拒）；
+  对内核禁用 user namespace / firejail fail-open 的情形**如实降级为 L1** 并落
+  `execution_degradation` 审计。契约增量：`IsolationMechanism` 新增 `PRIVDROP`
+  （留痕见 [`docs/design/interfaces/sandbox.md`](docs/design/interfaces/sandbox.md) §5）。
+
 ### Changed
 
 - **环境内 CodeBuddy Agent 默认自动运行**：主 Agent 命令闸门由"逐类逐次弹确认"放宽为
