@@ -70,9 +70,13 @@ agent-sec-perf run "读取 README.md，用三条要点总结它" \
 
 | 路径 | 作用 |
 | --- | --- |
-| `showcase/incident-01/case.toml` | 案例唯一声明源（任务文本、最少工具调用、结论必须包含的事实） |
-| `showcase/incident-01/scene/` | 合成故障现场（`app.log` / `service.toml` / `README.md`） |
-| `showcase/incident-01/pack/` | 只读领域包 `incident-triage`（`read_file` / `list_dir`，风险 `low`） |
+| `showcase/incident-01/case.toml` | 案例唯一声明源（两段任务文本、最少读/写次数、报告必须包含与禁止出现过的事实、修订保真的 key） |
+| `showcase/incident-01/scene/` | 合成故障现场（`app.log` / `service.toml` / `README.md`）；`report.md` 是**模型产出**，不在这里 |
+| `showcase/incident-01/pack/` | 诊断领域包 `incident-triage`（暴露面 `read_file` / `list_dir` / `write_incident_report`） |
+| `showcase/incident-01/pack-revise/` | 修订领域包 `incident-triage-revise`（暴露面 `read_file` / `revise_report`）——**按阶段收窄**，诊断阶段看不到它，修订阶段也看不到 `write_report` |
+
+⚠️ `scene/app.log` 是**案例资产**（不是运行日志），`.gitignore` 的 `*.log` 规则已对它显式豁免。
+删除或忽略它 ⇒ `demo --run` 会在第一步读文件就失败，而失败现象看起来像"模型不会用工具"。
 
 案例的判据与设计理由见 [`../docs/design/showcase-incident-triage.md`](../docs/design/showcase-incident-triage.md)；
 怎么讲见 [`../docs/engineering/demo-showcase.md`](../docs/engineering/demo-showcase.md)。

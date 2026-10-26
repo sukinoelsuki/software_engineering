@@ -187,6 +187,14 @@
      `REQ-SEC-06` 的可回放性被架空（审计"存在但没人找得到"）。
 - **影响**：读 = 机密性（凭据、私钥）；写 = 完整性（**不可逆**，例如覆盖配置或源码）。
 - **现有缓解**（**已实现**）：
+  - **受限写工具的目标不来自输入（2026-10-26 新增，演示案例引入）**：`write_report`
+    的目标是**常量** `REPORT_FILENAME = "report.md"`（`tools/files.py`），参数只有 `content`；
+    `revise_report` 更进一步，只能替换**已存在且唯一**的一行（`key` + `value`），
+    无法新增行、无法重排结构、`value` 不含换行（⇒ 不能用它注入新行）。
+    两者都走 `resolve_tool_path`，符号链接逃逸 / 未知参数（含 `path`）/ 多行 value 的
+    对抗性用例见 `tests/unit/test_tools_write_report.py`。⚠️ 这是**收窄影响面**（工具层固定
+    目标与行数），**不是**把通用写能力降级：通用 `write_file` 的风险默认未改，
+    也不在演示包 allowlist 内。
   - `foundation/paths.py:16-39` `resolve_within()`：先 `expanduser().resolve()`
     （**展开 `..` 与符号链接**），再要求 `resolved == root_resolved or root_resolved in resolved.parents`；
   - **按路径分量比较**（`in resolved.parents`）而非字符串前缀 ⇒ 第 4 类（`/tmp/foobar`）**天然不通过**；

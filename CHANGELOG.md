@@ -18,14 +18,25 @@
 
 - **CLI 交付形态（阶段产品，2026-10-26）**：`agent-sec-perf` 无参数启动给首屏引导；
   新增 `doctor`（8 项环境体检 + 逐维度隔离矩阵）、`demo`（准备隔离工作区 / `--run` 真跑 +
-  8 条机检 + 审计回放）、`manual`（命令速查）。引导与手册文案见
+  11 条机检 + 审计回放）、`manual`（命令速查）。引导与手册文案见
   [`src/agent_sec_perf/cli/guidance.py`](src/agent_sec_perf/cli/guidance.py)；
   演示设计见 [`docs/design/showcase-incident-triage.md`](docs/design/showcase-incident-triage.md)，
-  六幕演示脚本见 [`docs/engineering/demo-showcase.md`](docs/engineering/demo-showcase.md)。
-- **端侧 agent 演示案例 `incident-01`（离线日志根因定位，只读）**：
-  `examples/showcase/incident-01/{case.toml,scene/,pack/}`。模型在只授予 `read_file`、
-  只允许两个目录的条件下完成"读日志 → 读配置 → 给出可复核结论"的两步取证；
-  8 条机检覆盖终态 / `seq` / 工具执行 / 结论事实 / 审计回放 / 降级留痕。
+  七幕演示脚本见 [`docs/engineering/demo-showcase.md`](docs/engineering/demo-showcase.md)。
+- **受限写工具族 `write_report` / `write_incident_report` / `revise_report`**（`tools/files.py`）：
+  三者目标都**固定**为工作区根目录的 `report.md`（不来自模型输入）。
+  `write_report(content)` 按 `KEY=VALUE` 格式闸门拒绝空值 / 未替换的尖括号占位符；
+  `write_incident_report(...)` 是**领域工具**：只收四个字段值、**行格式由工具生成**，
+  并在写入前校验三个取证字段的值**逐字出现在现场文件里**（编造取值会被拒，指出是哪个字段）；
+  `revise_report(key, value)` **只替换已存在且唯一的一行**，其余行逐字保留
+  ⇒ "按意见只改结论行"由工具结构保证，而不是靠提示约束小模型。
+  每次调用都落 `TOOL_CALL` 审计（`detail.artifact`，修订另记 `detail.key`）。
+  通用 `write_file` 的风险默认**未改**（仍为 `HIGH`，须人工确认）。
+- **端侧 agent 演示案例 `incident-01`（离线日志根因定位与报告修订）**：
+  `examples/showcase/incident-01/{case.toml,scene/,pack/}`。模型在只授予
+  `read_file` + `write_file`、只允许两个目录、且**写只能写 `report.md`** 的条件下，
+  完成"读日志 → 读配置 → 写报告初稿 → 读回报告、按复核意见只改结论行"的两阶段业务
+  （两次独立会话、至少五步工具调用）。11 条机检覆盖阶段完整 / 两阶段的终态与 `seq` /
+  工具次数 / 工具执行 / 落盘报告 / **修订保真**（初稿与终稿逐字比对）/ 审计回放 / 降级留痕。
 - **逐维度隔离探针** `agent_sec_perf.security.sandbox.probe`：以**负向探针**判定
   `user`（uid=65534）、`address_space`（3 GiB 分配被拒）、`file_size`（65 MiB 写入被拒）；
   对内核禁用 user namespace / firejail fail-open 的情形**如实降级为 L1** 并落

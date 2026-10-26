@@ -26,7 +26,7 @@
 | 亲手跑一遍、看着它工作 | §2 五分钟上手 → §3 演示脚本（5 个舞台） |
 | 它出错了，我要定位 | §4 调试手册（退出码 → 症状 → 根因 → 处置） |
 | 想**按阶段亲手跑一遍并理解每步的设计取舍与代价** | [`product-walkthrough.md`](product-walkthrough.md)（执行顺序 + 每步看什么 + 为什么这么设计；**命令仍以本手册为准**） |
-| 马上要**演示/汇报**，只有 10 分钟 | §9 与 [`demo-showcase.md`](demo-showcase.md)（六幕脚本 + 口播 + 故障处置） |
+| 马上要**演示/汇报**，只有 10 分钟 | §9 与 [`demo-showcase.md`](demo-showcase.md)（七幕脚本 + 口播 + 故障处置） |
 | 我要判断下一步做什么 | §6 已知边界、§7 下一步候选 |
 
 ---
@@ -437,7 +437,7 @@ AUDIT tool_call       deny read_file {'denied_reason': 'policy_denied'}
 ## 9. 演示与引导（2026-10-26 新增，本阶段产品形态）
 
 本阶段**不做前端**，把"能被人用起来"做进 CLI：
-无参数启动给引导，体检与演示各是一条命令。完整六幕脚本、口播与故障处置见
+无参数启动给引导，体检与演示各是一条命令。完整七幕脚本、口播与故障处置见
 [`demo-showcase.md`](demo-showcase.md)；案例设计见
 [`../design/showcase-incident-triage.md`](../design/showcase-incident-triage.md)。
 
@@ -445,7 +445,7 @@ AUDIT tool_call       deny read_file {'denied_reason': 'policy_denied'}
 agent-sec-perf                # 首屏：doctor → demo → demo --run → manual
 agent-sec-perf doctor         # 8 项体检；含隔离矩阵（逐维度、负向探针）
 agent-sec-perf demo           # 秒级：准备隔离工作区（不调模型）
-agent-sec-perf demo --run     # 真跑：本次实测 489 s（约 8 分钟），8 条机检 + 审计回放
+agent-sec-perf demo --run     # 真跑两阶段（诊断→写初稿→读回→修订），11 条机检 + 审计回放
 agent-sec-perf manual         # 命令速查 + 三条约定 + 文档索引
 ```
 
@@ -461,10 +461,16 @@ agent-sec-perf manual         # 命令速查 + 三条约定 + 文档索引
 
 ### 9.2 `demo` 的边界（不得放大）
 
-- 案例是**只读**的：只授予 `read_file`，不演示写文件 / 执行命令；
+- 案例是**受限写**的：授权 `read_file` + `write_file`，但暴露面按阶段收窄——
+  诊断阶段只有 `write_incident_report`（只收四字段，行由工具生成），
+  修订阶段只有 `revise_report`（只替换已存在且唯一的一行）；
+  通用 `write_file` 与 `run_command` **不在 allowlist**，对模型等于不存在；
+- 业务分两段：诊断（读两份 + 写初稿）→ 修订（读回 + 只改 `VERDICT` 行），
+  两段是**两次独立会话**；修订用 `revise_report`（不改全文），机检再逐字比对初稿与终稿；
 - 授权集合**写死**，不读用户级 `config.toml` ⇒ 演示权限不会大于标准配置；
 - 允许根 = 工作区 + 案例根；其余路径读不到（`PathNotAllowedError`）；
-- 机检 8 条失败 ⇒ 命令退出码 **1**，与"任务失败"同码；装配失败仍是 **3**；
+- 机检 9 条失败 ⇒ 命令退出码 **1**，与"任务失败"同码；装配失败仍是 **3**；
+- 诊断阶段失败时**跳过**修订阶段（不拿"修订成功"掩盖"诊断失败"）；
 - 隔离档位以 `doctor` 的实测为准；**当前云环境是 L1**（命名空间不可用）。
 
 ### 9.3 与既有舞台的关系
@@ -474,7 +480,7 @@ agent-sec-perf manual         # 命令速查 + 三条约定 + 文档索引
 | 需求 | 用什么 |
 | --- | --- |
 | 讲清"一次真实会话长什么样" | §3 舞台 2（`run` 原始命令） |
-| 讲清"默认拒绝" | §3 舞台 4 / `demo-showcase.md` 第 6 幕 |
+| 讲清"默认拒绝" | §3 舞台 4 / `demo-showcase.md` 第 7 幕 |
 | 讲清"引导 + 体检 + 机检" | §9 的 `doctor` / `demo` |
 
 ### 9.4 本节的实测记录
@@ -483,5 +489,6 @@ agent-sec-perf manual         # 命令速查 + 三条约定 + 文档索引
 | --- | --- | --- |
 | 2026-10-26 | `agent-sec-perf doctor` | 7 ok / 1 warn（L1：`user` / `address_space` / `file_size` 有负向证据） |
 | 2026-10-26 | `agent-sec-perf demo` | 秒级；工作区 4 个文件 |
-| 2026-10-26 | `agent-sec-perf demo --run` | **8/8 通过**；10 条事件、`seq` 0..9、2 次 `read_file` ok、`E42/3000/8000` 命中、审计 4 行、2/2 回放 |
+| 2026-10-26 | `agent-sec-perf demo --run`（单阶段版） | **8/8 通过**；10 条事件、`seq` 0..9、2 次 `read_file` ok、`E42/3000/8000` 命中、审计 4 行、2/2 回放 |
+| 2026-10-26 | `agent-sec-perf demo --run`（**两阶段版**） | **11/11 通过**；墙钟 14 分钟；数据见 `demo-showcase.md` §6（同一表格，避免两处数字漂移） |
 | 2026-10-26 | 第一版任务（对照） | **失败**：1 次工具调用 + 幻觉 `CONFIG_TIMEOUT_MS=5000`；机检 3 条 fail |
