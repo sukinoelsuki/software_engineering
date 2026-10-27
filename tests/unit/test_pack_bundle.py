@@ -113,6 +113,6 @@ def test_status_unbuilt_verified_broken(tmp_path: pathlib.Path) -> None:
 def test_repair_catalog_covers_all_failure_modes() -> None:
     codes = [option.code for option in REPAIR_CATALOG]
 
-    assert codes == [f"F{index}" for index in range(1, 9)]
+    assert codes == [f"F{index}" for index in range(1, 10)]
     assert all(option.action and option.forbidden for option in REPAIR_CATALOG)
     assert [item["code"] for item in catalog_as_json()] == codes

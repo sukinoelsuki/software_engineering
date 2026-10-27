@@ -57,4 +57,4 @@ def test_pack_plan_lists_all_failure_modes() -> None:
 
     assert result.exit_code == 0, result.output
     catalog = json.loads(result.stdout)["catalog"]
-    assert [item["code"] for item in catalog] == [f"F{index}" for index in range(1, 9)]
+    assert [item["code"] for item in catalog] == [f"F{index}" for index in range(1, 10)]

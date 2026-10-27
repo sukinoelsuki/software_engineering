@@ -118,3 +118,15 @@ uv run python -m agent_sec_perf.cli.app pack build examples/showcase/incident-01
 uv run python -m agent_sec_perf.cli.app pack verify /tmp/ip.bundle --json
 uv run python -m agent_sec_perf.cli.app pack status /tmp/ip.bundle --json
 ```
+
+## 7. 追加（2026-10-27，实测驱动；不改上文结论）
+
+用 Qwen3-0.6B / 1.7B / MiniCPM5-2B 跑同一案例后，发现失败模式目录有一处歧义：
+
+- **同一观测信号**（反复调用同一工具直到预算耗尽）对应**两种原因**：
+  ① 目标工具没暴露（`F1`）；② 目标工具暴露但模型不选（新增 `F9`）。
+- 修复动作完全不同：①调预算/白名单；②拆阶段/收窄工具形状。
+  ⇒ 按"编号只增不复用"追加 **`F9`**，并把 `F1` 的判据收窄为"工具**不在**暴露面内"。
+
+对应实现：`src/agent_sec_perf/pack/plan.py`；实测记录见 `docs/devlog/0032` §4.2。
+⚠️ 本 ADR 的其余结论（层定位、bundle 格式、自证范围、负面后果）**不变**。
