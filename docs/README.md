@@ -40,6 +40,7 @@
 | base project 为什么选它？ | [`proposals/0001-base-project-selection.md`](proposals/0001-base-project-selection.md) |
 | **文档里怎么画图、画在哪、怎么自检？** | [`engineering/diagram-conventions.md`](engineering/diagram-conventions.md) |
 | **成果展示怎么讲、怎么跑、出问题怎么办？** | [`engineering/demo-showcase.md`](engineering/demo-showcase.md) |
+| **能力包内核怎么演示、换环境后怎么跑？** | [`engineering/pack-runbook.md`](engineering/pack-runbook.md) |
 | **CLI 交付形态与演示案例为什么这样设计？** | [`design/showcase-incident-triage.md`](design/showcase-incident-triage.md) |
 | AI 代理该怎么协作？ | [`../CODEBUDDY.md`](../CODEBUDDY.md) |
 
