@@ -29,7 +29,7 @@
 
 - **已实现**：`contracts/`（6 模块）、`foundation/`（5 件）、`security/{capabilities,policy}`、
   `observability/audit`、`model/client`（**仅本地回环**）、`tools/{registry,files,shell}`、
-  **`harness/`（9 件）**、**`cli/`（3 件）**、`bench/`；
+  **`harness/`（9 件）**、**`cli/`（3 件）**、**`pack/`（6 件，能力包内核）**、`bench/`；
 - **未开工**：`security/sandbox/`、`security/refusal.py`、`model/{router,probe,assets}.py`、
   `tools/search.py`、`observability/tracing.py`。
 
@@ -62,6 +62,7 @@
 flowchart TD
     subgraph V["纵向层（依赖方向自上而下，单向）"]
         UX["L4 表现层 UX — cli/<br/>Typer 应用 · Rich 渲染 · 交互/非交互 · 权限确认<br/>【3 件已实现：app · render · approval】"]
+        PACK["L4 生产层 PACK — pack/<br/>能力包内核：案例契约 · 判据自证 · bundle 摘要 · 状态机 · 修复目录<br/>【6 件已实现，ADR-0034】"]
         HARNESS["L3 编排层 HARNESS — harness/<br/>ReAct 循环 · 工具裁剪 · 提示分级 · 检查点 · 上下文引擎 · 领域包<br/>【9 件已实现，含 ADR-0020 的 arguments.py】"]
         CAP["L2 能力层 CAPABILITY<br/>model/ 客户端【本地已实现；router/probe/assets 未开工】<br/>tools/ registry·files·shell【已实现；search 未开工】"]
         FND["L1 基础设施层 FOUNDATION — foundation/<br/>errors · paths · proc · config · logging<br/>【全部已实现】"]
@@ -75,7 +76,10 @@ flowchart TD
     CTR["contracts（零行为契约层）<br/>纯类型 + Protocol，仅依赖标准库<br/>【已实现：12 个被引用的类型已定死字段 + 后续新增枚举/Protocol】"]
     BENCH["bench/（评测子系统，保持独立）<br/>12 模块 + 4 夹具【已实现】<br/>与产品的唯一接缝 = foundation/"]
 
+    UX --> PACK
     UX --> HARNESS
+    PACK --> HARNESS
+    PACK --> CTR
     HARNESS --> CAP
     CAP --> FND
     HARNESS -. 调用 .-> SEC
@@ -188,7 +192,8 @@ flowchart LR
 | `model` | `contracts`、`foundation`、`security`、`observability` | L2：在特权操作点可调用横切层 |
 | `tools` | `contracts`、`foundation`、`security`、`observability` | 同上 |
 | `harness` | `contracts`、`foundation`、`model`、`tools`、`security`、`observability` | L3：向下依赖 L2 与 L1，并调用横切层 |
-| `cli` | `contracts`、`foundation`、`model`、`tools`、`harness`、`security`、`observability` | L4：Typer/Rich 的细节**限制在本层内**（其它层不得直接依赖终端） |
+| `pack` | `contracts`、`foundation`、`harness` | **产品层**：能力包内核（`ADR-0034`）。**不得 import `cli`**——执行通过调用方注入的 runner 完成，因此它可被将来的插件复用 |
+| `cli` | `contracts`、`foundation`、`model`、`tools`、`harness`、`security`、`observability`、`pack` | L4：Typer/Rich 的细节**限制在本层内**（其它层不得直接依赖终端）；`cli → pack` 只用于注册子命令 |
 | `bench` | `contracts`、`foundation` | **不在产品分层内**：与产品的唯一接缝是 `foundation/` |
 
 > **白名单是"允许"而不是"必须"**：例如 `cli` 允许 import `model`，但正常装配路径是
@@ -345,6 +350,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `harness/`（9 件） | `session` / `loop` / `prompts` / `trimming` / `checkpoint` / `errors` / `context/` / `domain_pack` / `arguments` | **已实现**（**9 件均落地**；第 9 件 `arguments.py` 由 `ADR-0020` 定案，该 ADR 已于 2026-09-19 获批准） | 源码：`src/agent_sec_perf/harness/{errors,prompts,trimming,context/__init__,checkpoint,domain_pack,loop,session}.py`（128~846 行）；单测：`tests/unit/test_harness_{errors,prompts,trimming,context,checkpoint,domain_pack,loop,session,internals}.py`（4029 行）；提交：`fe82cce` / `83835af` / `68ce680` / `cb3157e` / `cbef66f` / `14a7831` / `a9f73ee` / `19ade9a` / `5cd45f1` / `0fc11cc`。⚠️ **"已实现" ≠ "已跑通端到端"**：装配点 `cli/` 已实现（§0 第 1 条），端到端用例见 `tests/integration/`（真模型、标 `slow`、默认不跑） |
 | `cli/`（3 件） | `app` / `render` / `approval` | **已实现** | `src/agent_sec_perf/cli/{app,render,approval}.py`；`tests/unit/test_cli_{app,render,approval}.py`；提交 `4baa9e8` / `b4a7213` / `663c266` |
+| `pack/`（6 件） | 能力包内核（`ADR-0034`）：`case` / `criteria` / `bundle` / `state` / `plan` / `__init__` | **已实现**（**只覆盖单案例冒烟**；`pack run` 尚未真跑） | `src/agent_sec_perf/pack/`；`tests/unit/test_{pack_kernel,pack_bundle,cli_pack}.py`；`docs/adr/0034-capability-pack-kernel.md` |
 | `bench/`（12 模块 + 4 夹具） | 评测子系统，保持独立 | **已实现** | `src/agent_sec_perf/bench/`；`tests/unit/test_bench_*.py`（7 个模块） |
 
 ### 4.4 设计件与测试分层
@@ -653,3 +659,4 @@ SRS §7 的 9 个分组**不是 9 个层**，而是 9 组需求：
 | 2026-09-20 | **状态同步（威胁模型 `Q-3` 裁决联动）**：① §0 第 2 条的状态分布 `1 / 9 / 3` → `1 / 10 / 2`；② §7.2 落位表的 `T-03` 行状态列 → **部分缓解**（标注所有者裁决 `Q-3`，并**保留其缺口**：三条核心攻击路径 (a)(b)(c) 与注入语料集仍缺）；③ §7.2 的合计行 `1 / 9 / 3` → `1 / 10 / 2`；④ **另更正一处此前遗漏的同步**——§4.4 的威胁模型行仍停留 `0 / 8 / 5`（上一轮 2026-09-20 状态同步**未覆盖本行**），本次一并更正为 `1 / 10 / 2`（**登记遗漏事实，不静默改口**）。**不改任何决策**：§2.1 的 `R1`~`R5`、§2.3 的依赖白名单、§3 的组件选型、§4 的实现状态表、§5 的算法与路径一律不变（**"已实现" ≠ "已缓解"**；本文件**不得**被读成"安全已到位"，§0 第 2 条） | 所有者 2026-09-20 裁决 `Q-3`（`T-03` 由「未缓解」升「**部分缓解**」；`T-04`/`T-10` **维持「未缓解」**，"已缓解并验证"保持 `T-02` 一条）。**唯一真源**：`docs/design/threat-model/README.md` **§4.1**（分布 `1 / 10 / 2`）与其 §8.2 的 `Q-3`【裁决后状态】块 |
 | 2026-09-20 | **事实更正（§4.4 测试分层的过期计数）**：`tests/unit/` 由“22 个模块”更正为 **42 个 `test_*.py`**（目录下共 43 个 `.py`）；`tests/security/` 由“11 个模块”更正为 **18 个 `test_*.py`**（另有 `__init__.py` / `conftest.py` / `_harness_fakes.py` + `corpus/`）。**同批复核后无需改**：`tests/integration/`（1 条真模型 e2e；标 `slow`、默认不跑）、`tests/benchmark/`（不新增，基准由 `bench/` 承担）、`interfaces/`（6 份契约）、`threat-model/`（4 份）、`modules/`·`diagrams/`·`security-model.md`（均未建立）。⚠️ **只改现状计数，不改任何决策**：§2.1 的 `R1`~`R5`、§2.3 的依赖白名单、§3 的组件选型、§5 的算法与路径、§7.2 的威胁落位与状态计数（`1 / 10 / 2`）一律不变 | `ls tests/unit/`、`ls tests/security/`、`ls docs/design/interfaces/`、`ls docs/design/threat-model/` 实测（2026-09-20）；同批 [`testing-strategy.md`](../engineering/testing-strategy.md) §2 已按实测重算（`-m unit` 844〔⚠️ **该值当时即已过期 —— 见下一行更正为 `854`**〕 / `-m security` 96） |
 | 2026-09-20 | **事实更正（测试分层数字 + 取证口径）**：① 上一条 §12 引用的 `-m unit` **`844` 为当时即已过期的值**，本行更正为 **`854`**（上一条其余内容不变、不改写）。② §4.4 的 `tests/unit/` / `tests/security/` 两行补上**与 [`testing-strategy.md`](../engineering/testing-strategy.md) §2 同一口径、同一命令**的取证方式（`ls <层>/test_*.py \| wc -l` ⇒ `42` / `18`，**不含** `conftest.py` / `__init__.py` / `_harness_fakes.py` / `corpus/`），**消除两处数字分叉的种子**。**只改现状计数与取证方式，不改任何决策**：§2.1 的 `R1`~`R5`、§2.3 依赖白名单、§3 组件选型、§5 算法与路径、§7.2 威胁落位与状态计数（`1 / 10 / 2`）一律不变 | `ls tests/unit/test_*.py \| wc -l` = `42`、`ls tests/security/test_*.py \| wc -l` = `18`、`uv run pytest -m unit --collect-only -q` 末行 = `854/960 tests collected`、`uv run pytest -m security --collect-only -q` 末行 = `96/960 tests collected`（2026-09-20 **原样复跑**）；同批 `testing-strategy.md` §2 |
+| 2026-10-27 | **新增产品层 `pack/`**：§1.1 图加 `PACK` 节点与 `UX → PACK → HARNESS`、`PACK → CTR` 边；§2.3 白名单加 `pack` 行、`cli` 行允许依赖 `pack`；§0 第 1 条与 §4.3 的实现状态表补 `pack/`（6 件，依据 `ADR-0034` 与 2026-10-27 冒烟）。**不改任何既有决策**：`R1`~`R5`、`security`/`observability` 的横切位置、`bench/` 的独立性、§7.2 的威胁状态一律不变 | [`ADR-0034`](../adr/0034-capability-pack-kernel.md)、`docs/devlog/0032`、`tests/unit/test_architecture_layers.py` 的 `ALLOWED_DEPENDENCIES` |

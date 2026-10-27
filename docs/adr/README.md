@@ -98,6 +98,7 @@
 | [0028](0028-benchmark-runs-on-develop.md) | 跑测**直接跑在 `develop` 上**、**取消 `test/<slug>` 环境分支**：分派键由**分支名**改为**事件名**（`api_trigger_bench`，将来 `api_trigger_bench_arm64`）；环境必然是 `develop` 的 tip ⇒ "引用陈旧"整类失效模式消失；代价=只能测 tip。**取代** 0027 与 0025 §2.2 | **已接受**（2026-09-25） |
 | [0032](0032-agent-command-gate-and-ide-settings.md) | Agent 命令闸门放宽为「默认全自动 + 少数不可逆操作弹确认」：`codingcopilot.*` 六键的 **`scope = application`** 只能写 User 级、且平台启动时会覆盖 ⇒ 由 `.cnb.yml` 的 `vscode` 事件首段 stage 把设置源（`.ide/agent-preferences.json` + `.ide/settings.json`，2026-09-25 拆分）**合并进运行中的** User 设置并**断言**（不符即非零退出）；关闭 12 个内置类别（只留 `custom`）+ **38 条黑名单**（同日由 33 条补到 38）承接不可逆与本项目 **B/D/E 类红线**；⚠️ 定性 = **提醒层，非安全边界**。配套 `docs/engineering/agent-command-gate.md`、威胁条目 `T-15` | **已接受**（2026-09-25，F 类授权） |
 | [0033](0033-course-deliverables-directory.md) | 课程交付物目录：迁入 `docs/course-deliverables/`（实验 1 需求分析文档包 + 实验 2 软件设计文档），**目录名统一英文、文档名可中文**；交付物只读取不回写项目文档；搬迁导致的包内相对链接随迁修正 | **已接受**（2026-10-12，所有者指令） |
+| [0034](0034-capability-pack-kernel.md) | 能力包内核：新增产品层 `src/agent_sec_perf/pack/`（与 `cli/` 同层，禁止 import `cli`）；案例契约从 `cli/demo.py` 上移；bundle = `manifest.json`（逐文件 sha256）+ `case/` + `README.md`；`[selftest]` 正反例是发布闸门；`status/plan` 的 JSON 是**大模型总控**的唯一接口；内核不执行模型生成的代码 | **已接受**（2026-10-27，所有者指令：内核即当前产品） |
 
 > 新增 ADR 后请同步更新本表。
 > ⚠️ 索引缺项会导致读者（与代理）以为文档不存在、进而重复决策——2026-09-18 的一致性核查已发现一次（0014 缺登记）。
