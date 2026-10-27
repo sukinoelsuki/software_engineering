@@ -25,7 +25,6 @@ import json
 import pathlib
 import shutil
 import tempfile
-import tomllib
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -41,6 +40,7 @@ from agent_sec_perf.foundation.config import AppConfig, AuditConfig, LoggingConf
 from agent_sec_perf.foundation.errors import BenchError
 from agent_sec_perf.foundation.logging import sanitize_for_display
 from agent_sec_perf.observability.audit import JsonlAuditSink
+from agent_sec_perf.pack.case import CaseSpec, load_case_spec
 from agent_sec_perf.security.sandbox import IsolationReport, emit_degradation_audit, probe_isolation
 
 __all__ = [
@@ -97,30 +97,10 @@ _LABEL_LIMIT: Final = 80
 _LIVE_CONTENT_LIMIT: Final = 120
 
 
-@dataclass(frozen=True)
-class DemoCase:
-    """从 ``case.toml`` 读到的案例声明（唯一真源）。"""
-
-    case_id: str
-    title: str
-    case_dir: pathlib.Path
-    scene_dir: pathlib.Path
-    pack_draft_dir: pathlib.Path
-    pack_revise_dir: pathlib.Path
-    task_draft: str
-    task_revise: str
-    min_tool_calls: int
-    min_read_calls: int
-    min_write_calls: int
-    report_file: str
-    report_substrings: tuple[str, ...]
-    report_forbidden: tuple[str, ...]
-    report_preserved_keys: tuple[str, ...]
-    report_revised_key: str
-    preferred_model: str
-    max_completion_tokens: int
-    request_timeout_s: float
-    ready_timeout_s: float
+#: 案例声明的类型与解析现在归内核（``pack.case``）：判据与案例是产品资产，
+#: 不应绑在某个 CLI 子命令上。此处保留 ``DemoCase`` 这个名字，是为了不改既有
+#: 调用方与测试（别名而非第二份定义 ⇒ 不会漂移）。
+DemoCase = CaseSpec
 
 
 @dataclass(frozen=True)
@@ -173,40 +153,17 @@ class DemoOutcome:
 
 
 def load_case(case_dir: pathlib.Path | None = None) -> DemoCase:
-    """读取并校验 ``case.toml``。
+    """读取并校验 ``case.toml``（解析归 :mod:`agent_sec_perf.pack.case`）。
+
+    ``case_dir`` 省略时取仓库内的演示案例——**只在 CLI 层**做这个默认：
+    内核不猜仓库根（它要能对任意目录里的 bundle 工作）。
 
     Raises:
-        FileNotFoundError: 案例目录或 ``case.toml`` 缺失。
-        ValueError: 必填字段缺失 / 类型不符（这是**仓库内容**问题，不是用户输入）。
+        CaseSpecError: 目录/文件缺失、必填字段缺失或类型不符。
+            （``CaseSpecError`` 是 ``ValueError`` 的子类 ⇒ 既有 ``except ValueError`` 仍有效。）
     """
     base = (repo_root() / DEFAULT_CASE) if case_dir is None else case_dir
-    with (base / "case.toml").open("rb") as handle:
-        document = tomllib.load(handle)
-
-    case = _section(document, "case")
-    model = _section(document, "model")
-    return DemoCase(
-        case_id=_require_str(case, "id"),
-        title=_require_str(case, "title"),
-        case_dir=base,
-        scene_dir=base / _require_str(case, "scene"),
-        pack_draft_dir=base / _require_str(case, "pack_draft"),
-        pack_revise_dir=base / _require_str(case, "pack_revise"),
-        task_draft=_require_str(case, "task_draft").strip(),
-        task_revise=_require_str(case, "task_revise").strip(),
-        min_tool_calls=_require_positive_int(case, "min_tool_calls"),
-        min_read_calls=_require_positive_int(case, "min_read_calls"),
-        min_write_calls=_require_positive_int(case, "min_write_calls"),
-        report_file=_require_str(case, "report_file"),
-        report_substrings=_require_str_list(case, "report_substrings"),
-        report_forbidden=_require_str_list(case, "report_forbidden"),
-        report_preserved_keys=_require_str_list(case, "report_preserved_keys"),
-        report_revised_key=_require_str(case, "report_revised_key"),
-        preferred_model=_require_str(model, "preferred"),
-        max_completion_tokens=_require_positive_int(model, "max_completion_tokens"),
-        request_timeout_s=_require_positive_float(model, "request_timeout_s"),
-        ready_timeout_s=_require_positive_float(model, "ready_timeout_s"),
-    )
+    return load_case_spec(base)
 
 
 def prepare_workspace(case: DemoCase, workspace: pathlib.Path) -> pathlib.Path:
@@ -960,41 +917,5 @@ def _resolve_model(
     return available[0] if available else None
 
 
-def _section(document: Mapping[str, object], name: str) -> Mapping[str, object]:
-    value = document.get(name)
-    if not isinstance(value, dict):
-        raise ValueError(f"case.toml 缺少 [{name}] 段")
-    return cast("Mapping[str, object]", value)
-
-
-def _require_str(section: Mapping[str, object], key: str) -> str:
-    value = section.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"case.toml 的 {key} 必须是非空字符串")
-    return value
-
-
-def _require_positive_int(section: Mapping[str, object], key: str) -> int:
-    value = section.get(key)
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"case.toml 的 {key} 必须是正整数")
-    return value
-
-
-def _require_positive_float(section: Mapping[str, object], key: str) -> float:
-    value = section.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or float(value) <= 0:
-        raise ValueError(f"case.toml 的 {key} 必须是正数")
-    return float(value)
-
-
-def _require_str_list(section: Mapping[str, object], key: str) -> tuple[str, ...]:
-    value = section.get(key)
-    if not isinstance(value, list) or not value:
-        raise ValueError(f"case.toml 的 {key} 必须是非空字符串数组")
-    items: list[str] = []
-    for entry in value:
-        if not isinstance(entry, str) or not entry:
-            raise ValueError(f"case.toml 的 {key} 含非字符串项")
-        items.append(entry)
-    return tuple(items)
+# 案例解析的辅助函数已随 ``load_case`` 迁到 ``pack/case.py``：留在这里会形成第二份
+# 校验口径（两份判定必然漂移）。

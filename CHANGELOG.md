@@ -16,6 +16,13 @@
 
 ### Added
 
+- **能力包内核 `agent-sec-perf pack`（2026-10-27）**：新增 `build` / `verify` / `status` / `plan` / `run`
+  五个子命令，把"案例 + 能力包 + 判据"编译成带**逐文件 sha256** 的 bundle（同输入字节一致）。
+  `case.toml` 新增 `[selftest]` 正反例：**正例必过、反例必败**，否则拒绝构建——
+  判据先自证再用于评估。`status` / `plan --json` 是给大模型**总控**的窄接口
+  （读状态、选结构性修复动作），内核本身不执行模型生成的代码。
+  ⚠️ 判据自证只覆盖**内容维度**（4 项），事件流/审计 7 项在 manifest 中如实标 `uncovered`；
+  本期只做单案例冒烟。设计见 [`docs/adr/0034-capability-pack-kernel.md`](docs/adr/0034-capability-pack-kernel.md)。
 - **端侧模型思考过程可见（流式）**：`LocalLlamaClient` 支持 `stream: true` 与增量回调
   （`on_delta`），把 `reasoning_content` 与 `content` 分道递出；`demo` 以灰色行实时显示
   思考、一次补全结束即折叠，阶段末只留一行摘要并把全文落盘为 `reasoning-<阶段>.md`。

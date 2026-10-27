@@ -58,7 +58,18 @@ from rich.text import Text
 from agent_sec_perf.cli.approval import InteractiveApprovalGate, StdioApprovalInput
 from agent_sec_perf.cli.demo import load_case, prepare_workspace, run_demo
 from agent_sec_perf.cli.doctor import DEFAULT_MODEL_DIR, doctor_main
+from agent_sec_perf.cli.exit_codes import (
+    EXIT_ASSEMBLY,
+    EXIT_AUDIT,
+    EXIT_LIMIT_REACHED,
+    EXIT_OK,
+    EXIT_TASK_FAILED,
+    EXIT_UNEXPECTED,
+    OUTPUT_JSON,
+    OUTPUT_TEXT,
+)
 from agent_sec_perf.cli.guidance import print_manual, print_welcome
+from agent_sec_perf.cli.pack_cmd import pack_app
 from agent_sec_perf.cli.render import render_event, serialize_event
 from agent_sec_perf.contracts.audit import AuditEvent, AuditSink
 from agent_sec_perf.contracts.harness import (
@@ -109,16 +120,6 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # 常量（全部是**我方**的固定取值，可直接显示）
 # ---------------------------------------------------------------------------
-
-EXIT_OK: Final = 0
-EXIT_TASK_FAILED: Final = 1
-EXIT_LIMIT_REACHED: Final = 2
-EXIT_ASSEMBLY: Final = 3
-EXIT_AUDIT: Final = 4
-EXIT_UNEXPECTED: Final = 5
-
-OUTPUT_TEXT: Final = "text"
-OUTPUT_JSON: Final = "json"
 
 #: 未显式给出模型日志落点时的默认文件名（放在会话工作目录内；其父目录即服务进程的 cwd）。
 DEFAULT_MODEL_LOG_NAME: Final = "llama-server.log"
@@ -617,6 +618,10 @@ app = typer.Typer(
         "起步：doctor（体检）→ demo（准备演示）→ demo --run（真跑）→ manual（手册）。"
     ),
 )
+
+
+# 能力包内核：`run`/`demo` 是运行时，`pack` 是生产工具（同属产品层，见 ADR-0034）。
+app.add_typer(pack_app, name="pack")
 
 
 @app.callback(invoke_without_command=True)

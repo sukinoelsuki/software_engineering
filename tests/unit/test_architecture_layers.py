@@ -35,7 +35,7 @@ PROMOTED_MODULES = ("proc.py", "paths.py", "errors.py")
 
 CROSS_CUTTING_LAYERS = frozenset({"security", "observability"})
 BUSINESS_LAYERS = frozenset(
-    {"cli", "harness", "model", "tools", "security", "observability", "bench"}
+    {"cli", "pack", "harness", "model", "tools", "security", "observability", "bench"}
 )
 
 #: 每个层**允许**依赖的兄弟层（自身与标准库总是允许）。
@@ -50,8 +50,20 @@ ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     "harness": frozenset(
         {"contracts", "foundation", "model", "tools", "security", "observability"}
     ),
+    # pack（能力包内核）是产品层：位于 cli 之下、harness 之上；
+    # 它**不** import cli（执行通过调用方注入），由 ADR-0034 定案。
+    "pack": frozenset({"contracts", "foundation", "harness"}),
     "cli": frozenset(
-        {"contracts", "foundation", "model", "tools", "harness", "security", "observability"}
+        {
+            "contracts",
+            "foundation",
+            "model",
+            "tools",
+            "harness",
+            "security",
+            "observability",
+            "pack",
+        }
     ),
     # bench 是评测子系统，与产品的唯一接缝是共享 foundation（ADR-0015 §5.4.1）。
     "bench": frozenset({"contracts", "foundation"}),
@@ -213,7 +225,7 @@ def test_layers_only_depend_on_allowed_layers() -> None:
 @pytest.mark.unit
 def test_cross_cutting_layers_do_not_import_business_layers() -> None:
     """``security/`` 与 ``observability/`` 不得反向依赖业务层（R2）。"""
-    forbidden = frozenset({"harness", "tools", "model", "cli"})
+    forbidden = frozenset({"harness", "tools", "model", "cli", "pack"})
     offenders: list[str] = []
     for own_layer in sorted(CROSS_CUTTING_LAYERS):
         for path in _files_in_layer(own_layer):

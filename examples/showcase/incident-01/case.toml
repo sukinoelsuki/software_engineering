@@ -60,6 +60,13 @@ task_revise = """
 - revise_report 成功返回之前，不要输出最终回答；完成后只回复 REVISED_OK。
 """
 
+[selftest]
+# 判据自证样例（内核的 ``pack build`` 会先跑这一步，不通过就拒绝发布）。
+# 正例必须让全部**内容判据**通过；反例必须至少失败一项——只过正例说明判据太宽，
+# 只过反例说明判据太严。口径见 docs/proposals/0005-capability-pack-compiler.md §3.3。
+positive = "selftest/positive.md"
+negative = "selftest/negative.md"
+
 [model]
 # 默认模型；可用 `--model` 覆盖。换模型必须重测 token 预算与超时（见手册 §6）。
 preferred = "Qwen3-4B-Q4_K_M.gguf"
