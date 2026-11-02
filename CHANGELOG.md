@@ -16,17 +16,24 @@
 
 ### Added
 
-- **能力包内核 `agent-sec-perf pack`（2026-10-27）**：新增 `build` / `verify` / `status` / `plan` / `run`
-  五个子命令，把"案例 + 能力包 + 判据"编译成带**逐文件 sha256** 的 bundle（同输入字节一致）。
+- **能力包内核 `agent-sec-perf pack`（2026-10-27，2026-11-02 增补）**：新增
+  `example` / `build` / `verify` / `status` / `plan` / `run` 六个子命令，把"案例 + 能力包 + 判据"
+  编译成带**逐文件 sha256** 的 bundle（同输入字节一致）。
   `case.toml` 新增 `[selftest]` 正反例：**正例必过、反例必败**，否则拒绝构建——
   判据先自证再用于评估。`status` / `plan --json` 是给大模型**总控**的窄接口
   （读状态、选结构性修复动作），内核本身不执行模型生成的代码。
   ⚠️ 判据自证只覆盖**内容维度**（4 项），事件流/审计 7 项在 manifest 中如实标 `uncovered`；
   本期只做单案例冒烟。设计见 [`docs/adr/0034-capability-pack-kernel.md`](docs/adr/0034-capability-pack-kernel.md)。
+- **能力包内核可移植（2026-11-02）**：示例案例随 wheel 分发（`agent_sec_perf/data/examples`），
+  新增 `pack example --out DIR` 复制示例；`doctor` 与 `demo` 不再依赖仓库根，安装后可直接定位示例。
+  `--reasoning-budget` 由 128 调整为 512：128 时有一次把 `</think>` 漏进 `content` 通道，
+  512 的同案例复跑 11/11 且无泄漏。新增
+  [`docs/engineering/capability-pack-manual.md`](docs/engineering/capability-pack-manual.md)
+  （安装、命令、案例契约、逐屏讲解、移植与边界）。
 - **端侧模型思考过程可见（流式）**：`LocalLlamaClient` 支持 `stream: true` 与增量回调
   （`on_delta`），把 `reasoning_content` 与 `content` 分道递出；`demo` 以灰色行实时显示
   思考、一次补全结束即折叠，阶段末只留一行摘要并把全文落盘为 `reasoning-<阶段>.md`。
-  演示后端启用 `--reasoning-format deepseek`（思考与答复分离）与 `--reasoning-budget 256`
+  演示后端启用 `--reasoning-format deepseek`（思考与答复分离）与 `--reasoning-budget 512`
   （思考预算；不设上限时实测会吃光整个补全预算）。流式**不改错误语义**，非流式路径行为不变。
 - **CLI 交付形态（阶段产品，2026-10-26）**：`agent-sec-perf` 无参数启动给首屏引导；
   新增 `doctor`（8 项环境体检 + 逐维度隔离矩阵）、`demo`（准备隔离工作区 / `--run` 真跑 +

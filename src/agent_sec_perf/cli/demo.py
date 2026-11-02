@@ -34,13 +34,14 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from agent_sec_perf.cli.doctor import DEFAULT_MODEL_DIR, repo_root
+from agent_sec_perf.cli.doctor import DEFAULT_MODEL_DIR
 from agent_sec_perf.contracts.model import CapabilityTier
 from agent_sec_perf.foundation.config import AppConfig, AuditConfig, LoggingConfig, PolicyConfig
 from agent_sec_perf.foundation.errors import BenchError
 from agent_sec_perf.foundation.logging import sanitize_for_display
 from agent_sec_perf.observability.audit import JsonlAuditSink
 from agent_sec_perf.pack.case import CaseSpec, load_case_spec
+from agent_sec_perf.pack.example import example_case_dir
 from agent_sec_perf.security.sandbox import IsolationReport, emit_degradation_audit, probe_isolation
 
 __all__ = [
@@ -53,9 +54,6 @@ __all__ = [
     "run_demo",
     "verify_stages",
 ]
-
-#: 案例默认位置（相对仓库根）。
-DEFAULT_CASE: Final = pathlib.Path("examples/showcase/incident-01")
 
 #: 演示授予的能力：只读 + 写。写能力只被 ``write_report`` 使用（通用 ``write_file``
 #: 不在领域包 allowlist 内，对模型不可见）。**不读用户级 config**，避免演示权限更大。
@@ -80,13 +78,15 @@ STAGE_REVISE: Final = "revise"
 #:
 #: * ``--reasoning-format deepseek``：把 ``<think>`` 抽到 ``message.reasoning_content``，
 #:   ``content`` 只留最终答复（否则思考会混进答复，工具调用也更容易被截断）；
-#: * ``--reasoning-budget 256``：思考最多 256 token（约 1.5 分钟 @2.8 tok/s）。
+#: * ``--reasoning-budget 512``：思考最多 512 token。
+#:   2026-11-02 实测：128 时有一次在 draft 末尾把 ``</think>`` 漏进 ``content``
+#:   （终端会出现一段重复的思考尾巴，产物不受影响）；512 的同一案例 11/11 通过且无泄漏。
 #:   不设上限时实测思考能吃光整个补全预算（96 token 全用在思考上、``content`` 为空）。
 DEMO_SERVER_ARGS: Final[tuple[str, ...]] = (
     "--reasoning-format",
     "deepseek",
     "--reasoning-budget",
-    "128",
+    "512",
 )
 
 #: 思考流式渲染：每行字符数 / 单段回显上限。
@@ -155,14 +155,16 @@ class DemoOutcome:
 def load_case(case_dir: pathlib.Path | None = None) -> DemoCase:
     """读取并校验 ``case.toml``（解析归 :mod:`agent_sec_perf.pack.case`）。
 
-    ``case_dir`` 省略时取仓库内的演示案例——**只在 CLI 层**做这个默认：
-    内核不猜仓库根（它要能对任意目录里的 bundle 工作）。
+    ``case_dir`` 省略时取**内置示例**：源码树走 ``examples/showcase``，安装包走
+    ``agent_sec_perf/data/examples``（见 :func:`agent_sec_perf.pack.example.example_case_dir`）。
+    **只在 CLI 层**做这个默认：内核不猜仓库根，它要能对任意目录里的 bundle 工作。
 
     Raises:
         CaseSpecError: 目录/文件缺失、必填字段缺失或类型不符。
             （``CaseSpecError`` 是 ``ValueError`` 的子类 ⇒ 既有 ``except ValueError`` 仍有效。）
+        BenchError: 源码树与安装包都找不到内置示例。
     """
-    base = (repo_root() / DEFAULT_CASE) if case_dir is None else case_dir
+    base = example_case_dir() if case_dir is None else case_dir
     return load_case_spec(base)
 
 

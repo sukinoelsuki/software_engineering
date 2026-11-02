@@ -30,6 +30,7 @@ from agent_sec_perf.foundation.config import AppConfig, default_audit_directory,
 from agent_sec_perf.foundation.errors import BenchError
 from agent_sec_perf.foundation.logging import sanitize_for_display
 from agent_sec_perf.observability.audit import JsonlAuditSink
+from agent_sec_perf.pack.example import example_case_dir
 from agent_sec_perf.security.sandbox import IsolationReport, probe_isolation
 
 __all__ = ["CheckResult", "collect_checks", "doctor_main", "repo_root"]
@@ -218,14 +219,21 @@ def _check_models(model_dir: pathlib.Path) -> CheckResult:
 
 
 def _check_showcase() -> CheckResult:
-    case = repo_root() / SHOWCASE_RELATIVE / "case.toml"
-    if not case.is_file():
+    """示例案例是可选项：缺失不妨碍 `pack build`，因此只报 warn。
+
+    这条口径是为安装包设的：wheel 内的示例由 ``agent_sec_perf/data/examples`` 提供，
+    源码树里由 ``examples/showcase`` 提供。两者都没有时，用户仍然可以用自己的案例；
+    把它判成 fail 会把"没有示例"误报成"产品不能用"。
+    """
+    try:
+        case_dir = example_case_dir()
+    except (BenchError, OSError):
         return CheckResult(
             name="演示案例",
-            status=_FAIL,
-            detail=f"缺少 {SHOWCASE_RELATIVE}/case.toml（仓库不完整？）",
+            status=_WARN,
+            detail=f"未找到内置示例（{SHOWCASE_RELATIVE}）；pack build 需要显式案例目录",
         )
-    return CheckResult(name="演示案例", status=_OK, detail=str(SHOWCASE_RELATIVE))
+    return CheckResult(name="演示案例", status=_OK, detail=str(case_dir))
 
 
 def _check_isolation(report: IsolationReport) -> CheckResult:

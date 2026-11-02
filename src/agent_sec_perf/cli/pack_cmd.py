@@ -1,8 +1,9 @@
 """``agent-sec-perf pack``：能力包内核的命令面。
 
-五个命令对应内核的五步，**每一步都可单独跑**（这正是"能被大模型驱动"的前提——
+六个命令对应内核的六步，**每一步都可单独跑**（这正是"能被大模型驱动"的前提——
 总控读上一步的 JSON，决定下一步，而不是一次调用里跑完全程）::
 
+    pack example ──► 把内置示例案例复制到可写目录（安装包也能用）
     pack build   案例目录 ──► bundle（校验 + 判据自证 + 摘要）
     pack verify  bundle ──► 完整性 + 判据自证（不执行模型）
     pack status  bundle ──► 状态 + 允许的下一步（机器可读）
@@ -31,6 +32,7 @@ from rich.text import Text
 from agent_sec_perf.cli.demo import DemoOutcome, StageRun, run_demo
 from agent_sec_perf.cli.doctor import DEFAULT_MODEL_DIR
 from agent_sec_perf.cli.exit_codes import EXIT_ASSEMBLY, EXIT_OK, EXIT_TASK_FAILED
+from agent_sec_perf.foundation.errors import BenchError
 from agent_sec_perf.foundation.logging import sanitize_for_display
 from agent_sec_perf.pack.bundle import (
     MANIFEST_NAME,
@@ -40,6 +42,7 @@ from agent_sec_perf.pack.bundle import (
 )
 from agent_sec_perf.pack.case import CaseSpecError, load_case_spec
 from agent_sec_perf.pack.criteria import SelftestResult
+from agent_sec_perf.pack.example import copy_example, example_case_dir
 from agent_sec_perf.pack.plan import catalog_as_json
 from agent_sec_perf.pack.state import inspect_bundle
 
@@ -211,6 +214,34 @@ def plan(
     console.print(table)
     if current is not None:
         console.print(Text(f"当前阶段：{current.stage.value}", style="bold"))
+
+
+@pack_app.command("example")
+def example(
+    out: Annotated[Path, typer.Option("--out", help="复制到的目录（不能与示例源重叠）")],
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="覆盖同名文件（不删除目标目录里的其他文件）"),
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="输出机器可读 JSON")] = False,
+) -> None:
+    """把内置示例案例复制到可写目录，供 ``pack build`` 使用。"""
+    try:
+        source = example_case_dir()
+        target = copy_example(out, force=force)
+    except (BenchError, OSError) as exc:
+        _fail(exc, as_json=as_json)
+        raise typer.Exit(code=EXIT_ASSEMBLY) from None
+
+    payload = {"ok": True, "case": str(target), "source": str(source)}
+    if as_json:
+        _emit_json(payload)
+    else:
+        console = Console()
+        console.print(Text(f"示例已复制到：{target}", style="bold green"))
+        console.print(Text(f"来源：{source}"))
+        console.print(Text(f"下一步：agent-sec-perf pack build {target} --out <目录>"))
+    raise typer.Exit(code=EXIT_OK)
 
 
 @pack_app.command("run")

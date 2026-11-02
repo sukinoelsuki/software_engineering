@@ -58,3 +58,20 @@ def test_pack_plan_lists_all_failure_modes() -> None:
     assert result.exit_code == 0, result.output
     catalog = json.loads(result.stdout)["catalog"]
     assert [item["code"] for item in catalog] == [f"F{index}" for index in range(1, 10)]
+
+
+def test_pack_example_copies_builtin_case_and_builds(tmp_path: pathlib.Path) -> None:
+    case = tmp_path / "case"
+
+    copied = runner.invoke(app, ["pack", "example", "--out", str(case), "--json"])
+
+    assert copied.exit_code == 0, copied.output
+    payload = json.loads(copied.stdout)
+    assert payload["ok"] is True
+    assert (case / "case.toml").is_file()
+
+    built = runner.invoke(
+        app, ["pack", "build", str(case), "--out", str(tmp_path / "bundle"), "--json"]
+    )
+    assert built.exit_code == 0, built.output
+    assert json.loads(built.stdout)["selftest"]["ok"] is True

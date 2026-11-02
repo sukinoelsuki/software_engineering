@@ -22,6 +22,11 @@ build-backend = "hatchling.build"
 # 显式声明包位置（仓库为 src 布局），避免依赖 hatchling 的名称推断。
 packages = ["src/agent_sec_perf"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# 把示例案例装进 wheel，安装后 `agent-sec-perf pack example` 才能找到它。
+# 单一真源仍是仓库的 `examples/`；这里只是构建期的目标路径映射，不复制第二份文件。
+"examples" = "agent_sec_perf/data/examples"
+
 [project]
 name = "agent-sec-perf"
 # 版本号**不由提交历史推导**：它只能取 `[tool.lowspec.releases]` 台账里列出的里程碑值。

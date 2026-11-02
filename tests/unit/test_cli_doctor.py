@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent_sec_perf.cli.doctor import _check_models, _check_showcase, _mark
+from agent_sec_perf.foundation.errors import BenchError
 
 
 def test_missing_models_is_hard_failure(tmp_path: Path) -> None:
@@ -29,6 +30,20 @@ def test_showcase_assets_exist_in_repo() -> None:
 
     assert result.status == "ok"
     assert "incident-01" in result.detail
+
+
+def test_missing_showcase_is_warning(monkeypatch) -> None:
+    """安装包没有示例时不能把"没有示例"误报成"产品不能用"。"""
+
+    def missing() -> Path:
+        raise BenchError("missing")
+
+    monkeypatch.setattr("agent_sec_perf.cli.doctor.example_case_dir", missing)
+
+    result = _check_showcase()
+
+    assert result.status == "warn"
+    assert "pack build" in result.detail
 
 
 def test_mark_maps_three_states() -> None:

@@ -28,6 +28,13 @@ GOOD_REPORT = (
 DRAFT_REPORT = "CODE=E42\nLOG_TIMEOUT_MS=3000\nCONFIG_TIMEOUT_MS=8000\nVERDICT=待复核\n"
 
 
+def test_load_case_default_uses_builtin_example() -> None:
+    case = load_case()
+
+    assert case.case_id == "incident-01"
+    assert case.selftest is not None
+
+
 def _stage(
     stage_id: str,
     tools: Sequence[str],
