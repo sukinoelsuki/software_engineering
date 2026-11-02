@@ -99,9 +99,11 @@ uv run pytest -q --collect-only | tail -1
 
 ## 5. 格式与打印
 
-- **交付源是 `report.md`**（当前 524 行）。课程未要求 docx，仓库也**没有**生成 docx 的脚本。
-- 需要纸质件时，两条路径：① 把 Markdown 粘进课程模板（若有）或 Word/WPS，套用五号字、单倍行距；② 新增 `build.py`（需要 `python-docx`）。**②尚未做**：新增依赖属 F 类事项，需事先确认，且参考项目的 `build.py` 是 958 行、与本次交付无直接关系。
-- 页数**没有实测**。参考项目用 LibreOffice 渲染后统计页脚页码；本环境没有装 LibreOffice，装它会增加镜像体积，而镜像构建失败会被平台静默回退成默认镜像（`docs/research/2026-09-25-cnb-platform-behavior-facts.md`）。因此本报告不给出页数承诺，打印前自行核对。
+- **正文源是 `report.md`**（524 行）；**交付件是 `report.docx`**（入库），由 `build.py` 生成，**不要手改**。
+- **PDF 是本地核对产物**：`report.pdf` 由 LibreOffice 渲染，已 gitignore，**不入库**。
+- 构建环境另需 `libreoffice-writer`、`fonts-noto-cjk`、`poppler-utils`（仅本机，不进镜像）。
+- 构建：`uv pip install -r docs/course-report/requirements-doc.txt`，再跑 `uv run python docs/course-report/build.py`（`--no-pdf` 只出 docx）。
+- 实测页数：封面 1 + 目录 1 + 正文 15 = **17 页**（2026-11-02，LibreOffice 渲染）。目录页码是两遍渲染量出来的，页码域随分节重置；中文字体用 Noto CJK 替代宋体/黑体，**页数以 Word/WPS 为准**。
 - **若课程限页**，按下面的顺序删，不要按章删（每章都有对方没有的信息）：
   ① 第 4 章的模块表压成一段；② 第 5 章的表 5-2（命令与产物）删掉，只留四步链路；
   ③ 第 7 章的表 7-1 与 §7.3 的表各留三行；④ 第 8 章的表 8-2 删掉（正文已覆盖）。
@@ -116,8 +118,8 @@ uv run pytest -q --collect-only | tail -1
 ## 7. 待办与已知边界
 
 1. **分支基线耦合**：`feat/11` 合入 `develop` 后，本分支应改为从 `develop` 重建（或直接合并），否则报告与代码树会对不上。
-2. **docx 未生成**：若课程要求 Word 提交，需确认是否引入 `python-docx`（F 类事项），或手工排版。
-3. **页数未测**：见 §5。
+2. **封面待填**：`report.docx` 的五条横线（专业班级/学号/姓名/指导教师/报告日期）由本人手填，不要写进 `build.py`。
+3. **Word 分页可能与渲染不同**：docx 交给 Word 打开时若提示更新域，按提示更新后以 Word 页码为准。
 4. **写作 Skill 未立项**：见 §2.2；若要复用，需按 Skill 登记规则补来源与版本。
 5. **报告里的数字会漂移**：§3 的出处都写了文件与命令，但用例数、模块数、威胁分布会随开发变化。打印前按 §4 复跑一遍，不要沿用旧值。
 
