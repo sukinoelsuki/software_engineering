@@ -540,47 +540,74 @@ def new_section(doc, restart=None):
     return sec
 
 
+def _cell_bottom_border(cell):
+    tcpr = cell._tc.get_or_add_tcPr()
+    borders = OxmlElement("w:tcBorders")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "8")
+    bottom.set(qn("w:color"), "000000")
+    borders.append(bottom)
+    tcpr.append(borders)
+
+
 def cover(doc, title):
+    """封面：校名用书法体图片；题目与课程名各占一行；五项信息压在等长横线上。"""
+
     def line(text, size, bold=False, name=BODY_FONT, ea=BODY_EA, before=0, after=0):
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(before)
         p.paragraph_format.space_after = Pt(after)
-        r = p.add_run(text)
-        set_font(r, name=name, ea=ea, size=size, bold=bold)
+        p.paragraph_format.line_spacing = 1.0
+        if text:
+            r = p.add_run(text)
+            set_font(r, name=name, ea=ea, size=size, bold=bold)
         return p
 
-    line("华中科技大学", 26, True, "宋体", "宋体", 96, 10)
-    line("课程报告", 40, True, "黑体", "黑体", 34, 20)
-    line("（软件工程）", 16, False, "宋体", "宋体", 0, 66)
-
+    logo = HERE / "figures" / "hust-name-calligraphy.jpeg"
+    if not logo.exists():
+        sys.exit(f"封面校名图片缺失：{logo}")
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(24)
-    p.paragraph_format.space_after = Pt(10)
-    r = p.add_run("题目：")
-    set_font(r, size=16, bold=True)
-    r = p.add_run(title)
-    set_font(r, size=16, bold=True)
+    p.paragraph_format.space_before = Pt(42)
+    p.paragraph_format.space_after = Pt(16)
+    p.add_run().add_picture(str(logo), width=Cm(8.5))
 
-    doc.add_paragraph()
+    line("课程报告", 44, True, "黑体", "黑体", 18, 30)
+    line(title, 16, True, "宋体", "宋体", 0, 18)
+    line("课程名称：软件工程", 16, True, "宋体", "宋体", 0, 52)
 
-    items = ["专业班级", "学　号", "姓　名", "指导教师", "报告日期"]
-    for label in items:
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(12)
-        p.paragraph_format.space_after = Pt(12)
-        r = p.add_run(f"{label}：")
-        set_font(r, size=14)
-        r = p.add_run("　　　　　　　　　　")
-        set_font(r, size=14)
-        r.font.underline = True
+    fields = ["专业班级", "学　号", "姓　名", "指导教师", "报告日期"]
+    label_w, value_w = Cm(3.0), Cm(7.2)
+    table = doc.add_table(rows=len(fields), cols=2)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    for i, w in enumerate((label_w, value_w)):
+        table.columns[i].width = w
+        table._tbl.tblGrid.gridCol_lst[i].set(qn("w:w"), str(int(w.cm * 567)))
 
-    for _ in range(4):
-        doc.add_paragraph()
-    line("计算机科学与技术学院", 14, False, "宋体", "宋体", 0, 6)
-    line("2026 年 11 月", 14, False, "宋体", "宋体", 0, 0)
+    for r, label in enumerate(fields):
+        lc, vc = table.cell(r, 0), table.cell(r, 1)
+        lc.width, vc.width = label_w, value_w
+
+        lp = lc.paragraphs[0]
+        lp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        lp.paragraph_format.space_before = Pt(8)
+        lp.paragraph_format.space_after = Pt(0)
+        r1 = lp.add_run(f"{label}：")
+        set_font(r1, size=14, bold=True)
+
+        vp = vc.paragraphs[0]
+        vp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        vp.paragraph_format.space_before = Pt(8)
+        vp.paragraph_format.space_after = Pt(0)
+        r2 = vp.add_run(" ")
+        set_font(r2, size=14)
+        _cell_bottom_border(vc)
+
+    line("", 10.5, before=90)
+    line("计算机科学与技术学院", 16, True, "宋体", "宋体")
 
 
 def add_toc(doc, headings, page_map):
@@ -592,6 +619,7 @@ def add_toc(doc, headings, page_map):
     set_font(r, name=HEAD_FONT, ea=HEAD_EA, size=16, bold=True)
 
     for level, text in headings:
+        text = text.replace("`", "")
         p = doc.add_paragraph()
         pf = p.paragraph_format
         pf.space_before = Pt(3 if level == 1 else 0)
@@ -609,6 +637,7 @@ def add_toc(doc, headings, page_map):
 
 
 def add_heading(doc, level, text):
+    text = text.replace("`", "")
     p = doc.add_paragraph()
     pf = p.paragraph_format
     pf.space_before = Pt({1: 24, 2: 18, 3: 12}[level])
@@ -795,7 +824,7 @@ def map_pages(texts, headings):
         sys.exit("页码核对失败：目录之后的第一页不是第一章")
     result = {}
     for text in headings:
-        key = norm(text)
+        key = norm(text.replace("`", ""))
         for i in range(body_start, len(pages)):
             if key in pages[i]:
                 result[text] = i - body_start + 1
