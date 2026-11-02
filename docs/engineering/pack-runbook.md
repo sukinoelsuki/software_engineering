@@ -19,13 +19,14 @@
 1. **裸模型**：`/opt/models/MiniCPM5-2B-Q4_K_M.gguf` 只是一个 GGUF，没有工具；
 2. **声明**：`case.toml` 写清现场、动作面、两阶段任务与判据（不是靠提示词堆出来的）；
 3. **编译**：`pack build` → `verify`（逐文件 sha256 + 判据自证）→ `status=verified`；
-4. **执行**：`pack run` → 11 条机检 → `status=evaluated`（证据落 `evidence/`）。
+4. **执行**：`pack run` → 11 条机检 → `status=evaluated`（证据落 `evidence/`）；
+5. **审查**：`pack review --all` → 能力维度、失效归因、下一轮动作（报告落 `reports/`）。
 
 ```bash
 # 演示前彩排（约 3 秒，不跑模型）：环境 + 构建 + 校验 + 状态 + 失败模式目录
 scripts/pack-demo.sh --prepare
 
-# 正式演示（本环境六次实测：249~255 s，均 11/11；当前思考预算 512）
+# 正式演示（本环境七次实测：249~257 s，均 11/11；当前思考预算 512）
 scripts/pack-demo.sh
 ```
 
@@ -34,10 +35,11 @@ scripts/pack-demo.sh
 > `cp -a /tmp/ip.bundle /tmp/ip.bundle.keep`。
 >
 > **现场只剩 2 分钟**：不要现场跑模型；展示已保留的 `evidence/*.json` 与工作区
-> `report.md` / `reasoning-*.md`，说明这是本环境 6 次实测之一。**不要**在展示前跑
+> `report.md` / `reasoning-*.md`，说明这是本环境 7 次实测之一。**不要**在展示前跑
 > `--prepare` 把这份证据覆盖掉。
 
-它执行的就是 §1~§4 的命令，额外把三件**与模型无关**的前提做成 fail-fast 断言
+它执行的就是 §1~§4 的命令，并在 `run` 后调用 `pack review --all`；额外把三件
+**与模型无关**的前提做成 fail-fast 断言
 （这三件是现场最常见的"看起来像模型不行"）：
 
 | 断言 | 不做的后果 |
@@ -214,5 +216,6 @@ agent-sec-perf pack verify /tmp/ip.bundle --json
 - [ ] 篡改后 `verify` 退出码 `1` 且指出文件
 - [ ] `pack plan` 列出 `F1`~`F9`
 - [ ] `pack run`（2B）**11/11**，`status` 为 `evaluated`
+- [ ] `pack review --all` 生成报告，含 8 个维度、`findings`、`next_actions`
 - [ ] 失败路径（0.6B/1.7B）如实给出 `ok=false`（**模型不在 `/opt/models` 时跳过**，不要临时下载顶替）
 - [ ] 现场口径表没有说错一句

@@ -135,6 +135,14 @@ def inspect_bundle(bundle_dir: Path) -> BundleStatus:
     elif stage is BundleStage.EVALUATED:
         actions.append(
             NextAction(
+                id="review",
+                title="生成能力审查报告（维度 + 归因 + 下一轮动作）",
+                command=f"agent-sec-perf pack review {base} --all --json",
+                requires="一次或多次运行证据",
+            )
+        )
+        actions.append(
+            NextAction(
                 id="plan",
                 title="读证据、选一个结构性修复动作",
                 command=f"agent-sec-perf pack plan {base} --json",

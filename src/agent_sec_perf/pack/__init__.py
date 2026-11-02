@@ -5,7 +5,8 @@
 * :mod:`~agent_sec_perf.pack.case` —— 案例契约（``case.toml``）的解析与校验；
 * :mod:`~agent_sec_perf.pack.criteria` —— 内容判据与**判据自证**；
 * :mod:`~agent_sec_perf.pack.bundle` —— bundle 的构建、摘要与完整性校验；
-* :mod:`~agent_sec_perf.pack.state` / :mod:`~agent_sec_perf.pack.plan` —— 状态机与修复动作目录。
+* :mod:`~agent_sec_perf.pack.state` / :mod:`~agent_sec_perf.pack.plan` —— 状态机与修复动作目录；
+* :mod:`~agent_sec_perf.pack.review` —— 能力审查报告（维度、归因、下一轮动作）。
 
 层级定位见 :doc:`ADR-0034`：本包是**产品层**（与 ``cli/`` 同层、位于 ``harness/`` 之上），
 只依赖 ``contracts`` / ``foundation``；它不 import ``cli``，执行通过调用方注入的 runner 完成。

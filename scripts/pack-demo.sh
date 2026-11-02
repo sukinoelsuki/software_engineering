@@ -7,7 +7,7 @@
 #     1. /tmp 下残留的旧 bundle 会让 `status` 早已是 evaluated（"跑过了"被读成"刚跑"）；
 #     2. 上一次中断遗留的 llama-server 占着 8080 ⇒ 新进程起不来，现象像"模型加载失败"；
 #     3. 模型路径 / 推理后端 / 依赖没装好 ⇒ 失败信息看起来像"模型能力不行"。
-#   手工按手册敲 6 条命令时，任何一条出错都会被现场读成"模型不行"。
+#   手工按手册敲 7 条命令时，任何一条出错都会被现场读成"模型不行"。
 #   本脚本只做手册里**已有**的步骤，把上述前提变成 fail-fast 断言；
 #   它**不改变**任何安全默认、判据或包内容。
 #
@@ -80,7 +80,7 @@ trap finish EXIT
 # ---------------------------------------------------------------------------
 # 0. 前置条件（全部与模型无关，必须先过）
 # ---------------------------------------------------------------------------
-step "0/6 前置检查"
+step "0/7 前置检查"
 
 [[ -n "$BUNDLE" && "$BUNDLE" == /* ]] || die "BUNDLE 必须是绝对路径：$BUNDLE"
 case "$BUNDLE" in
@@ -140,7 +140,7 @@ printf '模型：%s\n' "$MODEL"
 printf '包：  %s\n' "$BUNDLE"
 
 if [[ "${SKIP_DOCTOR:-0}" != "1" ]]; then
-  step "1/6 环境体检（agent-sec-perf doctor）"
+  step "1/7 环境体检（agent-sec-perf doctor）"
   (cd "$ROOT" && uv run agent-sec-perf doctor) || die "doctor 报 fail（见上表；隔离 L1 是 warn，不是 fail）"
 else
   printf '\n（SKIP_DOCTOR=1：跳过 doctor）\n'
@@ -149,13 +149,13 @@ fi
 # ---------------------------------------------------------------------------
 # 2. 构建 → 校验 → 状态
 # ---------------------------------------------------------------------------
-step "2/6 构建能力包（--force 保证从「还没有证据」开始）"
+step "2/7 构建能力包（--force 保证从「还没有证据」开始）"
 (cd "$ROOT" && uv run agent-sec-perf pack build "$CASE_DIR" --out "$BUNDLE" --force)
 
-step "3/6 校验能力包（逐文件 sha256 + 判据自证）"
+step "3/7 校验能力包（逐文件 sha256 + 判据自证）"
 (cd "$ROOT" && uv run agent-sec-perf pack verify "$BUNDLE")
 
-step "4/6 状态与修复目录（状态必须是 verified；plan 是 F1~F9 白名单）"
+step "4/7 状态与修复目录（状态必须是 verified；plan 是 F1~F9 白名单）"
 (cd "$ROOT" && uv run agent-sec-perf pack status "$BUNDLE")
 (cd "$ROOT" && uv run agent-sec-perf pack plan)
 
@@ -168,7 +168,7 @@ fi
 # ---------------------------------------------------------------------------
 # 5. 真跑（唯一的分钟级步骤）
 # ---------------------------------------------------------------------------
-step "5/6 用端侧模型跑一次（流式显示思考；约 4 分钟）"
+step "5/7 用端侧模型跑一次（流式显示思考；约 4 分钟）"
 (cd "$ROOT" && uv run agent-sec-perf pack run "$BUNDLE" \
   --model "$MODEL" \
   --model-dir "$(dirname "$MODEL")" \
@@ -177,8 +177,11 @@ step "5/6 用端侧模型跑一次（流式显示思考；约 4 分钟）"
 # ---------------------------------------------------------------------------
 # 6. 状态 + 产物位置
 # ---------------------------------------------------------------------------
-step "6/6 运行后的状态（必须是 evaluated）"
+step "6/7 运行后的状态（必须是 evaluated）"
 (cd "$ROOT" && uv run agent-sec-perf pack status "$BUNDLE")
+
+step "7/7 生成能力审查报告（聚合 evidence）"
+(cd "$ROOT" && uv run agent-sec-perf pack review "$BUNDLE" --all)
 
 WORKSPACE="$(find /tmp -maxdepth 1 -type d -name 'lowspec-showcase-*' -printf '%T@ %p\n' 2>/dev/null \
   | sort -nr | head -n 1 | cut -d' ' -f2- || true)"
@@ -194,5 +197,5 @@ if [[ -n "$WORKSPACE" ]]; then
   done
 fi
 
-printf '\n现场口径：这是一次单案例、单次采样的通过（11 条机检），'
-printf '不是"模型具备通用 agent 能力"，也不是性能结论。\n'
+printf '\n现场口径：这是单案例的能力审查，不是"模型具备通用 agent 能力"，'
+printf '也不是性能结论；样本数与边界看审查报告。\n'

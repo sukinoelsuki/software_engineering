@@ -80,6 +80,10 @@
 | `pack plan` | 可选 bundle 目录 | `{catalog:[{code,failure,signal,action,forbidden}]}` | 无 |
 | `pack run` | bundle 目录、`--model` | `{ok, evidence, checks[], workspace, isolation_tier}` | 写 `evidence/*.json` |
 
+> 2026-11-02 补记：新增 `pack example`（复制内置示例）与 `pack review`（能力审查报告）；
+> `pack run` 的输出增加 `review`，证据 schema 升到 v2（v1 仍可被 `pack review` 读取）。
+> 字段级细节以 [`capability-pack-manual.md`](../engineering/capability-pack-manual.md) §5/§7 为准。
+
 `manifest.json` 必备字段：`schema`（`capability-pack/v1`）、`name`、`version`、`case_id`、
 `model`、`criteria.covered/uncovered`、`files[{path,sha256,size}]`；可选 `stamped`。
 

@@ -17,8 +17,8 @@
 ### Added
 
 - **能力包内核 `agent-sec-perf pack`（2026-10-27，2026-11-02 增补）**：新增
-  `example` / `build` / `verify` / `status` / `plan` / `run` 六个子命令，把"案例 + 能力包 + 判据"
-  编译成带**逐文件 sha256** 的 bundle（同输入字节一致）。
+  `example` / `build` / `verify` / `status` / `plan` / `run` / `review` 七个子命令，把
+  "案例 + 能力包 + 判据"编译成带**逐文件 sha256** 的 bundle（同输入字节一致）。
   `case.toml` 新增 `[selftest]` 正反例：**正例必过、反例必败**，否则拒绝构建——
   判据先自证再用于评估。`status` / `plan --json` 是给大模型**总控**的窄接口
   （读状态、选结构性修复动作），内核本身不执行模型生成的代码。
@@ -30,6 +30,11 @@
   512 的同案例复跑 11/11 且无泄漏。新增
   [`docs/engineering/capability-pack-manual.md`](docs/engineering/capability-pack-manual.md)
   （安装、命令、案例契约、逐屏讲解、移植与边界）。
+- **能力审查报告 `pack review`（2026-11-02）**：从 `evidence/*.json` 生成
+  `reports/<...>-review.md/.json`，按任务完成、工具选择、证据接地、结构化输出、受控修订、
+  拒绝后恢复、调用预算、重复性八个维度给出观测与判定；失败时映射到 `F1`~`F9`，
+  并输出带验证方式与禁止项的下一轮动作。`pack run` 会自动生成单样本报告；
+  `--all` 聚合多次运行。单样本标 `not_assessed`，2~4 次标 `preliminary`。
 - **端侧模型思考过程可见（流式）**：`LocalLlamaClient` 支持 `stream: true` 与增量回调
   （`on_delta`），把 `reasoning_content` 与 `content` 分道递出；`demo` 以灰色行实时显示
   思考、一次补全结束即折叠，阶段末只留一行摘要并把全文落盘为 `reasoning-<阶段>.md`。

@@ -70,6 +70,10 @@ DEMO_GRANTED_CAPABILITIES: Final[tuple[str, ...]] = ("read_file", "write_file")
 #: 提高档位**不会**给模型多授予一个能力。
 DEMO_CAPABILITY_TIER: Final = CapabilityTier.STANDARD
 
+#: 演示的步数预算（写进证据，避免审查报告猜配置）。
+DEMO_MAX_STEPS: Final = 8
+DEMO_MAX_CONSECUTIVE_FAILURES: Final = 3
+
 #: 阶段名（顺序固定：先诊断、后修订）。
 STAGE_DRAFT: Final = "draft"
 STAGE_REVISE: Final = "revise"
@@ -134,6 +138,7 @@ class DemoOutcome:
 
     case: DemoCase
     workspace: pathlib.Path
+    model_path: pathlib.Path
     stages: tuple[StageRun, ...]
     report_text: str
     isolation: IsolationReport
@@ -281,6 +286,7 @@ def run_demo(
         outcome = DemoOutcome(
             case=selected,
             workspace=workdir,
+            model_path=resolved_model,
             stages=stages,
             report_text=report_text,
             isolation=report,
@@ -329,8 +335,8 @@ def _run_stage(
         pack_directory=pack_dir,
         # 档位决定"模型能看到哪些工具"（BASIC 只有读）⇒ 需要写就必须 ≥ STANDARD。
         capability_tier=DEMO_CAPABILITY_TIER,
-        max_steps=8,
-        max_consecutive_failures=3,
+        max_steps=DEMO_MAX_STEPS,
+        max_consecutive_failures=DEMO_MAX_CONSECUTIVE_FAILURES,
         tool_timeout_s=30.0,
         max_prompt_tokens=8192,
         max_completion_tokens=case.max_completion_tokens,

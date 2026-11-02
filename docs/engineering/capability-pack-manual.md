@@ -26,6 +26,7 @@
 | --- | --- | --- |
 | bundle | 由 `--out` 指定 | 可分发、可校验的执行单位 |
 | evidence | `bundle/evidence/<case>-<UTC>.json` | 一次运行的机检结果、事件摘要与终稿 |
+| review | `bundle/reports/<...>-review.md/.json` | 能力维度、失效归因、下一轮动作 |
 | status | 由内核计算，不落盘 | `verified` / `evaluated` / `broken`，决定下一步 |
 
 它不做什么，需要先说清楚：
@@ -174,6 +175,9 @@ agent-sec-perf pack run /tmp/ip.bundle \
 
 # 5. 看状态与证据
 agent-sec-perf pack status /tmp/ip.bundle
+
+# 6. 生成能力审查报告（汇总全部样本 + 下一轮动作）
+agent-sec-perf pack review /tmp/ip.bundle --all --json
 ```
 
 每一步应该看到什么：
@@ -185,8 +189,9 @@ agent-sec-perf pack status /tmp/ip.bundle
 | `pack verify` | `ok=true`、`problems=[]` | 逐文件摘要一致，判据自证通过 |
 | `pack status` | `stage=verified`、`next_actions` 含 `run` | 还没有运行证据 |
 | `pack plan` | `catalog` 含 `F1`~`F9` | 每条有 `signal` / `action` / `forbidden` |
-| `pack run` | `ok=true`、11 条 checks | 证据写入 `evidence/` |
+| `pack run` | `ok=true`、11 条 checks | 证据写入 `evidence/`，审查报告写入 `reports/` |
 | `pack status` | `stage=evaluated` | 已有一次运行证据 |
+| `pack review` | `summary`、`dimensions`、`findings`、`next_actions` | 读证据，不跑模型 |
 
 时间预算：`build`、`verify`、`status`、`plan` 都在秒级；`run` 是唯一的分钟级步骤。2B 模型在本环境实测 249~258 s，4B 模型约 8~10 分钟。换机器、换模型都要重新测。
 
@@ -203,7 +208,8 @@ agent-sec-perf pack status /tmp/ip.bundle
 | `pack verify BUNDLE` | 校验摘要与判据自证 | 否 |
 | `pack status BUNDLE` | 报告阶段与允许的下一步 | 否 |
 | `pack plan [BUNDLE]` | 列出 `F1`~`F9` | 否 |
-| `pack run BUNDLE` | 用端侧模型跑一次，写证据 | 是 |
+| `pack run BUNDLE` | 用端侧模型跑一次，写证据与审查报告 | 是 |
+| `pack review BUNDLE` | 生成能力审查报告 | 否 |
 | `doctor` | 环境体检与隔离矩阵 | 否（会跑隔离探针） |
 
 ### 5.2 `pack example`
@@ -277,7 +283,22 @@ agent-sec-perf pack run BUNDLE [--model PATH] [--model-dir DIR] [--workspace DIR
 - `--json` 时 stdout 只出 JSON，进度与表格走 stderr。
 - 退出码：`0` 全部机检通过；`1` 有 check 失败；`3` 装配期故障（案例、bundle、模型）。
 
-### 5.8 `doctor`
+### 5.8 `pack review`
+
+```bash
+agent-sec-perf pack review BUNDLE [--evidence PATH] [--all] [--out DIR] [--json]
+```
+
+读 `evidence/*.json`，生成 Markdown 与 JSON 报告，写入 `bundle/reports/`。
+
+- `--evidence` 指定一份；省略取最新一份；
+- `--all` 汇总全部样本，用于看通过率与重复性；
+- `--out` 改报告目录；
+- JSON 里包含 `summary` / `samples` / `dimensions` / `findings` / `next_actions`。
+
+`pack run` 成功后会自动生成一份单样本报告；要聚合多次运行，再显式跑 `--all`。
+
+### 5.9 `doctor`
 
 ```bash
 agent-sec-perf doctor [--model-dir DIR] [--json]
@@ -287,7 +308,7 @@ agent-sec-perf doctor [--model-dir DIR] [--json]
 
 `fail` 表示产品跑不起来；`warn` 表示能跑但口径被削弱。隔离 L1 是 warn，不是 fail。
 
-### 5.9 退出码
+### 5.10 退出码
 
 `agent-sec-perf run`（旧命令，不在本手册的 `pack` 链路里）：
 
@@ -386,6 +407,7 @@ agent-sec-perf doctor [--model-dir DIR] [--json]
     selftest/positive.md
     selftest/negative.md
   evidence/              # 运行证据，不参与完整性校验
+  reports/               # 派生的审查报告，不参与完整性校验
 ```
 
 `build` 输出 `files=9` 时，计数是 `case/` 下 8 个文件加 `README.md`；`manifest.json` 本身不计入。
@@ -405,16 +427,18 @@ echo "exit=$?"
 
 | 字段 | 内容 |
 | --- | --- |
-| `schema` | `capability-pack/evidence/v1` |
+| `schema` | `capability-pack/evidence/v2`（v1 仍可被 `pack review` 读取） |
 | `case_id` | 案例 id |
 | `bundle_manifest_sha256` | 这次运行对应的 manifest 摘要 |
-| `model.path` | 实际使用的 GGUF 路径 |
-| `isolation.tier` | 隔离等级，如 `l1` |
+| `model.path` / `model.size_bytes` | 实际使用的 GGUF 与体积 |
+| `run.started_at` / `run.duration_s` | 本次运行的起止与墙钟 |
+| `run.settings` | token 预算、超时、档位、步数、思考预算 |
+| `isolation.tier` / `isolation.summary` | 隔离等级与逐维度摘要 |
 | `checks` | 11 条机检的 `name` / `ok` / `detail` |
-| `stages` | 每个阶段的退出码、状态、工具调用与结果 |
+| `stages` | 每个阶段的退出码、状态、事件数、工具调用与结果错误 |
 | `report` | 终稿全文 |
 
-证据是运行时产物，不入库；仓库只保留结论与复跑命令。
+证据是运行时产物，不入库；仓库只保留结论与复跑命令。审查报告在 `reports/`，同样是派生产物；它不参与 manifest 校验，删掉不影响 bundle 的完整性。
 
 ### 7.4 判据覆盖
 
@@ -424,6 +448,30 @@ echo "exit=$?"
 - 未覆盖的是事件流与审计判据：阶段完整、两个终态、`seq` 连续、工具集使用、工具真的执行、修订保真、审计回放。
 
 这说明自证只证明"判据分得开对错"，不证明"这次运行已经通过"。后者要一次真跑。
+
+### 7.5 审查报告
+
+`pack review` 生成两份文件：
+
+- `reports/<...>-review.md`：给人读；
+- `reports/<...>-review.json`：给总控读。
+
+JSON 顶层的字段：
+
+| 字段 | 内容 |
+| --- | --- |
+| `summary` | `samples` / `passed` / `pass_rate` / 每条 check 的通过计数 |
+| `samples` | 每次运行的 checks、工具调用、拒绝、未执行、重复写、墙钟 |
+| `dimensions` | 任务完成、工具选择、证据接地、结构化输出、受控修订、拒绝后恢复、调用预算、重复性 |
+| `findings` | 疑似 `F1`~`F9` 的编号、置信度、证据、允许的修法、禁止项 |
+| `next_actions` | 按优先级排列的下一轮动作，含验证方式与禁止项 |
+| `boundaries` | 单案例、模型档位、样本量、隔离等级等边界 |
+
+判定词只有四种：`demonstrated` / `partial` / `not_demonstrated` / `not_assessed`。
+`not_assessed` 是保留词：没有触发过的路径（例如从未发生工具拒绝）不能写成"已具备恢复能力"。
+
+样本策略：1 次只写 `not_assessed`；2~4 次写 `preliminary`；5 次以上才讨论通过率。
+报告不会把单次通过写成"模型能力"。
 
 ---
 
@@ -460,46 +508,48 @@ cd /workspace
 scripts/pack-demo.sh
 ```
 
-脚本做六步：前置检查、体检、构建、校验、状态与修复目录、真跑。下面是每一步终端会出现的文字，以及可以照着讲的内容。
+脚本做七步：前置检查、体检、构建、校验、状态与修复目录、真跑、审查报告。下面是每一步终端会出现的文字，以及可以照着讲的内容。
 
 ### 9.1 时间分配
 
 | 时间 | 屏幕 | 讲什么 |
 | --- | --- | --- |
-| 0:00–0:30 | 0/6 前置检查 | 固定代码版本、模型、输出目录 |
-| 0:30–1:00 | 1/6 `doctor` | 环境没问题；隔离 L1 是如实报告 |
-| 1:00–1:40 | 2/6 `build` | 9 个文件、判据自证 4 项 |
-| 1:40–2:10 | 3/6 `verify` | 摘要一致；篡改会被发现 |
-| 2:10–2:40 | 4/6 `status` + `plan` | 状态由内核算；F1~F9 是白名单 |
-| 2:40–3:10 | 5/6 运行前表 | 动作面：允许根、工具集、两阶段 |
-| 3:10–6:30 | 5/6 流式输出 | 思考、工具调用、策略、结果 |
-| 6:30–7:20 | 5/6 机检表 | 11 条判据，重点讲两条 |
-| 7:20–7:50 | 5/6 终稿 | 四行报告，前三个值来自现场 |
-| 7:50–8:10 | 6/6 `status` | `verified` 变 `evaluated` |
+| 0:00–0:30 | 0/7 前置检查 | 固定代码版本、模型、输出目录 |
+| 0:30–1:00 | 1/7 `doctor` | 环境没问题；隔离 L1 是如实报告 |
+| 1:00–1:40 | 2/7 `build` | 9 个文件、判据自证 4 项 |
+| 1:40–2:10 | 3/7 `verify` | 摘要一致；篡改会被发现 |
+| 2:10–2:40 | 4/7 `status` + `plan` | 状态由内核算；F1~F9 是白名单 |
+| 2:40–3:10 | 5/7 运行前表 | 动作面：允许根、工具集、两阶段 |
+| 3:10–6:30 | 5/7 流式输出 | 思考、工具调用、策略、结果 |
+| 6:30–7:20 | 5/7 机检表 | 11 条判据，重点讲两条 |
+| 7:20–7:50 | 5/7 终稿 | 四行报告，前三个值来自现场 |
+| 7:50–8:10 | 6/7 `status` | `verified` 变 `evaluated` |
+| 8:10–8:40 | 7/7 审查报告 | 样本、维度、归因、下一轮动作 |
 
-真跑本身约 4 分 15 秒（2026-11-02，思考预算 512，实测 255 s）；讲解可以覆盖等待时间，总时长约 8 分钟。只有 2 分钟时看 9.12。
+真跑本身约 4 分 15 秒（2026-11-02，思考预算 512，实测 255~257 s）；讲解可以覆盖等待时间，总时长约 8 分 40 秒。只有 2 分钟时看 9.13。
 
 速查（每屏一句）：
 
 | 屏幕 | 一句话 |
 | --- | --- |
-| 0/6 | 固定代码版本、模型、输出目录，结果可回到这三个值 |
-| 1/6 | 环境没问题；隔离 L1 是如实报告，不是失败 |
-| 2/6 | 案例编译成 9 个文件的 bundle；判据自证覆盖 4 条内容判据 |
-| 3/6 | 逐文件摘要一致；改一个字节就会被发现 |
-| 4/6 | 状态由内核算；`F1`~`F9` 只允许结构性修复 |
-| 5/6 前置 | 两个阶段两个包，工具面按阶段收窄 |
-| 5/6 流式 | 思考只是展示；工具调用、策略、结果是三件事 |
-| 5/6 机检 | 11 条判据；拒绝非法输入是治理生效，不算失败 |
-| 5/6 终稿 | 前三个值来自现场，第四行按复核意见改 |
-| 6/6 | `verified` 变 `evaluated`，证据可复核 |
+| 0/7 | 固定代码版本、模型、输出目录，结果可回到这三个值 |
+| 1/7 | 环境没问题；隔离 L1 是如实报告，不是失败 |
+| 2/7 | 案例编译成 9 个文件的 bundle；判据自证覆盖 4 条内容判据 |
+| 3/7 | 逐文件摘要一致；改一个字节就会被发现 |
+| 4/7 | 状态由内核算；`F1`~`F9` 只允许结构性修复 |
+| 5/7 前置 | 两个阶段两个包，工具面按阶段收窄 |
+| 5/7 流式 | 思考只是展示；工具调用、策略、结果是三件事 |
+| 5/7 机检 | 11 条判据；拒绝非法输入是治理生效，不算失败 |
+| 5/7 终稿 | 前三个值来自现场，第四行按复核意见改 |
+| 6/7 | `verified` 变 `evaluated`，证据可复核 |
+| 7/7 | 审查报告：样本、维度、归因、下一轮动作 |
 
 ### 9.2 屏幕 0：前置检查
 
 终端：
 
 ```text
-== 0/6 前置检查 ==
+== 0/7 前置检查 ==
 分支：feat/11-capability-pack-kernel
 提交：4e4340d docs(devlog): 规划演示阶段的四步与本期非目标
 模型：/opt/models/MiniCPM5-2B-Q4_K_M.gguf
@@ -517,7 +567,7 @@ scripts/pack-demo.sh
 终端：
 
 ```text
-== 1/6 环境体检（agent-sec-perf doctor） ==
+== 1/7 环境体检（agent-sec-perf doctor） ==
 
 │ Python 版本 │ ✓ ok   │ 3.12.14（要求 ≥ 3.12）                       │
 │ 产品版本    │ ✓ ok   │ 0.2.0                                        │
@@ -542,7 +592,7 @@ scripts/pack-demo.sh
 终端：
 
 ```text
-== 2/6 构建能力包（--force 保证从「还没有证据」开始） ==
+== 2/7 构建能力包（--force 保证从「还没有证据」开始） ==
 已构建能力包：/tmp/ip.bundle
 文件 9 个；判据自证通过（覆盖 4 项，未覆盖 7 项）
 下一步：agent-sec-perf pack verify <目录> --json
@@ -559,7 +609,7 @@ scripts/pack-demo.sh
 终端：
 
 ```text
-== 3/6 校验能力包（逐文件 sha256 + 判据自证） ==
+== 3/7 校验能力包（逐文件 sha256 + 判据自证） ==
 校验通过
   判据自证：正例全过=True，反例至少失败一项=True
 ```
@@ -577,7 +627,7 @@ scripts/pack-demo.sh
 终端：
 
 ```text
-== 4/6 状态与修复目录（状态必须是 verified；plan 是 F1~F9 白名单） ==
+== 4/7 状态与修复目录（状态必须是 verified；plan 是 F1~F9 白名单） ==
  阶段       verified
  证据       （无）
  阻塞       （无）
@@ -605,7 +655,7 @@ scripts/pack-demo.sh
 终端：
 
 ```text
-== 5/6 用端侧模型跑一次（流式显示思考；约 4 分钟） ==
+== 5/7 用端侧模型跑一次（流式显示思考；约 4 分钟） ==
 演示案例：离线日志根因定位与报告修订（incident-01）
  工作区  /tmp/lowspec-showcase-xxxx/workspace
  允许根  工作区 + 案例根（其余路径不可读）
@@ -754,14 +804,16 @@ scripts/pack-demo.sh
 终端：
 
 ```text
-== 6/6 运行后的状态（必须是 evaluated） ==
+== 6/7 运行后的状态（必须是 evaluated） ==
  阶段       evaluated
- 证据       incident-01-20261102T084041Z.json
+ 证据       incident-01-20261102T091440Z.json
  阻塞       （无）
+ → review   agent-sec-perf pack review /tmp/ip.bundle --all --json
  → plan     agent-sec-perf pack plan /tmp/ip.bundle --json
  → inspect  agent-sec-perf pack verify /tmp/ip.bundle --json
 
-证据：/tmp/ip.bundle/evidence/incident-01-20261102T084041Z.json
+证据：/tmp/ip.bundle/evidence/incident-01-20261102T091440Z.json
+审查报告：/tmp/ip.bundle/reports/incident-01-20261102T091440Z-review.md
 工作区：/tmp/lowspec-showcase-xxxx/workspace
 终稿：/tmp/lowspec-showcase-xxxx/workspace/report.md
 思考：/tmp/lowspec-showcase-xxxx/workspace/reasoning-draft.md
@@ -773,8 +825,47 @@ scripts/pack-demo.sh
 > 状态从 `verified` 变成 `evaluated`，因为 `evidence/` 里多了一次运行证据。证据 JSON 里有 manifest 摘要、实际模型路径、隔离等级、11 条 checks、两阶段事件摘要和终稿。任何人拿这个文件都能复核，不需要相信演示者。
 >
 > 工作区里保留了 `report.md`、两份思考全文和 `llama-server.log`。想看模型当时怎么想的，打开 `reasoning-draft.md`；想看服务端有没有异常，打开 `llama-server.log`。
+>
+> `pack run` 同时生成了一份单样本审查报告。下一屏用 `--all` 把多次运行聚合成能力报告。
 
-### 9.12 只有 2 分钟
+### 9.12 屏幕 6 之后：能力审查报告
+
+终端：
+
+```text
+审查报告：/tmp/ip.bundle/reports/incident-01-all-20261102T095737Z-review.md
+机器可读：/tmp/ip.bundle/reports/incident-01-all-20261102T095737Z-review.json
+样本 3/3 通过；维度 8 项；失效信号 0 项；下一轮动作 6 项
+```
+
+报告里的维度（同一次 3 样本聚合）：
+
+```text
+任务完成      demonstrated  3/3 个样本通过；每个样本 11 条 check
+工具选择      demonstrated  read 9 / write 3 / revise 3；目标写工具缺失：无
+证据接地      demonstrated  证据拒绝 0 次；报告判据：命中全部 4 项
+结构化输出    demonstrated  工具结果 15 条；未执行 0；格式拒绝 0
+受控修订      demonstrated  三个 KEY 逐字保留；VERDICT 已变更
+拒绝后恢复    not_assessed  拒绝 0 次；样本通过 3/3
+调用预算      tight         每样本调用 5~5；重复写 0；最小要求 5
+重复性        preliminary   样本 3；通过 3；通过率 100%
+```
+
+讲解：
+
+> 这一步回答的不是"跑没跑完"，而是"这套 pack 下能观察到什么能力、还缺什么"。
+>
+> 3 次运行都通过 11 条机检，所以任务完成、工具选择、证据接地、结构化输出、受控修订都写 `demonstrated`。但 `demonstrated` 的范围是"这套判据与这 3 个样本"，不是"模型具备通用 agent 能力"。
+>
+> 两个维度故意不写满。`拒绝后恢复` 是 `not_assessed`：三次都没有触发工具拒绝，恢复路径没被观察到。`调用预算` 是 `tight`：每次 5 次调用，正好等于最小要求，没有步数余量。`重复性` 只是 `preliminary`：3 次不够估计通过率。
+>
+> 下一轮动作不是"再改改提示"，而是六条可验证的动作：补到 5 次以上、做第二个案例、测 1.7B/0.6B 下界、把 token 预算降一档、给 7 条事件流判据补自证、构造一次值幻觉反例验证恢复。每条都写了验证方式与禁止项。
+>
+> 如果这次失败，报告会先给 `findings`：疑似 `F1`~`F9` 的编号、置信度、证据、允许的修法、禁止项，再给下一轮动作。它不会自动改代码，也不会把"没观察到"写成"已具备"。
+
+这一段是整个演示的落点：**能力包不只是让模型跑起来，它把"这次跑得怎么样、下一轮改什么"变成可复核的产物。**
+
+### 9.13 只有 2 分钟
 
 不要现场跑模型。直接展示：
 
@@ -796,11 +887,11 @@ cat /tmp/lowspec-showcase-*/workspace/report.md
 cp -a /tmp/ip.bundle /tmp/ip.bundle.keep
 ```
 
-### 9.13 口径边界
+### 9.14 口径边界
 
 可以说：
 
-- 同一案例、同一模型、同一包，连续 6 次 11/11，墙钟 249~258 s；
+- 同一案例、同一模型、同一包，连续 7 次 11/11，墙钟 249~258 s；
 - 2B 模型能完成这个案例；
 - 判据自证覆盖 4 条内容判据，7 条事件流与审计判据未自证；
 - 隔离是 L1，应用级拦截加逐维度留痕；
@@ -892,6 +983,8 @@ wheel 的安装步骤见 §3.2。装完先跑 `doctor`，再用 `pack example` �
 - `pack` 没有 `apply`。内核不替总控改声明式文件；改文件后重新 `build`。
 - 没有 `pack fit`。显存与上下文查表是增强，不在当前范围。
 - 失败归因仍要人读证据。内核给 checks 与 evidence，`F1`/`F9` 的判定由人比对 `allowlist` 与审计后得出。
+- `pack review` 的 `F1`~`F9` 映射是**启发式**：依据 check 名称、工具名与错误文本，报告写"疑似"并保留证据；最终修法由总控按 `pack plan` 选择。
+- 审查报告不重新判分，也不替代 `pack run` 的 checks；删掉 `reports/` 不影响 bundle 完整性。
 - 判据自证只覆盖内容维度 4 条；事件流 7 条要一次真跑。
 - 墙钟是单次或少量重复观测，不是性能结论。
 - 当前镜像没有 0.6B/1.7B。失败路径需要自备小模型，不要现场下载。
@@ -905,7 +998,7 @@ wheel 的安装步骤见 §3.2。装完先跑 `doctor`，再用 `pack example` �
 
 ```text
 src/agent_sec_perf/
-  pack/            # 内核：案例、判据、bundle、状态、修复目录、示例定位
+  pack/            # 内核：案例、判据、bundle、状态、修复目录、示例定位、审查报告
   cli/             # 命令面：pack、doctor、demo、run
   harness/         # 执行：会话、工具调度、事件流
   security/        # 策略、能力、隔离探针
