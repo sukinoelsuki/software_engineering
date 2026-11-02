@@ -1,0 +1,130 @@
+# 课程报告（软件工程）
+
+> 这是**交给课程的那份报告**：`report.md` 是正文源（可评审、可 diff）。
+> 本目录只放报告本身与它的说明，不改动 `docs/` 其它文档，也不产生新事实。
+
+## 1. 与既有课程交付物的分工
+
+| 文件 | 体裁 | 读者 | 状态 |
+| :--- | :--- | :--- | :--- |
+| [`../course-deliverables/experiment-1-requirements/`](../course-deliverables/experiment-1-requirements/README.md) | 实验 1：需求分析文档包（10 个 md，含 AI 协作记录、人工核实、证据附录） | 任课教师、评审 | 已成册 v1.3（2026-09-28） |
+| [`../course-deliverables/experiment-2-design/软件设计文档.md`](../course-deliverables/experiment-2-design/软件设计文档.md) | 实验 2：软件设计文档（12 项设计要素 + 49 条需求追溯矩阵） | 任课教师、评审 | v1.3（2026-10-12） |
+| **本目录**（`report.md`） | 期末报告：把需求、设计、框架、实现与演示串成一篇 | 任课教师 | 初稿（2026-11-02） |
+
+三者都是**视图，不产生新事实**：数字能在 `docs/requirements/`、`docs/design/`、`docs/engineering/`、`docs/devlog/` 或一次实跑里找到出处。冲突时以项目内部文档与代码为准，并在本文件 §6 登记。
+
+## 2. 章节结构
+
+八章，对应软件工程课程的六个要素（需求分析、设计分析、项目框架、实现与验证、展示 demo、过程与协作）：
+
+| 章 | 内容 | 主要来源 |
+| :--- | :--- | :--- |
+| 1 | 项目与环境说明 | `docs/requirements/srs.md` §1/§6.3；`docs/design/architecture.md` §1.2 |
+| 2 | 需求分析 | `srs.md` §2~§10；实验 1 需求分析文档 |
+| 3 | 系统设计 | `architecture.md`；`docs/design/interfaces/`；`threat-model/README.md`；`ADR-0015`/`ADR-0034` |
+| 4 | 工程框架与实现现状 | `src/`；`Makefile`；`tests/`；`ADR-0019`；`devlog` |
+| 5 | 能力包内核 | `ADR-0034`；`docs/engineering/capability-pack-manual.md` §2~§8 |
+| 6 | 展示 demo | `docs/design/showcase-incident-triage.md`；`docs/engineering/demo-showcase.md`；`devlog 0031`/`0032` |
+| 7 | 问题与挑战 | `devlog 0032` §5/§6；`notes/evaluation-pitfalls.md`；威胁模型修订记录 |
+| 8 | 角色分工、课程落点与总结 | `CODEBUDDY.md` §10；`docs/engineering/git-workflow.md` §4；本报告各章 |
+
+### 2.1 模板与偏离
+
+课程**没有**在仓库内提供期末报告模板（实验 1/2 的任务书只给了交付项，见实验 1 的 README §1）。因此本报告沿用参考项目 `cnb.cool/Mybase_Le0n3rd/BigData` 的 `docs/course-report` 分支的八章骨架（2026-11-02 访问），按软件工程的要素重排。逐条偏离登记如下，避免"看起来像模板"：
+
+| # | 做法 | 理由 |
+| :--- | :--- | :--- |
+| 1 | 题目写在 front matter，不占章节号；八个部分各自成章 `# 1` ~ `# 8` | 题目是文档标题，不是内容；占一个章节号会让目录里出现一条没有内容的顶格条目 |
+| 2 | 表题在表格**上方**，图题在图**下方** | 中文排版惯例 |
+| 3 | 表、图编号按章走（表 1-1 / 图 6-1） | 章变了，`1-x` 的连续编号不再成立 |
+| 4 | 编号与标题之间用全角空格（`# 1　项目与环境说明`） | GB/T 7713.1—2006 6.3.2 要求空一个字宽 |
+| 5 | 图用 Mermaid 内联，不引入图片文件 | 可 diff、可评审、零新增依赖；结构自检见 §4 |
+| 6 | 正文中文，代码、路径、命令、判据原文保持英文 | 项目语言约定（`CODEBUDDY.md` §4） |
+
+### 2.2 写作口径（本报告遵守的规则）
+
+写之前参考了三份公开材料，不复制原文，只取规则：
+
+| 来源 | 取用的部分 | 访问日期 |
+| :--- | :--- | :--- |
+| Humanizer-zh（`op7418/Humanizer-zh`，GitHub） | 31 种 AI 写作模式的**检查线索**（铺垫代替陈述、公式化节奏、意义拔高、装饰性排版等） | 2026-11-02 |
+| Wikipedia: Signs of AI writing | 上述清单的上游依据（本项目未直接抓取，按 Humanizer-zh 的转述使用） | 2026-11-02 |
+| 阮一峰《中文技术文档的写作规范》（`ruanyf/document-style-guide`） | 中英文混排空格、句长、标点、英文处理 | 2026-11-02 |
+
+落到本报告上的六条：先说事、不写"汇报如下"式预告；一个信息点不用两个分句；加粗只给要跳读的数；正文里不用 `⇒`/`→` 当节奏器；删掉删了也不影响意思的句子；**风格让位于事实**——不把"可能"写成"确定"，不把"未测"写成"通过"。
+
+本项目**没有**把上述材料做成 Skill（`.codebuddy/skills/` 下没有写作类 Skill）。理由：Skill 文本进入指令面，新增需登记来源、版本与摘要；而本报告是一次性交付物，规则写在本文档里足够。若后续要复用，应新建 Skill 并按其来源与版本登记（见 §7 待办）。
+
+## 3. 证据索引（报告里的数字去哪复核）
+
+| 报告位置 | 内容 | 出处 |
+| :--- | :--- | :--- |
+| §1 表 1-1 | 8 vCPU / 16 GiB / 无 GPU / 无 KVM | `docs/research/2026-09-14-cnb-quota-and-hardware.md`；`architecture.md` §1.2 |
+| §1 | 约 3.4 token/s、单次补全可超 450 s | `README.md` §5.1 的参数表 |
+| §2.2 | 49 条 / 9 组 | `srs.md` §7（逐条可数） |
+| §2.2 | `REQ-PERF-04` 的四份产物 | `srs.md` §7 该行；`Makefile` 的 `bench-round` |
+| §2.4 | SRS v0.1.3 初稿、`M1-1` 未满足 | `srs.md` 头部表；`docs/engineering/sdlc.md` §3.2 |
+| §3.1 | `R1`~`R5` 与 9 条机器检查 | `ADR-0015` §5.1/§7.1；`tests/unit/test_architecture_layers.py` |
+| §3.2 | 策略失败收敛为拒绝、审计失败冒泡 | `docs/design/interfaces/policy.md` §2.5；`architecture.md` §2.4/§5.3 |
+| §3.3 表 3-1 | 15 条威胁、1/12/2 | `docs/design/threat-model/README.md` §4.1 |
+| §3.4 | `pack/` 的候选与采纳 | `ADR-0034` §3.1/§4/§5 |
+| §4.1 表 4-1 | 模块与状态 | `architecture.md` §4；`ls src/agent_sec_perf/` |
+| §4.2 表 4-2 | 53 / 18 / 1 / 1076 | 三条 `ls ... \| wc -l`；`uv run pytest -q --collect-only` |
+| §4.2 | 1065 passed / 1 skipped | `devlog 0032` §3.8（2026-11-02） |
+| §4.3 | 32 篇 ADR、32 篇日志、6 份契约 | `docs/adr/`、`docs/devlog/`、`docs/design/interfaces/` |
+| §5.3 | 自证覆盖 4 条、未覆盖 7 条 | `capability-pack-manual.md` §7.4 |
+| §5.4 表 5-3 | `F1`~`F9` | `capability-pack-manual.md` §8；`pack plan --json` |
+| §6 表 6-1 | 案例现场 | `examples/showcase/incident-01/scene/`；`case.toml` |
+| §6.3 表 6-2 | 11 条机检 | `docs/design/showcase-incident-triage.md` §4.3；`tests/unit/test_cli_demo.py` |
+| §6.4 表 6-3 | 0.6B / 1.7B / 2B / 4B | `devlog 0032` §4.1/§4.2 |
+| §6.4 | 6 次 11/11、249~258 s | `devlog 0032` §3.7 |
+| §6.4 | 3 份样本、`3/3`、维度判定 | `devlog 0032` §3.8；`pack review` 的报告字段见手册 §7.5 |
+| §6.5 表 6-4 | L1、3/8 维度 | `docs/design/showcase-incident-triage.md` §5.1；`agent-sec-perf doctor --json` |
+| §7.2 | 授权 ≠ 暴露 | `docs/design/showcase-incident-triage.md` §4.6 |
+| §7.3 | 三次"取消动作" | 同上 §4.2 |
+
+## 4. 自检
+
+```bash
+# 图表结构自检（不渲染；检查括号、subgraph/end 配平、占位符等）
+python3 .codebuddy/skills/diagram-authoring/scripts/mermaid_check.py docs/course-report
+
+# 报告里引用的数字，按 §3 的出处逐条复跑；最小集：
+ls tests/unit/test_*.py | wc -l
+ls tests/security/test_*.py | wc -l
+uv run pytest -q --collect-only | tail -1
+```
+
+`make check` 不覆盖本目录（没有代码改动），但提交前仍应跑一次，确认没有碰到别人的工作树。
+
+## 5. 格式与打印
+
+- **交付源是 `report.md`**（当前 524 行）。课程未要求 docx，仓库也**没有**生成 docx 的脚本。
+- 需要纸质件时，两条路径：① 把 Markdown 粘进课程模板（若有）或 Word/WPS，套用五号字、单倍行距；② 新增 `build.py`（需要 `python-docx`）。**②尚未做**：新增依赖属 F 类事项，需事先确认，且参考项目的 `build.py` 是 958 行、与本次交付无直接关系。
+- 页数**没有实测**。参考项目用 LibreOffice 渲染后统计页脚页码；本环境没有装 LibreOffice，装它会增加镜像体积，而镜像构建失败会被平台静默回退成默认镜像（`docs/research/2026-09-25-cnb-platform-behavior-facts.md`）。因此本报告不给出页数承诺，打印前自行核对。
+- **若课程限页**，按下面的顺序删，不要按章删（每章都有对方没有的信息）：
+  ① 第 4 章的模块表压成一段；② 第 5 章的表 5-2（命令与产物）删掉，只留四步链路；
+  ③ 第 7 章的表 7-1 与 §7.3 的表各留三行；④ 第 8 章的表 8-2 删掉（正文已覆盖）。
+  **不要删**：§2.4 的欠账、§6.6 的"不能说明什么"、§7.4 的静默失败——这三处是报告可信度的支点。
+
+## 6. 与仓库其它文档的关系
+
+- **只读**：本目录不修改 `docs/requirements/`、`docs/design/`、`docs/adr/`、`docs/devlog/`。
+- **不回写**：报告里发现的文档矛盾，登记到本文 §7，由对应文档的责任人处理。
+- **分支基线**：本分支 `docs/course-report` 从 `feat/11-capability-pack-kernel` 的 `f4938d8` 拉出。选这个基线而不是 `develop`，是因为报告第 5、6 章的材料（`pack/`、`ADR-0034`、`devlog 0032`、`capability-pack-manual.md`）**尚未合入 `develop`**；基于 `develop` 写会得到一堆失效链接。代价与处置写在 §7。
+
+## 7. 待办与已知边界
+
+1. **分支基线耦合**：`feat/11` 合入 `develop` 后，本分支应改为从 `develop` 重建（或直接合并），否则报告与代码树会对不上。
+2. **docx 未生成**：若课程要求 Word 提交，需确认是否引入 `python-docx`（F 类事项），或手工排版。
+3. **页数未测**：见 §5。
+4. **写作 Skill 未立项**：见 §2.2；若要复用，需按 Skill 登记规则补来源与版本。
+5. **报告里的数字会漂移**：§3 的出处都写了文件与命令，但用例数、模块数、威胁分布会随开发变化。打印前按 §4 复跑一遍，不要沿用旧值。
+
+## 8. 不得放大的结论
+
+- 隔离是 **L1**：文件系统与网络没有内核级隔离，只有应用级拦截（白名单 + 默认拒绝 + 审计）。
+- 2B / 4B 通过的是**一条案例**，不是通用 agent 能力；量化不同，墙钟不可横向比较。
+- 演示墙钟是**观测值**，不是性能结论；`REQ-PERF-*` 仍未测。
+- 需求是 **v0.1.3 初稿**，不是定稿；`M1-1` 仍未满足。
+- 威胁模型 **15 条、1 / 12 / 2**，不构成"安全已到位"；`T-04`、`T-10` 仍未缓解。

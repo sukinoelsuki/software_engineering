@@ -17,6 +17,7 @@
 | [`notes/`](notes/) | **学习笔记**：学到的内容与所想所思（跨课题、可重读） | **持续进行**（基准线任务） |
 | [`devlog/`](devlog/) | **开发日志**（按议题/阶段分篇，过程记录） | 每次提交 |
 | [`course-deliverables/`](course-deliverables/) | **课程交付物**（实验 1 需求分析文档、实验 2 软件设计文档；目录英文、文档可中文） | 课程交付节点 |
+| [`course-report/`](course-report/README.md) | **课程期末报告**（软件工程；八章正文 + 证据索引与写作口径；只读其它文档、不回写） | 课程报告提交节点 |
 
 ---
 
@@ -43,6 +44,7 @@
 | **能力包内核怎么演示、换环境后怎么跑？** | [`engineering/pack-runbook.md`](engineering/pack-runbook.md) |
 | **能力包内核怎么安装、怎么移植、怎么做能力审查、现场怎么逐屏讲？** | [`engineering/capability-pack-manual.md`](engineering/capability-pack-manual.md) |
 | **CLI 交付形态与演示案例为什么这样设计？** | [`design/showcase-incident-triage.md`](design/showcase-incident-triage.md) |
+| **课程期末报告在哪、数字怎么复核？** | [`course-report/README.md`](course-report/README.md) |
 | AI 代理该怎么协作？ | [`../CODEBUDDY.md`](../CODEBUDDY.md) |
 
 ---

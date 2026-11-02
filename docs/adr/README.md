@@ -100,5 +100,7 @@
 | [0033](0033-course-deliverables-directory.md) | 课程交付物目录：迁入 `docs/course-deliverables/`（实验 1 需求分析文档包 + 实验 2 软件设计文档），**目录名统一英文、文档名可中文**；交付物只读取不回写项目文档；搬迁导致的包内相对链接随迁修正 | **已接受**（2026-10-12，所有者指令） |
 | [0034](0034-capability-pack-kernel.md) | 能力包内核：新增产品层 `src/agent_sec_perf/pack/`（与 `cli/` 同层，禁止 import `cli`）；案例契约从 `cli/demo.py` 上移；bundle = `manifest.json`（逐文件 sha256）+ `case/` + `README.md`；`[selftest]` 正反例是发布闸门；`status/plan` 的 JSON 是**大模型总控**的唯一接口；内核不执行模型生成的代码 | **已接受**（2026-10-27，所有者指令：内核即当前产品） |
 
+| [0035](0035-course-report-directory.md) | 课程报告目录：新建 `docs/course-report/`（`report.md` + `README.md`），报告只读其它文档、不回写；分支基线取自 `feat/11` 的 `f4938d8`（第 5、6 章依赖尚未合入 `develop` 的 `pack/`）；不引入 docx 生成依赖 | **已接受**（2026-11-02，所有者指令） |
+
 > 新增 ADR 后请同步更新本表。
 > ⚠️ 索引缺项会导致读者（与代理）以为文档不存在、进而重复决策——2026-09-18 的一致性核查已发现一次（0014 缺登记）。
