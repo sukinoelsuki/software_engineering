@@ -128,3 +128,22 @@
 | §5 |- 2B / 4B 通过的是**一条案例**，不是通用 agent 能力；量化不同，墙钟不可横向比较。
 | §5 |- 演示墙钟是**观测值**，不用于性能结论；性能基线由 `bench/` 轮次承担。
 | §5 |- 需求基线为 **v0.1.3**，49 条编号沿用；`T-04`、`T-10` 在威胁模型中保持未缓解。
+
+## 9. 课程模板版报告（2026-11-07，本次提交件）
+
+课程提供了模板 `《软件工程》项目报告撰写内容及规范化参考样本.docx`（生成时从仓库根目录复制，**原文件未改动**；若需重建 docx，须把模板放回 `build_template.py` 的 `TEMPLATE` 路径）。本目录新增四件产物：
+
+| 文件 | 作用 |
+| :--- | :--- |
+| `report-template.md` | 模板版正文源（六章 + 附录，可 diff、可评审） |
+| `make_figures.py` | 生成 12 张图；结构图用 Graphviz，终端图由真实命令输出渲染 |
+| `build_template.py` | 复制模板 docx 并在副本上填充，生成 docx/pdf |
+| `make_deliverables.py` | 汇总电子材料并打包 zip |
+
+构建：`uv run python docs/course-report/make_figures.py` → `uv build` → `uv run python docs/course-report/build_template.py` → `uv run python docs/course-report/make_deliverables.py`。构建期依赖：`python-docx`、Pillow、Graphviz `dot`、LibreOffice、Noto CJK、poppler-utils（**仅本机，不进 `pyproject.toml`**）。
+
+版式按模板"任务书"执行：章标题黑体小 2 加粗居中、二级黑体 4 号、三级黑体小 4、正文宋体小 4 且 1.5 倍行距、表题在表上方、图题在图下方、章间分页；封面、任务书、页眉与分节页码沿用模板本身。实测页数：封面 1 + 任务书 1 + 目录 1 + 正文 33 = **36 页**（目录页码两遍渲染回填，复跑核对无偏移；**Word/WPS 打开后请以实际分页为准**）。
+
+**为什么 docx 与 PDF 会分叉**：模板指定仿宋/黑体/宋体_GB2312/Times New Roman 等 Windows 字体，本机由 Noto CJK 等替代；且模板带 `w:docGrid`（每行 312 twips），LibreOffice 会把 1.5 倍行距对齐到网格，行高明显大于 Word，任务书因此溢出到第 2 页。已对"任务书+目录"这一节取消文档网格对齐（正文节不动，故目录页码不受影响），任务书回到 1 页。打印以核对过的 **PDF** 为准：第 1~3 页单面，第 4~36 页双面（长边翻转）。
+
+封面个人信息栏（专业班级/学号/姓名/指导教师）在仓库版本中留空，打印版由所有者手填；PDF 与电子材料压缩包不入库。信息栏（课程名称～报告日期共 7 行）改为**固定宽度表格**：整块水平居中、标题列左对齐、内容列居中且底边框等长。原先靠空格加下划线字符凑对齐，在 Word 里看着正常、LibreOffice 换字体后即错位，故改为表格；`题目` 行按模板原样保留。旧八章版 `report.md` / `report.docx` 保留为写作参考，**不是**本次提交件。电子材料压缩包已校验不含 `.git`、虚拟环境与缓存文件。
