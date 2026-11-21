@@ -1,0 +1,55 @@
+name: Sync from CNB
+
+on:
+  schedule:
+    - cron: "17 0,12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync all branches from CNB
+        env:
+          UPSTREAM_URL: https://cnb.cool/Mybase_Le0n3rd/software_engineering.git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM_URL"
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --prune upstream '+refs/heads/*:refs/remotes/upstream/*'
+
+          sync_workflow="$(mktemp)"
+          cp .github/workflows/sync-upstream.yml "$sync_workflow"
+
+          while IFS= read -r branch; do
+            [ -n "$branch" ] && [ "$branch" != "HEAD" ] || continue
+            git checkout --force -B "$branch" "refs/remotes/upstream/$branch"
+            if [ "$branch" = "main" ]; then
+              mkdir -p .github/workflows
+              cp "$sync_workflow" .github/workflows/sync-upstream.yml
+              git add .github/workflows/sync-upstream.yml
+              if ! git diff --cached --quiet; then
+                git commit -m "chore: keep GitHub upstream sync workflow"
+              fi
+            fi
+            git push --force-with-lease origin "refs/heads/$branch:refs/heads/$branch"
+          done < <(git for-each-ref --format='%(refname:strip=3)' refs/remotes/upstream/)
+
+          while IFS= read -r branch; do
+            [ -n "$branch" ] && [ "$branch" != "HEAD" ] || continue
+            if ! git show-ref --verify --quiet "refs/remotes/upstream/$branch"; then
+              git push origin --delete "$branch"
+            fi
+          done < <(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin/)
+
+          rm -f "$sync_workflow"
+          git checkout --force main
